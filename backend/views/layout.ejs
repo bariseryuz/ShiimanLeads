@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f172a" />
+  <title><%= title %> · Shiiman Leads</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    ::-webkit-scrollbar{width:10px;height:10px}
+    ::-webkit-scrollbar-thumb{background:#1f2937;border-radius:999px}
+    ::-webkit-scrollbar-track{background:#0b1220}
+  </style>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs/%3E%3Cg fill='%2322c55e'%3E%3Ccircle cx='32' cy='32' r='28' fill='%2311452a'/%3E%3Cpath d='M17 34c7-2 11-8 15-16c4 9 8 14 15 16c-6 2-11 6-15 14c-3-7-8-12-15-14z'/%3E%3C/g%3E%3C/svg%3E" />
+  <script>
+    window.copyText = async function(t){ try{ await navigator.clipboard.writeText(t); showToast('Copied'); }catch(e){ showToast('Copy failed'); } }
+    function showToast(msg){ const el=document.getElementById('toast'); if(!el) return; el.textContent=msg; el.classList.remove('opacity-0','translate-y-2'); el.classList.add('opacity-100','translate-y-0'); setTimeout(()=>{ el.classList.add('opacity-0','translate-y-2'); el.classList.remove('opacity-100','translate-y-0'); },1200); }
+  </script>
+  <style>body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}</style>
+  </head>
+<body class="min-h-screen flex flex-col bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100 selection:bg-emerald-600/40">
+  <header class="sticky top-0 z-40 border-b border-slate-800/70 bg-slate-950/80 backdrop-blur-sm">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
+      <div class="flex items-center justify-between w-full">
+        <a href="/" class="flex items-center gap-2 group">
+          <span class="inline-grid place-items-center h-9 w-9 rounded-lg bg-emerald-600/10 text-emerald-400 border border-emerald-500/30 group-hover:shadow group-hover:shadow-emerald-600/20 transition">S</span>
+          <span class="font-semibold tracking-tight text-sm sm:text-base">Shiiman Leads</span>
+        </a>
+        <button type="button" class="md:hidden px-3 py-2 rounded bg-slate-800 hover:bg-slate-700" onclick="document.getElementById('mnav').classList.toggle('hidden')">Menu</button>
+        <nav id="mnav" class="hidden md:flex items-center gap-1 text-sm">
+          <a href="/" class="px-3 py-2 rounded-md transition <%= (path||'/')==='/' ? 'bg-slate-800 text-white shadow' : 'hover:bg-slate-800/60 text-slate-300' %>">Home</a>
+          <a href="/dashboard" class="px-3 py-2 rounded-md transition <%= (path||'')==='/dashboard' ? 'bg-slate-800 text-white shadow' : 'hover:bg-slate-800/60 text-slate-300' %>">Dashboard</a>
+          <a href="/app/leads" class="px-3 py-2 rounded-md transition <%= (path||'').startsWith('/app') ? 'bg-slate-800 text-white shadow' : 'hover:bg-slate-800/60 text-slate-300' %>">Leads</a>
+          <% if (user) { %>
+            <span class="px-3 py-2 text-slate-400 hidden lg:inline">Hi <strong><%= user.username %></strong></span>
+          <% } %>
+          <% if (user) { %>
+            <form method="post" action="/logout" class="inline">
+              <button class="px-3 py-2 rounded-md bg-slate-800 hover:bg-slate-700">Sign out</button>
+            </form>
+          <% } else { %>
+            <a class="px-3 py-2 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white" href="/login">Sign in</a>
+          <% } %>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 w-full">
+    <div class="max-w-6xl mx-auto px-4 py-6">
+      <%- body %>
+    </div>
+  </main>
+
+  <footer class="border-t border-slate-800/70 mt-8">
+    <div class="max-w-6xl mx-auto px-4 py-6 text-slate-400 text-xs sm:text-sm flex flex-wrap items-center gap-4">
+      <p class="m-0">© <%= new Date().getFullYear() %> Shiiman Leads</p>
+      <p class="m-0 opacity-70">Built for construction intelligence sales</p>
+    </div>
+  </footer>
+
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-3 py-2 rounded bg-slate-800/90 text-sm text-slate-100 border border-slate-700 shadow shadow-black/40 transition-all duration-200 opacity-0 translate-y-2"></div>
+</body>
+</html>

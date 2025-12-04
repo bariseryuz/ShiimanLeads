@@ -1,0 +1,94 @@
+<section class="space-y-12">
+  <% const q = (typeof query !== 'undefined' && query) ? query : {}; %>
+  <div class="grid gap-10 lg:grid-cols-2 items-center">
+    <div class="space-y-5">
+      <h1 class="text-3xl sm:text-4xl font-semibold tracking-tight">Shiiman Leads turns raw permit data into <span class="text-emerald-400">qualified construction leads</span>.</h1>
+      <p class="text-slate-300 text-base leading-relaxed max-w-prose">Shiiman Leads continuously aggregates public permits, project filings, and embedded organization data from multiple municipal and corporate sources. We normalize, deduplicate, and enrich the feed so you see actionable opportunities – not noise.</p>
+      <ul class="space-y-2 text-sm">
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">✔</span><span>Multi-source ingestion (municipal JSON APIs + dynamic HTML scraping)</span></li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">✔</span><span>Smart filtering (status, recency, keyword, length & regex include/exclude)</span></li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">✔</span><span>Deduplication via cryptographic hashing to prevent repeated outreach</span></li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">✔</span><span>On-demand scrape trigger & live dashboard export (CSV)</span></li>
+        <li class="flex items-start gap-2"><span class="text-emerald-400 mt-1">✔</span><span>Authentication layer for private lead browsing & detail drilldown</span></li>
+      </ul>
+      <div class="flex flex-wrap gap-3 pt-2">
+        <a href="/login" class="px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium shadow-sm">Sign In</a>
+        <a href="/dashboard" class="px-5 py-3 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-100 font-medium">View Live Dashboard</a>
+      </div>
+    </div>
+    <div class="relative">
+      <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-6 space-y-4">
+        <h2 class="text-lg font-semibold">Why teams choose Shiiman Leads</h2>
+        <p class="text-sm text-slate-400">Manual prospecting wastes hours. We automate discovery, enrichment, and freshness so sales teams spend time closing – not collecting.</p>
+        <div class="grid grid-cols-2 gap-4 text-xs">
+          <div class="p-3 rounded bg-slate-800/50 border border-slate-700">
+            <p class="font-semibold text-slate-100 mb-1">Freshness</p>
+            <p class="text-slate-400">Updated on a 5‑minute cadence & manual trigger.</p>
+          </div>
+          <div class="p-3 rounded bg-slate-800/50 border border-slate-700">
+            <p class="font-semibold text-slate-100 mb-1">Accuracy</p>
+            <p class="text-slate-400">Deduplication prevents double outreach, reducing churn.</p>
+          </div>
+          <div class="p-3 rounded bg-slate-800/50 border border-slate-700">
+            <p class="font-semibold text-slate-100 mb-1">Coverage</p>
+            <p class="text-slate-400">JSON APIs + dynamic pages & JSON‑LD extraction.</p>
+          </div>
+          <div class="p-3 rounded bg-slate-800/50 border border-slate-700">
+            <p class="font-semibold text-slate-100 mb-1">Speed</p>
+            <p class="text-slate-400">Selective resource blocking during dynamic scraping.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-6">
+    <h2 class="text-2xl font-semibold tracking-tight">How Shiiman Leads works</h2>
+    <div class="grid lg:grid-cols-3 gap-6">
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-5 space-y-2">
+        <h3 class="font-medium">Ingest</h3>
+        <p class="text-sm text-slate-400">Pulls from municipal JSON endpoints & dynamic corporate pages (Puppeteer when needed).</p>
+      </div>
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-5 space-y-2">
+        <h3 class="font-medium">Filter</h3>
+        <p class="text-sm text-slate-400">Applies status/date cutoffs + keyword & regex matching to isolate qualified items.</p>
+      </div>
+      <div class="rounded-lg border border-slate-800 bg-slate-900/40 p-5 space-y-2">
+        <h3 class="font-medium">Enrich & Serve</h3>
+        <p class="text-sm text-slate-400">Hashes, deduplicates, persists to SQLite; exposes API, dashboard, and CSV exports.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-6">
+    <h2 class="text-2xl font-semibold tracking-tight">Get in touch</h2>
+    <% if (q.ok) { %>
+      <div class="rounded-md border border-emerald-700 bg-emerald-600/10 p-4 text-sm text-emerald-300">Message received. We'll reply soon.</div>
+    <% } else if (q.err) { %>
+      <div class="rounded-md border border-red-700 bg-red-600/10 p-4 text-sm text-red-300">Something went wrong. Please try again.</div>
+    <% } %>
+    <form method="post" action="/contact" class="space-y-4 max-w-xl">
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Name</label>
+          <input name="name" class="w-full bg-slate-900/60 border border-slate-700 rounded px-3 py-2" />
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Company</label>
+          <input name="company" class="w-full bg-slate-900/60 border border-slate-700 rounded px-3 py-2" />
+        </div>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Email *</label>
+        <input required name="email" type="email" class="w-full bg-slate-900/60 border border-slate-700 rounded px-3 py-2" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Message *</label>
+        <textarea required name="message" rows="5" class="w-full bg-slate-900/60 border border-slate-700 rounded px-3 py-2"></textarea>
+      </div>
+      <button class="px-5 py-3 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-medium" type="submit">Send Inquiry</button>
+      <p class="text-xs text-slate-500">We respond within 1 business day.</p>
+      <input type="text" name="website" class="hidden" tabindex="-1" autocomplete="off" />
+    </form>
+  </div>
+</section>

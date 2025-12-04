@@ -1,0 +1,46 @@
+<section class="space-y-6">
+  <div class="flex items-center justify-between flex-wrap gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Inquiries</h1>
+      <p class="text-sm text-slate-400">Latest contact form submissions (max 200)</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm">Home</a>
+      <a href="/app/leads" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm">Leads</a>
+    </div>
+  </div>
+
+  <% if (!inquiries || inquiries.length === 0) { %>
+    <div class="rounded-xl border border-slate-800 bg-slate-900/40 p-8 text-center">
+      <h3 class="font-semibold mb-1">No inquiries yet</h3>
+      <p class="text-sm text-slate-400">Engagement form submissions will appear here.</p>
+    </div>
+  <% } else { %>
+    <div class="overflow-x-auto rounded-xl border border-slate-800">
+      <table class="min-w-full table-fixed">
+        <thead class="bg-slate-900/80 text-slate-400 text-xs uppercase sticky top-0 z-10">
+          <tr>
+            <th class="text-left p-3 w-32">Date</th>
+            <th class="text-left p-3 w-40">Name</th>
+            <th class="text-left p-3 w-56">Email</th>
+            <th class="text-left p-3 w-40">Company</th>
+            <th class="text-left p-3">Message</th>
+            <th class="text-left p-3 w-24">IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% inquiries.forEach(i => { %>
+            <tr class="border-t border-slate-800 hover:bg-slate-900/50 align-top">
+              <td class="p-3 text-xs text-slate-400"><%= i.created_at %></td>
+              <td class="p-3 text-sm font-medium"><%= i.name || '—' %></td>
+              <td class="p-3 text-sm"><a href="mailto:<%= i.email %>" class="underline"><%= i.email %></a></td>
+              <td class="p-3 text-sm text-slate-300"><%= i.company || '—' %></td>
+              <td class="p-3 text-sm text-slate-300"><%= (i.message || '').substring(0, 400) %></td>
+              <td class="p-3 text-xs text-slate-400"><%= i.ip || '—' %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</section>

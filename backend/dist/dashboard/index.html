@@ -1,0 +1,1724 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aurora Leads · Dashboard</title>
+  <style>
+    :root { --bg:#020617; --fg:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --card:#0b1220; --border:#1f2937; }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+    header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+    .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg)}
+    .logo{display:grid;place-items:center;height:32px;width:32px;border-radius:999px;background:rgba(34,197,94,.1);color:#34d399;border:1px solid rgba(34,197,94,.35)}
+    .meta{font-size:12px;color:var(--muted)}
+    .wrap{padding:16px 24px;max-width:1200px;margin:0 auto}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+    table{width:100%;border-collapse:collapse}
+    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#06101e;position:sticky;top:0;z-index:2}
+    th,td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+    tbody tr:hover{background:#081224}
+    .pill{display:inline-block;padding:2px 8px;border:1px solid #334155;border-radius:999px;font-size:12px;color:#cbd5e1}
+    .value{color:var(--accent);font-weight:600}
+    .cta{display:inline-block;padding:10px 14px;border-radius:8px;background:#22c55e;color:#041316;text-decoration:none;font-weight:600}
+    footer{padding:16px 24px;color:var(--muted);font-size:12px;border-top:1px solid var(--border)}
+    .sub{display:flex;gap:12px;align-items:center;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:1fr;gap:16px}
+    @media (min-width:1000px){ .grid{grid-template-columns:3fr 1fr} }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  </head>
+<body>
+  <header>
+    <a class="brand" href="/">
+      <span class="logo">A</span>
+      <strong>Aurora Leads</strong>
+    </a>
+    <div class="meta">Last update: 12/4/2025, 10:52:39 PM · Showing latest 200</div>
+  </header>
+  <div class="wrap">
+    <div class="grid">
+      <div class="card">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Source</th>
+              <th>Permit #</th>
+              <th>Address</th>
+              <th>Value</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+              <tr>
+                <td>2025-12-04T19:52:32.661Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-011729 PP</td>
+                <td>1000 ELM ST</td>
+                <td class="value">N/A</td>
+                <td>Interior remodel. Remodel existing noncomplying 2-story accessory structure with habitable attic. New siding and replace roof. Remove unpermitted kitchenette. Reconfigure access to habitable attic. Repair exterior staircase.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.640Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-013993 BP</td>
+                <td>3210 ROGGE LN</td>
+                <td class="value">N/A</td>
+                <td>50 x 50 covered play shade hip structure as part of comprehensive replacement of existing elementary school
+
+PuPR2</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.623Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-014001 BP</td>
+                <td>3210 ROGGE LN</td>
+                <td class="value">N/A</td>
+                <td>28 x 28 playground shade structure as part of the comprehensive replacement of existing elementary school
+
+PuPR2</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.602Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-013994 BP</td>
+                <td>3210 ROGGE LN</td>
+                <td class="value">N/A</td>
+                <td>40 x 40 playground shade structure as part of comprehensive replacement of existing elementary school</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.586Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-138181 EP</td>
+                <td>2507 INWOOD PL</td>
+                <td class="value">N/A</td>
+                <td>New construction of a new 2-Story Single Family Res. [5 bed 5.5bath]  with pergola front &amp; rear patio Attached Garage.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.566Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149756 EP</td>
+                <td>6606 ARGENTIA RD</td>
+                <td class="value">N/A</td>
+                <td>We will be changing the service so we can have a main breaker panel. Customer lives in the house we will be doing a same day disconnect and reconnect.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.548Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149884 EP</td>
+                <td>9120 BURNET RD UNIT 130</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.529Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-110106 MP</td>
+                <td>6308 PONCHA PASS</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.510Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150555 EP</td>
+                <td>4701 CANYONWOOD DR</td>
+                <td class="value">N/A</td>
+                <td>My customer wants to upgrade the electrical service to 200 amps with a main breaker panel. I will use copper 2/0 conductors THHN. The existing service is underground.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T19:52:32.490Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149884 BP</td>
+                <td>9120 BURNET RD UNIT 130</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.150Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-21630</td>
+                <td>9560 E PECOS RD</td>
+                <td class="value">0</td>
+                <td>An At-risk grading permit can be requested to start grading work prior to construction permit issuance and approval from the Civil division.  However, NO work besides grading can be done with an at-risk grading permit.  No structures, piping, trenching, etc. may be constructed under the AR permit.  Additionally, no utilities can be installed with an at-risk grading permit.
+
+ADEQ NOI and Maricopa County Dust Control permit, and the contractor verification form are required.   
+ 
+This project is an approximate 50.5-arcre development consisting of 1 industrial building with associated truck and vehicular parking.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.134Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-11133</td>
+                <td>5000 E MCDOWELL RD</td>
+                <td class="value">4073640</td>
+                <td>Tenant improvement in existing 158,529 SF, type II-B construction, F1, B and S1 occupancy warehouse to add 4,000 Sf, group B occupancy office mezzanine. Mezzanine to have Open office space, room for conferences and office, (2) stair access with (1) access to mezzanine hard lid that house new mechanical units, and electrical scope for lighting and power. No additional plumbing fixture required. Special inspection req. - steel, concrete, Deep foundations. Deferred submittal - steel joist. Deferred fire sprinklers and fire alarms. Results in CoO.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.117Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-18575</td>
+                <td>5000 E MCDOWELL RD</td>
+                <td class="value">0</td>
+                <td>DESIGN FOR A NEW FALCON2 MEDIUM VOLTAGE SWITCHGEAR FOR THE NEW SRP
+TRANSFORMER. THE NEW SWITCHGEAR WILL PROVIDE THE POWER FEED FOR THE NEW ACA PHASE 2 AND
+PHASE 3 ADDITION.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.100Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-15563</td>
+                <td>810 W MAIN ST</td>
+                <td class="value">30511</td>
+                <td>Remove and replace approx. 20 linear feet of exterior CMU wall from vehicle impact damage. New wall to match existing materials, finish and construction. Special inspection req. masonry (reinforcement, grout and epoxy rebar). REF: COB25-00171. Approved with comments. Results in CoC.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.081Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT24-03188</td>
+                <td>3223 S CRISMON RD 145</td>
+                <td class="value">6747832.41</td>
+                <td>T.I. / office spec suite and warehouse cooling only. No C of O, only C of C. No tenant this permit. Future tenant to submit new permit for C of O. New office, restrooms, breakroom, new roof top units and associated mechanical, electrical and plumbing. Deferred fire sprinklers and fire alarms. Occupancy classifications B, S-1, construction type VB. EXPEDITE-</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.065Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-18450</td>
+                <td>2862 N 58TH CIR 101</td>
+                <td class="value">3874327.04</td>
+                <td>Tenant improvement at existing 17,952 SF, type VB construction, B occupancy suite for physical training. Modifications include new interior walls to create a Physical Therapy room and janitors closet. Warehouse area will include batting cage area and various athletic training areas. Existing spec office includes (4) ADA restroom, office areas and exits with no change. Modifications include new ductwork to serve new room with existing RTUs, and electrical circuit revisions at existing panels. REF: PMT25-20612 Code Mod for plumbing fixture. Approved with comments. Deferred fire sprinklers and fire alarm. Results in CoO.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.046Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-11726</td>
+                <td>6306 S MOUNTAIN RD</td>
+                <td class="value">22899072.73</td>
+                <td>Development of new 175,852 SF, type VB construction, group M and S-1 with A, B and F-1 accessory occupancy, single story Walmart Supercenter with a 992 SF Pharmacy Drive-thru canopy. Special inspection req. - steel, concrete, masonry, soils, fabricated items. Type 1 Hood to use manufacture pre-built ductwork. Water meter captured in civil permit. Hood AFES is included in this permit. Deferred fire sprinklers diesel drive fire pump, High-Piled Combustible Storage, fire alarm and HMIS.  Fuel Center by separate permit. Special inspection required for structural items and Emergency Responder Radio Coverage IFC 510. REF: PMT25-11308 Civil Site improvements. Results in CoO.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.029Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-21864</td>
+                <td>4140 S SIGNAL BUTTE RD</td>
+                <td class="value">0</td>
+                <td>AT-RISK GRADING PERMIT TO BEGIN SITE GRADING PRIOR TO BUILDING PERMIT APPROVAL.  THIS PERMIT IS FOR GRADING ONLY AND DOES NOT INCLUDE ANY UTILITY OR OTHER WORK.  REFERENCE PERMIT PMT25-15683</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:48.012Z</td>
+                <td><span class="pill">Mesa AZ – Commercial Building Permits (JSON)</span></td>
+                <td>PMT25-06387</td>
+                <td>1920 W BROADWAY RD</td>
+                <td class="value">25000</td>
+                <td>Interior demolition of the existing AZ International Marketplace located at the NEC of Dobson and Broadway Rd. Interior walls to be removed and demolished are non-load bearing wall. All work to be performed per the 2018 IBC, section 3303.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.495Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152508 EP</td>
+                <td>303 PLEASANT DR</td>
+                <td class="value">N/A</td>
+                <td>Upgrading service due to remodel ETJ SFR</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.477Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-136928 EP</td>
+                <td>3008 DAVIS LN UNIT 220</td>
+                <td class="value">N/A</td>
+                <td>Liquor Depot</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.461Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-148510 EP</td>
+                <td>830 HARRIS AVE</td>
+                <td class="value">N/A</td>
+                <td>Request to Disconnect  200 amp overhead service upgrade  whole house surge protection additional grounding  inter-system ground</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.444Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150848 EP</td>
+                <td>1900 TERISU CV</td>
+                <td class="value">N/A</td>
+                <td>Home electrical service upgrade only.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.426Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-115668 MP</td>
+                <td>12221 N MOPAC EXPY SVRD NB</td>
+                <td class="value">N/A</td>
+                <td>Interior Renovation of an Existing Ct Room 840 Sf - For New Ct Equipment Finishes Millwork And Lighting</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.410Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-148949 BP</td>
+                <td>1178 GRAHAM ST</td>
+                <td class="value">N/A</td>
+                <td>express - replace front door same size convert tub to a walk-in shower replace HVAC system replace water heater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.392Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150010 BP</td>
+                <td>4103 W SLAUGHTER LN</td>
+                <td class="value">N/A</td>
+                <td>New installation of light poles for existing public education</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.375Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-020731 EP</td>
+                <td>10202 EPSILON WAY</td>
+                <td class="value">N/A</td>
+                <td>4642  (Berkley) G - Right - New Condo - With 5 or 6 bedroom option 5.5 bathrooms Covered Patio and Covered Porch with a 3rd car attached Garage. Building Height: 27 - 8 29/128. Maximum Height: 30. Required FFE: 1052.09 - above MSL. Site Plan#: SP-2020-167086 Site Plan# Pending: SP-2020-0388C. Expiration Date: N/A</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.360Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149885 EP</td>
+                <td>9120 BURNET RD UNIT 150</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.344Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149883 EP</td>
+                <td>9120 BURNET RD UNIT 110</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.328Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149043 BP</td>
+                <td>2212 SARATOGA DR</td>
+                <td class="value">N/A</td>
+                <td>Total Demo of SFR 1296 sqft circa 1986</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.312Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150549 PP</td>
+                <td>7921 ADELAIDE DR</td>
+                <td class="value">N/A</td>
+                <td>REPLACING GAS TANK-STYLE WATER HEATER TO TANKLESS GAS WATER HEATER</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.296Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-142687 EP</td>
+                <td>7002 STITZEL WELLER DR</td>
+                <td class="value">N/A</td>
+                <td>New construction single-family residential 1-story 3 bedroom 2 bath with attached 2-car garage covered front porch and covered rear patio.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.280Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151529 EP</td>
+                <td>12110 CANTABRIA RD</td>
+                <td class="value">N/A</td>
+                <td>1360BL NEW 1 STORY 3 BEDROOM 2 BATH SINGLE FAMILY RESIDENTIAL HOME WITH ATTACHED GARAGE COVERED FRONT PORCH AND REAR PATIO</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.262Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152068 MP</td>
+                <td>11301 LAKELINE BLVD BLDG 8 UNIT 114</td>
+                <td class="value">N/A</td>
+                <td>We are going to installed a vent hood
+
+ref 2025-063147 MP</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.245Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-123038 PP</td>
+                <td>1312 BRUTON SPRINGS RD</td>
+                <td class="value">N/A</td>
+                <td>Addition - A new 1996 sf addition to an existing 2180 sf home. Project will include a 660sf covered terrace and a hot tub spa.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.228Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149884 PP</td>
+                <td>9120 BURNET RD UNIT 130</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.212Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-081149 EP</td>
+                <td>5775 AIRPORT BLVD</td>
+                <td class="value">N/A</td>
+                <td>Wall sign for Mr. King Business</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.195Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-013992 BP</td>
+                <td>3210 ROGGE LN</td>
+                <td class="value">N/A</td>
+                <td>Dumpster enclosure as part of comprehensive replacement of existing elementary school
+
+PuPR2</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.177Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-138076 PP</td>
+                <td>4107 JEFFERSON ST</td>
+                <td class="value">N/A</td>
+                <td>New in-ground pool/spa with required enclosure (heater or autofill) removing portion of concrete flatwork/driveway</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.159Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-135703 EP</td>
+                <td>2806 SAN PEDRO ST</td>
+                <td class="value">N/A</td>
+                <td>TEMPORARY BUILDING PERMIT ¿ Scope Of Work Is Limited To Construct a Slab on grade foundation and the rough plumbing and electrical. The building footprint is 4060.4 SF.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.142Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-105612 BP</td>
+                <td>610 CRIMSON VINEYARD DR</td>
+                <td class="value">N/A</td>
+                <td>New Construction of Amenity Center.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.127Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-148508 EP</td>
+                <td>1709 EVA ST</td>
+                <td class="value">N/A</td>
+                <td>upgrading an overhead service from a 125amp to a 200 amp service</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.111Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2024-103353 PP</td>
+                <td>3701 HAMPTON RD</td>
+                <td class="value">N/A</td>
+                <td>New Pool</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.094Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-144231 BP</td>
+                <td>9107 CEDAR CREST DR</td>
+                <td class="value">N/A</td>
+                <td>Partial demo of the structure exterior wall to install new windows and interior remodel throughout the interior structure. Interior walls removed per structural drawings. Slight relocation of electrical and some plumbing.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.078Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151596 BP</td>
+                <td>701 CONGRESS AVE</td>
+                <td class="value">N/A</td>
+                <td>Roof replacement - TPO</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.063Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-120865 EP</td>
+                <td>4507 HANK AVE</td>
+                <td class="value">N/A</td>
+                <td>New construction 2-Unit use single-family residential 1-story 3 bedroom 2 bath with attached 1-car carport and covered front porch.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.046Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151820 MP</td>
+                <td>4807 SUMMERSET TRL</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work Jim Hoadley - replacing like for like 3T Duel Fuel system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.026Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-064222 PP</td>
+                <td>12733 TESLA RD</td>
+                <td class="value">N/A</td>
+                <td>10 gas line cut in 10 valves in BIW main building</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:38.009Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150147 EP</td>
+                <td>6915 GENTLE OAK DR</td>
+                <td class="value">N/A</td>
+                <td>(Sternad Jason) - INSTALLATION OF CIRCUIT FOR ELEC. VEHICLE CHARGING STATION - ESIP</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.992Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150742 EP</td>
+                <td>11223 WINDERMERE MEADOWS</td>
+                <td class="value">N/A</td>
+                <td>Emergency 
+Replacing damaged material 11/24/25</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.977Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150358 EP</td>
+                <td>3802 AVENUE F</td>
+                <td class="value">N/A</td>
+                <td>Request to disconnect and the following:
+
+1)-Permitting and associated fees 
+
+2)- Contractor disconnect fees 
+
+3)-200 Amp ATS installation
+
+4)- Generator electrical hook up( 70ft  from main service 
+
+5)-whole house surge protection per NEC
+
+6)- additional grounding per NEC</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.958Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149220 PP</td>
+                <td>5000 ARAX CV</td>
+                <td class="value">N/A</td>
+                <td>Install new gas line for generator</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.942Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-082970 PP</td>
+                <td>6406 N IH 35 SVRD SB UNIT 1220</td>
+                <td class="value">N/A</td>
+                <td>Change of Use to ice cream shop  with interior renovation of a partial floor of existing building for new tenant somisomi desert cafe. the work includes limited demolition new non-structural partitions ceilings finishes millwork and furniture/equipment as and associated mep improvements.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.926Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-153188 BP</td>
+                <td>12921 STAYWELL WAY</td>
+                <td class="value">N/A</td>
+                <td>2708BL NEW 2 STORY 5 BEDROOM 3 1/2 BATH SINGLE FAMILY RESIDENTIAL HOME WITH ATTACHED GARAGE COVERED FRONT PORCH AND REAR PATIO</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.910Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152219 MP</td>
+                <td>13425 SEA BISCUIT DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.894Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-137108 PP</td>
+                <td>12733 TESLA RD</td>
+                <td class="value">N/A</td>
+                <td>700 of 1 1/2 gas pipe. CASTING V-X2.8 - 4.8 LV1</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.877Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150939 EP</td>
+                <td>8113 WILDER RD UNIT 203</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-141699 BP. Austin Full purpose</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.860Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150644 MP</td>
+                <td>1405 RIDGEHAVEN DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work 1 system: 14 Seer gas furnace</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.844Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150176 MP</td>
+                <td>7508 MIFFLIN KENEDY TER</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.828Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-119711 MP</td>
+                <td>4415 GILLIS ST BLDG 3</td>
+                <td class="value">N/A</td>
+                <td>Bldg 3: New construction of a 3-Story Single Family Res. [4 bed 4 bath] with Attached 1-car Carport and Pool. Part of 3-unit use.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.813Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150683 EP</td>
+                <td>9400 OXBOW STRAP DR</td>
+                <td class="value">N/A</td>
+                <td>temporary tpole for new construction for Wildhorse</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.796Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151800 PP</td>
+                <td>201 COLORADO ST</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater Replace 40 gal natural gas water heater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.781Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150115 MP</td>
+                <td>7403 EASTCREST DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work LLOYD JOLLY</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.765Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151436 EP</td>
+                <td>2324 S LAMAR BLVD</td>
+                <td class="value">N/A</td>
+                <td>Install one wall sign for SKIN PARLOR</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.749Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-104956 MP</td>
+                <td>9312 KNOLL CREST LOOP</td>
+                <td class="value">N/A</td>
+                <td>Express - Fire damage repair. Please reference AFD report/architectural sheets/ engineering sheets/ pictures of affected areas that detail the repair. MEP requested for repairs.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.732Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147474 PP</td>
+                <td>12012 RAVENNA CV</td>
+                <td class="value">N/A</td>
+                <td>Installing a new irrigation system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.716Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151772 PP</td>
+                <td>10703 WATCHFUL FOX DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater Standard 40 Gal Natural Gas water heater change out 
+
+10703 Watchful Fox Drive
+Austin TX 78748</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.700Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-133657 EP</td>
+                <td>605 E 47TH ST</td>
+                <td class="value">N/A</td>
+                <td>Express- Paint Install Drywall Change Valves</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.685Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-076074 EP</td>
+                <td>6100 GREENTREE LN</td>
+                <td class="value">N/A</td>
+                <td>Addition to rear of existing SFR</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.667Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152300 PP</td>
+                <td>5200 CLOUDCROFT DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater INSTALL OF 40 GAL WATER HEATER</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.652Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152097 MP</td>
+                <td>914 RED CLIFF DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.635Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151993 BP</td>
+                <td>4203 PRICKLY PEAR DR</td>
+                <td class="value">N/A</td>
+                <td>Total demo of SFR 1876 sq ft circa 1966
+
+***The building shall not be demolished until after the contractor has fulfilled the neighbor notification requirements outlined in Steps 5 &amp; 6 of the Demolition webpage.***</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.618Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151065 EP</td>
+                <td>4515 ROUNDUP TRL</td>
+                <td class="value">N/A</td>
+                <td>Upgrading old Federal Pacific panel to a 200A main breaker service</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.601Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-123038 EP</td>
+                <td>1312 BRUTON SPRINGS RD</td>
+                <td class="value">N/A</td>
+                <td>Addition - A new 1996 sf addition to an existing 2180 sf home. Project will include a 660sf covered terrace and a hot tub spa.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.584Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150689 MP</td>
+                <td>8600 ALVERSTONE WAY</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.568Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151171 PP</td>
+                <td>1316 W BRAKER LN</td>
+                <td class="value">N/A</td>
+                <td>Interior finish-out of retail shell.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.551Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-123127 EP</td>
+                <td>1808 SYLVAN DR BLDG 2</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - New construction of a 3-Story Single Family Res. [4bed 4bath] with Attached Carport. Bldg 2</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.535Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150688 EP</td>
+                <td>9404 OXBOW STRAP DR</td>
+                <td class="value">N/A</td>
+                <td>temporary tpole for new construction for Wildhorse</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.520Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147800 PP</td>
+                <td>3203 CLAWSON RD</td>
+                <td class="value">N/A</td>
+                <td>Addition attached to existing home consisting of 2 beds 1 baths demo existing detached garage demo of existing patio</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.503Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-141697 EP</td>
+                <td>8113 WILDER RD UNIT 103</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - SITE PLAN APPROVED: PHASE A - Greystar Plan A581 New 2 story attached unit with 3 bedrooms 2.5 bathrooms and a 2 car garage.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.486Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152553 PP</td>
+                <td>2201 AIRPORT BLVD UNIT 120</td>
+                <td class="value">N/A</td>
+                <td>Interior Build-Out of a New Animal Clinic for Small Animals Within an Existing One-Story Shell Building</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.468Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150161 EP</td>
+                <td>9208 THE RAVINE WAY</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-066760 BP. Austin LTD -Bluebonnet</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.450Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150364 MP</td>
+                <td>1809 WINTER PARK RD</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.433Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-134029 EP</td>
+                <td>707 W CRESTLAND DR</td>
+                <td class="value">N/A</td>
+                <td>interior remodel - the exterior siding insulation and interior sheetrock will be renewed/replace. The affected area is limited to one side of the house (the North side) Two new transom windows will be installed to this side. New cabinetry will be installed in the kitchen. No changes will be made to the tile flooring and no plumbing changes. A licensed electrician will rewire the entire house and install a new service panel.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.417Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151470 PP</td>
+                <td>205 SHANT ST</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater BRIDGET OLIVARES</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.400Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151819 EP</td>
+                <td>111 MILDRED ST</td>
+                <td class="value">N/A</td>
+                <td>T Pole
+Ref: 2025-133764-BP</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.384Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-148175 EP</td>
+                <td>7130 CHIMNEY CORNERS</td>
+                <td class="value">N/A</td>
+                <td>Renovation of existing preschool building and 1999 SF addition at rear of property.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.369Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150953 EP</td>
+                <td>2202 LONGVIEW ST</td>
+                <td class="value">N/A</td>
+                <td>Install Level 2 EV Charger</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.354Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-146085 PP</td>
+                <td>2629 W 49TH ST</td>
+                <td class="value">N/A</td>
+                <td>install a full lawn sprinkler system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.337Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150972 EP</td>
+                <td>9216 CALVERT WAY</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-144123 BP. Austin LTD -Bluebonnet</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.322Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-146985 BP</td>
+                <td>2503 S 4TH ST</td>
+                <td class="value">N/A</td>
+                <td>Total Demo of SFR 100 sqft circa 1949</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.306Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151070 PP</td>
+                <td>9101 THE RAVINE WAY</td>
+                <td class="value">N/A</td>
+                <td>Installing a new irrigation system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.291Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-113892 MP</td>
+                <td>401 CONGRESS AVE UNIT 2050</td>
+                <td class="value">N/A</td>
+                <td>Interior remodel - Spec Suites 2050</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.274Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152969 BP</td>
+                <td>3207 MERRIE LYNN AVE UNIT A</td>
+                <td class="value">N/A</td>
+                <td>Express: tub-to-shower conversion light fixture work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.258Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151578 PP</td>
+                <td>7221 MOON ROCK RD</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.243Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150989 PP</td>
+                <td>5710 FAIRLANE DR</td>
+                <td class="value">N/A</td>
+                <td>Installing a new gas line to generator</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.227Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150937 EP</td>
+                <td>8113 WILDER RD UNIT 201</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-141698 BP. Austin Full purpose</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.211Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149885 MP</td>
+                <td>9120 BURNET RD UNIT 150</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.195Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150553 BP</td>
+                <td>7507 VAIL VALLEY DR</td>
+                <td class="value">N/A</td>
+                <td>Express: walk-in shower replacement replace HVAC</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.178Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152686 BP</td>
+                <td>2120 RAVENSCROFT DR</td>
+                <td class="value">N/A</td>
+                <td>Express: Foundation repair</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.162Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151877 EP</td>
+                <td>108 KERRY CT</td>
+                <td class="value">N/A</td>
+                <td>temporary power pole for use during construction of new home.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.146Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151288 EP</td>
+                <td>504 LONE OAK DR</td>
+                <td class="value">N/A</td>
+                <td>T pole
+Ref: 2025-125199-BP</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.129Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-148281 PP</td>
+                <td>1509 RIDGEHAVEN DR</td>
+                <td class="value">N/A</td>
+                <td>Run 15 of 1 black Iron pipe to generator</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.112Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152725 BP</td>
+                <td>301 ANGEL OAK ST</td>
+                <td class="value">N/A</td>
+                <td>EXPRESS: Existing foundation repair as per scope of work attached</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.096Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150738 PP</td>
+                <td>9111 CIRCUIT OF THE AMERICAS BLVD</td>
+                <td class="value">N/A</td>
+                <td>TEMPORARY BUILDING PERMIT scope of permit is limited to foundation and all underground slab utilities for MF-7</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.081Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152093 MP</td>
+                <td>4307 FLAGSTAFF DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work LIKE FOR LIKE: 4 Ton Gas Vertical System</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.065Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-146633 MP</td>
+                <td>901 S MOPAC EXPY SVRD NB BLDG 5 UNIT 300</td>
+                <td class="value">N/A</td>
+                <td>Interior non structural remodel f existing office space B;DG 5 STE 300</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.050Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-063004 MP</td>
+                <td>5107 WOODGREEN CV</td>
+                <td class="value">N/A</td>
+                <td>Retroactive: A portion of the current balcony was converted to a storage closet. Kitchen remodel: remove 2 walls of garage to enlarge kitchen furr-down in living room removed 2nd story bathroom remodeled and paralleled attic space converted into walk in closet. Convert attic and closet space into a new balcony.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.034Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150730 EP</td>
+                <td>13304 UNDERBANK RD</td>
+                <td class="value">N/A</td>
+                <td>Homebuilder Loop Austin 2 Mile ETJ Austin Energy</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.018Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-153200 BP</td>
+                <td>12108 CANTABRIA RD</td>
+                <td class="value">N/A</td>
+                <td>2527BL NEW 2 STORY 5 BEDROOM 3 1/2 BATH SINGLE FAMILY RESIDENTIAL HOME WITH ATTACHED GARAGE COVERED FRONT PORCH AND REAR PATIO</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:37.000Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-026061 EP</td>
+                <td>8800 N IH 35 SVRD SB BLDG 12</td>
+                <td class="value">N/A</td>
+                <td>Proposed rebuild of Fire Damaged Apartments. Units 2090 2091 3090 3091 &amp; 3092</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.984Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150934 EP</td>
+                <td>8113 WILDER RD UNIT 103</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-141697 BP. Austin Full purpose</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.968Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150722 PP</td>
+                <td>8506 DEL CARMEN CV</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater Replacing 40 gal gas water heater like for like</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.952Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147547 BP</td>
+                <td>10407 DEDHAM CT</td>
+                <td class="value">N/A</td>
+                <td>Express- Replace 4 windows like for like</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.935Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150145 EP</td>
+                <td>1313 SPYGLASS DR</td>
+                <td class="value">N/A</td>
+                <td>(Cooper Jon) - INSTALLATION OF CIRCUIT FOR ELEC. VEHICLE CHARGING STATION - ESIP</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.918Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147745 EP</td>
+                <td>1900 E HOWARD LN BLDG A UNIT 1</td>
+                <td class="value">N/A</td>
+                <td>First Time tenant finish out to create a dental office.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.901Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150708 PP</td>
+                <td>1505 ALEGRIA RD</td>
+                <td class="value">N/A</td>
+                <td>install a full lawn sprinkler system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.884Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151792 BP</td>
+                <td>2206 BLUE MEADOW DR</td>
+                <td class="value">N/A</td>
+                <td>Nonstructural renovations to an existing educational building-Buildings B C and D</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.868Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-142383 PP</td>
+                <td>601 W CRESTLAND DR</td>
+                <td class="value">N/A</td>
+                <td>Total Demo of SFR 1450 sqft circa 1955</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.852Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-142258 EP</td>
+                <td>9219 OLD MANOR RD UNIT 100</td>
+                <td class="value">N/A</td>
+                <td>New Construction of a Small Spec Suite in ETJ</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.835Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151577 PP</td>
+                <td>12020 SPRINGS HEAD LOOP</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.818Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-141699 EP</td>
+                <td>8113 WILDER RD UNIT 203</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - SITE PLAN APPROVED: PHASE A - Greystar Plan A581 New 2 story attached unit with 3 bedrooms 2.5 bathrooms and a 2 car garage.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.802Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151319 EP</td>
+                <td>5704 SAM HOUSTON CIR</td>
+                <td class="value">N/A</td>
+                <td>Service Upgrade Service to 300 amp and Car Charger circuit.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.785Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150171 EP</td>
+                <td>3523 STONERIDGE RD</td>
+                <td class="value">N/A</td>
+                <td>Moving existing service to a rack. - AUSTIN LTD</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.769Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149880 PP</td>
+                <td>12002 CAPTAIN BAILYS CT</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater 40-50 Gal
+Standard use tank water heater change out 
+
+12002 Captain Bailys Court
+Austin TX 78753</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.718Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151794 BP</td>
+                <td>2206 BLUE MEADOW DR</td>
+                <td class="value">N/A</td>
+                <td>Nonstructural renovations to an existing educational building-Building D</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.618Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149296 EP</td>
+                <td>2800 W FRESCO DR</td>
+                <td class="value">N/A</td>
+                <td>Temporary power loop</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.601Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147493 PP</td>
+                <td>11917 MURANO DR</td>
+                <td class="value">N/A</td>
+                <td>Installing a new irrigation system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.584Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-145360 EP</td>
+                <td>8119 TWO COVES DR</td>
+                <td class="value">N/A</td>
+                <td>22.695 kW roof mounted solar + 2 Powerwall 3 Batteries + Cybertruck Powershare Integration</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.568Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150157 EP</td>
+                <td>4705 WESTSLOPE CIR</td>
+                <td class="value">N/A</td>
+                <td>I would like to install a 19 kW solar system with 2 Tesla inverters grid-tie only no battery backup using a line side tap</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.552Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-132789 BP</td>
+                <td>1700 INVERNESS BLVD</td>
+                <td class="value">N/A</td>
+                <td>New 1-story detached garage with mini split (MP) and electric (EP)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.536Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151208 EP</td>
+                <td>2604 DERWENT DR</td>
+                <td class="value">N/A</td>
+                <td>Homebuilder Loop Austin 2 Mile ETJ Austin Energy</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.520Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-116206 PP</td>
+                <td>211 WALTER SEAHOLM DR UNIT LR115</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Remodel of restaurant space (67302 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.504Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149396 BP</td>
+                <td>5505 W PARMER LN</td>
+                <td class="value">N/A</td>
+                <td>Adding 45 New Dual Chargers and Associated Electrical Gear to an Existing Parking Garage Restriping of Existing ADA EV Parking Rails -Garage 2
+
+2025 086818 000 DA - Concurrent Reviews</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.488Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150160 EP</td>
+                <td>9513 BOATHOUSE DR</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-058240 BP. Austin LTD -Bluebonnet</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.472Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151582 MP</td>
+                <td>3920 MYRICK DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work Garage attic.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.454Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-114267 MP</td>
+                <td>2802 BRIDLE PATH</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - New construction of a 1-Story Single Family Res. [1bed 1bath] with Attached Carport</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.437Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149311 BP</td>
+                <td>5501 W PARMER LN BLDG G-1</td>
+                <td class="value">N/A</td>
+                <td>Adding 30 New Dual Chargers and Associated Electrical Gear to an Existing Parking Garage Restriping of Existing ADA EV Parking Rails -Garage 1</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.419Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-123126 EP</td>
+                <td>1808 SYLVAN DR BLDG 1</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - New construction of a 3-Story Single Family Res. [4bed 4bath] with Attached Carport. Bldg 1</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.403Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149884 MP</td>
+                <td>9120 BURNET RD UNIT 130</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.386Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-002568 EP</td>
+                <td>6404 WILBUR DR</td>
+                <td class="value">N/A</td>
+                <td>New Inground Pool and Spa</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.369Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-078943 EP</td>
+                <td>816 W GIBSON ST</td>
+                <td class="value">N/A</td>
+                <td>Addition/remodel. Addition of an office bathroom covered porch and attached garage to rear of existing noncomplying 1-story single family residence.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.353Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2024-106231 PP</td>
+                <td>8507 WALHILL CV</td>
+                <td class="value">N/A</td>
+                <td>Expedited Review - New construction of an 2-Story Single-Family Res. [5bed 4bath] with attached Garage.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.337Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147489 PP</td>
+                <td>12024 RAVENNA CV</td>
+                <td class="value">N/A</td>
+                <td>Installing a new irrigation system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.321Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-147394 PP</td>
+                <td>1600 SANCHEZ ST</td>
+                <td class="value">N/A</td>
+                <td>Replace hot and cold water lines for bathroom kitchen and laundry. Cut 1 14x14 holes in 2 different walls. The rest will be ran through the attic. Under 100ft total.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.304Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-144865 EP</td>
+                <td>1705 KIT CIR</td>
+                <td class="value">N/A</td>
+                <td>New Single Family Residence</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.288Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152278 MP</td>
+                <td>2005 POMPTON DR</td>
+                <td class="value">N/A</td>
+                <td>interior remodel and carport enclosure - adding 2 bedrooms and a bathroom new finishes. all changes happening within existing footprint. carport enclosure</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.273Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151214 PP</td>
+                <td>11408 MONET DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of an existing water heater Navien 240a2 tankless water heater change out 
+
+11408 Monet Drive
+Austin TX 78726</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.256Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151370 PP</td>
+                <td>16521 SMITHERS RD</td>
+                <td class="value">N/A</td>
+                <td>New Construction Plumbing 2905 sq. ft. ETJ</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.240Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2019-212964 PP</td>
+                <td>1300 MC KIE DR BLDG 5</td>
+                <td class="value">N/A</td>
+                <td>Building 5 Unit 52 and Unit 51.  New condominium residential duplex 2 stories 5 bedroom 5 bathroom attached 2 car garages covered porch and patio.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.224Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150772 EP</td>
+                <td>6300 E US 290 HWY SVRD WB</td>
+                <td class="value">N/A</td>
+                <td>LOCATION 4) Remove &amp; discard existing channel letters.  Install new set of internally illuminated LED channel letters on raceway to read ¿extended STAY AMERICA select suites¿ on front elevation = 4 x 14.73 = 58.92 SF.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.207Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-142741 MP</td>
+                <td>4711 BANDERA RD</td>
+                <td class="value">N/A</td>
+                <td>Interior Remodel - Add HVAC system and ductwork. Frame and repair in the associated areas. Refer to SOW in BP 2025-036829</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.192Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150151 EP</td>
+                <td>3205 THOMPSON ST UNIT 1</td>
+                <td class="value">N/A</td>
+                <td>(Kim John) - INSTALLATION OF CIRCUIT FOR ELEC. VEHICLE CHARGING STATION - ESIP</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.175Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-135865 PP</td>
+                <td>4516 SETON CENTER PKWY UNIT 350</td>
+                <td class="value">N/A</td>
+                <td>Interior alteration of an existing office space. Suite 350.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.158Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150973 EP</td>
+                <td>9012 BINNEWATER WAY</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-144128 BP. Austin LTD -Bluebonnet</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.141Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-124436 MP</td>
+                <td>401 CONGRESS AVE UNIT 1100</td>
+                <td class="value">N/A</td>
+                <td>INTERIOR REMODEL OF EXISTING OFFICE SPACE</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.125Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-119710 MP</td>
+                <td>4415 GILLIS ST BLDG 2</td>
+                <td class="value">N/A</td>
+                <td>Bldg 2: New construction of a 2-Story Single Family Res. [3 bed 3 bath]. Part of 3-unit use.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.110Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-101048 EP</td>
+                <td>7 PASCAL LN</td>
+                <td class="value">N/A</td>
+                <td>New construction in-ground pool and spa.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.093Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-144719 BP</td>
+                <td>701 E PARMER LN BLDG 3</td>
+                <td class="value">N/A</td>
+                <td>MEP modifications within an existing server room.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.076Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-123769 PP</td>
+                <td>12733 TESLA RD</td>
+                <td class="value">N/A</td>
+                <td>Bathroom in BIW Z65 Lv2</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.060Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150930 EP</td>
+                <td>8113 WILDER RD UNIT 101</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-141696 BP. Austin Full purpose</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.045Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151753 PP</td>
+                <td>4521 AVENUE D</td>
+                <td class="value">N/A</td>
+                <td>Cap off water and wastewater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.027Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150202 BP</td>
+                <td>1100 W PARMER LN</td>
+                <td class="value">N/A</td>
+                <td>Install a new 15 year 40 mil PVC Duro-Last single ply roof system over the existing modified.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:36.010Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150734 EP</td>
+                <td>2605 TOWY RD</td>
+                <td class="value">N/A</td>
+                <td>Homebuilder Loop Austin 2 Mile ETJ Austin Energy</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.994Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-139374 PP</td>
+                <td>5700 TRAILRIDGE DR</td>
+                <td class="value">N/A</td>
+                <td>55 tunnel below the foundation to replace entire drain system. 2 access holes - front right</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.978Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-141696 EP</td>
+                <td>8113 WILDER RD UNIT 101</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - SITE PLAN APPROVED: PHASE A - Greystar Plan A581 New 2 story attached unit with 3 bedrooms 2.5 bathrooms and a 2 car garage.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.960Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151298 MP</td>
+                <td>11725 CHERISSE DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work (2) 3 ton condeser changeouts in back yeard and (2) 60K BTus furnace changeouts in attic</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.945Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151292 MP</td>
+                <td>12325 LOS INDIOS TRL BLDG B UNIT 7</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work 2 ton condenser changeout in back yard and 60K BTUs furnace changeout in closet</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.929Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-143724 PP</td>
+                <td>2524 IONIAN CV</td>
+                <td class="value">N/A</td>
+                <td>express - changing out faucets in master and changing master tub to a freestanding tub as well. chip and move the plumbing at the master tub</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.910Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-011729 MP</td>
+                <td>1000 ELM ST</td>
+                <td class="value">N/A</td>
+                <td>Interior remodel. Remodel existing noncomplying 2-story accessory structure with habitable attic. New siding and replace roof. Remove unpermitted kitchenette. Reconfigure access to habitable attic. Repair exterior staircase.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.893Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-131480 EP</td>
+                <td>1707 NEWTON ST</td>
+                <td class="value">N/A</td>
+                <td>Convert 200A overhead service to secondary riser</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.877Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151793 BP</td>
+                <td>2206 BLUE MEADOW DR</td>
+                <td class="value">N/A</td>
+                <td>Nonstructural renovations to an existing educational building-Building C</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.861Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-140610 BP</td>
+                <td>3500 E PARMER LN UNIT 3120</td>
+                <td class="value">N/A</td>
+                <td>First time tenant finishout to create sweet shop.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.844Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151438 MP</td>
+                <td>5906 RAIN CREEK PKWY</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.828Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152981 BP</td>
+                <td>11700 GAELIC DR</td>
+                <td class="value">N/A</td>
+                <td>EXPRESS: Replace windows 8x Replace water heater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.811Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-120866 EP</td>
+                <td>4507 HANK AVE BLDG 2</td>
+                <td class="value">N/A</td>
+                <td>New construction 2-unit use single-family residential 1-story 1 bedroom 1 bath with covered front porch.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.793Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-148744 BP</td>
+                <td>12429 SCOFIELD FARMS DR</td>
+                <td class="value">N/A</td>
+                <td>We are replacing the shingles and TPO like for like. No structural changes are being made to the building itself.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.777Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-114266 MP</td>
+                <td>1700 MEADOWBROOK DR</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Residential Expedited Review - New construction of a 2-Story Single Family Res. [5bed 6bath] with Attached Garage and Carport</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.760Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-132788 BP</td>
+                <td>1700 INVERNESS BLVD</td>
+                <td class="value">N/A</td>
+                <td>Addition/Garage conversion to exiting 2-story single family residence garage conversion to primary suite kitchen remodel and living room addition  adding 1 bed/1 bath (total 5 bed/ 3.5bath)
+
+Garage conversion into primary suite kitchen remodel and living room addition new construction of a detached garage</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.743Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150981 PP</td>
+                <td>7517 BOYD HAVEN DR</td>
+                <td class="value">N/A</td>
+                <td>Installing a new irrigation system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.727Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152278 BP</td>
+                <td>2005 POMPTON DR</td>
+                <td class="value">N/A</td>
+                <td>interior remodel and carport enclosure - adding 2 bedrooms and a bathroom new finishes. all changes happening within existing footprint. carport enclosure</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.715Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151267 MP</td>
+                <td>708 CARDINAL LN UNIT B</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.703Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150058 MP</td>
+                <td>8113 BOGGY RIDGE DR</td>
+                <td class="value">N/A</td>
+                <td>Express: Tub to shower conversion in master bath replace hvac system replace electrical service panel</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.684Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151791 EP</td>
+                <td>2206 BLUE MEADOW DR</td>
+                <td class="value">N/A</td>
+                <td>Construction of a new 67619 SF two story elementary school (Building A)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.673Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-149883 MP</td>
+                <td>9120 BURNET RD UNIT 110</td>
+                <td class="value">N/A</td>
+                <td>ePlan: Commercial Expedited Review - Interior Remodel to Existing Office/Warehouse. Work to include subdividing Existing Interior into Multiple Suites and New Overhead Doors at Warehouse (29365 SF)</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.662Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152052 MP</td>
+                <td>1001 PLYMOUTH DR</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.647Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151221 EP</td>
+                <td>9624 BREEZE HILL DR</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-146892 BP. Austin LTD -Bluebonnet</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.629Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-132823 EP</td>
+                <td>1306 ROCKCLIFF RD</td>
+                <td class="value">N/A</td>
+                <td>New construction of an in-ground pool as an accessory to a single-family residence. 
+Coping does not count toward total impervious of lot due to setback however it is indicated as part of the total for the application.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.609Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152920 BP</td>
+                <td>1221 E 6TH ST</td>
+                <td class="value">N/A</td>
+                <td>2025 Inn Cahoots Tent</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.590Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152675 BP</td>
+                <td>8920 STAMBOURNE ST</td>
+                <td class="value">N/A</td>
+                <td>Express: Foundation repair</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.571Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150723 EP</td>
+                <td>4808 WOODVIEW AVE</td>
+                <td class="value">N/A</td>
+                <td>T-Pole for construction of a 2-Story Single Family Res.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.552Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-138644 BP</td>
+                <td>803 KINNEY AVE</td>
+                <td class="value">N/A</td>
+                <td>Amnesty CO for non complying sf res circa 1939</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.532Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-130866 PP</td>
+                <td>1011 W 5TH ST UNIT 140</td>
+                <td class="value">N/A</td>
+                <td>Change of Use from Retail Store (Mercantile) to Pilates Studio (Personal Improvement Services). Tenant improvement for a new 2376 s.f pilates studio within an existing building space to include all electrical plumbing and mechanical modifications interior partitions and equipment.
+No exterior site or structural work.</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.514Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150938 EP</td>
+                <td>8113 WILDER RD UNIT 202</td>
+                <td class="value">N/A</td>
+                <td>Homebuilders loop for New SFR ref 2025-134375 BP. Austin Full purpose</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.496Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-151203 PP</td>
+                <td>7507 BOYD HAVEN DR UNIT A</td>
+                <td class="value">N/A</td>
+                <td>Installing a new irrigation system</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.476Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150737 EP</td>
+                <td>12528 BISMARK DR</td>
+                <td class="value">N/A</td>
+                <td>Adding new dedicated circuit for a GFCI and tankless water heater</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.456Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152748 BP</td>
+                <td>7701 VALLEY DALE DR</td>
+                <td class="value">N/A</td>
+                <td>EXPRESS: Tub to shower replacement in the same footprint without moving plumbing</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.436Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-150510 MP</td>
+                <td>1111 PERRY RD</td>
+                <td class="value">N/A</td>
+                <td>Replacement of complete existing central heat and air system with or without duct work LIKE FOR LIKE: 2 Ton Horizontal Gas System</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.417Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-152703 EP</td>
+                <td>501 SACRAMENTO DR</td>
+                <td class="value">N/A</td>
+                <td>Express: D&amp;R kitchen cabinets replace kick plates paint cabinets countertops baseboards and casing replace existing light fixtures and ceiling fans toilet tub vanity mirror flooring appliances paint drywall patches blinds soffit and fascia repairs exterior paint faucets shower valve tubs tile surround new door handles and locks.  
+
+Revision-electrical work</td>
+              </tr>
+              <tr>
+                <td>2025-12-04T15:06:35.397Z</td>
+                <td><span class="pill">Austin TX – Issued Construction Permits (Live API – Fixed)</span></td>
+                <td>2025-128735 EP</td>
+                <td>4301 W WILLIAM CANNON DR BLDG H UNIT 110</td>
+                <td class="value">N/A</td>
+                <td>PROJECT CONSISTS OF INTERIOR TENANT FINISH (RESTAURANT A-2) WITHIN EXISTING BUILDING SHELL SPACE.</td>
+              </tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="card" style="padding:16px">
+        <h3 style="margin:0 0 8px 0">Get full access</h3>
+        <p class="sub">Sign in to browse all leads, filter, and view details.</p>
+        <div style="margin-top:12px">
+          <a class="cta" href="/login">Sign in</a>
+        </div>
+      </aside>
+    </div>
+  </div>
+  <footer>
+    <div class="wrap sub">
+      <span>© 2025 Aurora Leads</span>
+      <span>File: output/dashboard.html · Generated by backend/index.js</span>
+    </div>
+  </footer>
+</body>
+</html>

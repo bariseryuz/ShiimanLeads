@@ -1,0 +1,79 @@
+[
+{
+"name": "Austin TX – Issued Construction Permits (Live API – Fixed)",
+"url": "https://data.austintexas.gov/resource/3syk-w9eu.json?$limit=500&$order=issue_date%20DESC",
+"selector": null,
+"keywords": ["permit","residential","commercial"],
+"includeRegex": ["\\bISSUED\\b","\\bActive\\b"],
+"excludeRegex": ["\\bExpired\\b","\\bDenied\\b"],
+"minLength": 20,
+"jsonFields": ["permit_number","permit_type_desc","description","permit_location","status_current"],
+"dateField": "issue_date",
+"sinceDays": 7,
+"statusField": "status_current",
+"allowedStatus": ["ISSUED","Active"]
+},
+{
+"name": "NYC – DOB Permit Issuance (JSON)",
+"url": "https://data.cityofnewyork.us/resource/ipu4-2q9a.json?$select=job__%20as%20permit_number,%20(house__%20%7C%7C%20%27%20%27%20%7C%7C%20street_name%20%7C%7C%20%27%2C%20%27%20%7C%7C%20borough%20%7C%7C%20%27%20%27%20%7C%7C%20zip_code)%20as%20address,%20permit_type%20as%20description,%20issuance_date,%20permit_status&$where=issuance_date%20IS%20NOT%20NULL&$order=issuance_date%20DESC&$limit=200",
+"selector": null,
+"keywords": ["NB","A1","A2","A3","PL","EW"],
+"includeRegex": ["\\bISSUED\\b|\\bIN PROCESS\\b"],
+"excludeRegex": [],
+"minLength": 20,
+"jsonFields": ["permit_number","address","description","issuance_date","permit_status"],
+"dateField": "issuance_date",
+"sinceDays": 7,
+"statusField": "permit_status",
+"allowedStatus": ["ISSUED"]
+}
+,
+{
+"name": "Balfour Beatty US Offices (HTML + attr JSON)",
+"url": "https://www.balfourbeattyus.com/contact-us.aspx",
+"selector": "location-finder",
+"attribute": ":locations",
+"keywords": [],
+"includeRegex": [],
+"excludeRegex": [],
+"minLength": 20,
+"jsonFields": ["DisplayName","Street","City","State","Zip","Phone","Details"]
+}
+,
+{
+"name": "Ryan Companies – Offices (HTML)",
+"url": "https://www.ryancompanies.com/offices",
+"selector": ".office-card",
+"keywords": [],
+"includeRegex": [],
+"excludeRegex": [],
+"minLength": 20
+}
+
+,
+{
+"name": "Sierra Industrial – Projects 2024 (HTML)",
+"url": "https://www.sierraind.com/our-projects/2024",
+"selector": ".card-project",
+"keywords": [],
+"includeRegex": [],
+"excludeRegex": [],
+"minLength": 5
+}
+,
+{
+"name": "Mesa AZ – Commercial Building Permits (JSON)",
+"url": "https://data.mesaaz.gov/resource/2gkz-7z4f.json?$select=permit_number,property_address%20as%20address,description,type_of_work,use,issued_date%20as%20issuance_date,status,value&$where=issued_date%20IS%20NOT%20NULL%20AND%20use=%27COM%27&$order=issued_date%20DESC&$limit=300",
+"selector": null,
+"keywords": [],
+"includeRegex": ["\\bIssued\\b"],
+"excludeRegex": [],
+"minLength": 20,
+"jsonFields": ["permit_number","address","description","type_of_work","use","issuance_date","status","value"],
+"dateField": "issuance_date",
+"sinceDays": 30,
+"statusField": "status",
+"allowedStatus": ["Issued"]
+}
+]
+
