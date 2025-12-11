@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Sources · Shiiman Leads</title>
+  <link rel="stylesheet" href="/frontend/style.css" />
+  <style>
+    .sources-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+    .sources-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    .sources-title {
+      font-size: 28px;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+    .btn-add-source {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .btn-add-source:hover {
+      transform: translateY(-2px);
+    }
+    .sources-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+    .source-card {
+      background: #0b1220;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+    .source-card:hover {
+      border-color: #6366f1;
+    }
+    .source-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+    .source-name {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e5e7eb;
+      margin: 0;
+    }
+    .source-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .btn-edit, .btn-delete {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-edit {
+      background: #3b82f6;
+      color: white;
+    }
+    .btn-delete {
+      background: #ef4444;
+      color: white;
+    }
+    .btn-edit:hover, .btn-delete:hover {
+      opacity: 0.8;
+    }
+    .source-url {
+      color: #94a3b8;
+      font-size: 14px;
+      word-break: break-all;
+      margin-bottom: 12px;
+    }
+    .source-details {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+    .source-detail-item {
+      display: flex;
+      gap: 8px;
+    }
+    .source-detail-label {
+      font-weight: 600;
+      color: #94a3b8;
+      min-width: 80px;
+    }
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.8);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal.active {
+      display: flex;
+    }
+    .modal-content {
+      background: #0b1220;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-header {
+      font-size: 24px;
+      font-weight: 600;
+      color: #e5e7eb;
+      margin-bottom: 24px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-label {
+      display: block;
+      color: #cbd5e1;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .form-input, .form-textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: #020617;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      color: #e5e7eb;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    .form-input:focus, .form-textarea:focus {
+      outline: none;
+      border-color: #6366f1;
+    }
+    .form-textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+    .form-help {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+    .form-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .form-checkbox input {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+    .btn-submit, .btn-cancel {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    .btn-submit {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      color: white;
+    }
+    .btn-cancel {
+      background: #1f2937;
+      color: #cbd5e1;
+    }
+    .btn-submit:hover, .btn-cancel:hover {
+      opacity: 0.8;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 64px 24px;
+      color: #94a3b8;
+    }
+    .empty-state-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+    .empty-state-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 8px;
+    }
+    .empty-state-text {
+      margin-bottom: 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="nav-logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="url(#gradient1)"></rect>
+          <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <defs>
+            <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0%" stop-color="#6366f1"></stop>
+              <stop offset="100%" stop-color="#8b5cf6"></stop>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">Shiiman Leads</span>
+      </div>
+      <div class="nav-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/my-sources" style="color: #6366f1;">My Sources</a>
+        <button class="btn-contact">Need Help</button>
+        <div class="user-profile">
+          <span class="user-icon">👁️</span>
+          <span id="userName">Loading...</span>
+        </div>
+        <form action="/logout" method="POST" style="display: inline;">
+          <button type="submit" class="btn-logout">Sign Out</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+
+  <div class="sources-container">
+    <div class="sources-header">
+      <h1 class="sources-title">My Data Sources</h1>
+      <button class="btn-add-source" onclick="openAddModal()">+ Add Source</button>
+    </div>
+
+    <div id="sourcesGrid" class="sources-grid">
+      <!-- Sources will be loaded here -->
+    </div>
+
+    <div id="emptyState" class="empty-state" style="display: none;">
+      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-title">No sources configured yet</div>
+      <div class="empty-state-text">Add your first data source to start collecting leads automatically</div>
+      <button class="btn-add-source" onclick="openAddModal()">+ Add Your First Source</button>
+    </div>
+  </div>
+
+  <!-- Add/Edit Source Modal -->
+  <div id="sourceModal" class="modal">
+    <div class="modal-content">
+      <h2 class="modal-header" id="modalTitle">Add New Source</h2>
+      <form id="sourceForm" onsubmit="handleSubmit(event)">
+        <input type="hidden" id="sourceId" value="">
+        
+        <div class="form-group">
+          <label class="form-label" for="sourceName">Source Name *</label>
+          <input type="text" id="sourceName" class="form-input" required placeholder="e.g., Ryan Companies Projects">
+          <div class="form-help">A friendly name to identify this data source</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sourceUrl">Website URL *</label>
+          <input type="url" id="sourceUrl" class="form-input" required placeholder="https://example.com/projects">
+          <div class="form-help">Full URL to the page containing leads</div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="sourceKeywords">Keywords (Optional)</label>
+          <input type="text" id="sourceKeywords" class="form-input" placeholder="construction, commercial, industrial">
+          <div class="form-help">Comma-separated keywords to filter relevant data</div>
+        </div>
+
+        <!-- Advanced Settings (Collapsible) -->
+        <details style="margin-bottom: 20px;">
+          <summary style="cursor: pointer; color: #6366f1; font-weight: 600; margin-bottom: 16px;">⚙️ Advanced Settings (Optional)</summary>
+          
+        <!-- Advanced Settings (Collapsible) -->
+        <details style="margin-bottom: 20px;">
+          <summary style="cursor: pointer; color: #6366f1; font-weight: 600; margin-bottom: 16px;">⚙️ Advanced Settings (Optional)</summary>
+          
+          <div class="form-group">
+            <label class="form-label" for="sourceSelector">CSS Selector</label>
+            <input type="text" id="sourceSelector" class="form-input" placeholder="Leave empty to scan entire page with AI">
+            <div class="form-help">Target specific elements (e.g., .project-card). Leave empty for full-page AI extraction.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="sourceMinLength">Minimum Text Length</label>
+            <input type="number" id="sourceMinLength" class="form-input" placeholder="20" min="0">
+            <div class="form-help">Minimum character length for valid leads (default: 20)</div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-checkbox">
+              <input type="checkbox" id="sourcePuppeteer">
+              <label class="form-label" for="sourcePuppeteer" style="margin: 0;">🌐 Website Loads Slowly (Use Browser)</label>
+            </div>
+            <div class="form-help">Enable for JavaScript-heavy sites that require browser rendering</div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-checkbox">
+              <input type="checkbox" id="sourceAI" checked>
+              <label class="form-label" for="sourceAI" style="margin: 0;">✨ Use AI Extraction (Gemini)</label>
+            </div>
+            <div class="form-help">Automatically enabled when no CSS selector provided. Extracts phone, address, value, and more!</div>
+          </div>
+        </details>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
+          <button type="submit" class="btn-submit">💾 Save Source</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let sources = [];
+    let editingId = null;
+
+    // Fetch user info
+    async function fetchUserInfo() {
+      try {
+        const res = await fetch('/api/user');
+        if (res.ok) {
+          const user = await res.json();
+          document.getElementById('userName').textContent = user.username || 'User';
+        } else {
+          window.location.href = '/login';
+        }
+      } catch (e) {
+        console.error('Failed to fetch user info:', e);
+      }
+    }
+
+    // Load sources
+    async function loadSources() {
+      try {
+        const res = await fetch('/api/sources/mine');
+        if (!res.ok) throw new Error('Failed to load sources');
+        const result = await res.json();
+        sources = result.data || [];
+        renderSources();
+      } catch (e) {
+        console.error('Error loading sources:', e);
+        alert('Failed to load sources');
+      }
+    }
+
+    // Render sources
+    function renderSources() {
+      const grid = document.getElementById('sourcesGrid');
+      const emptyState = document.getElementById('emptyState');
+      
+      if (sources.length === 0) {
+        grid.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+      }
+
+      grid.style.display = 'grid';
+      emptyState.style.display = 'none';
+      
+      grid.innerHTML = sources.map(source => {
+        const data = source.data;
+        return `
+          <div class="source-card">
+            <div class="source-card-header">
+              <h3 class="source-name">${escapeHtml(data.name)}</h3>
+              <div class="source-actions">
+                <button class="btn-edit" onclick="editSource(${source.id})">Edit</button>
+                <button class="btn-delete" onclick="deleteSource(${source.id})">Delete</button>
+              </div>
+            </div>
+            <div class="source-url">${escapeHtml(data.url)}</div>
+            <div class="source-details">
+              ${data.selector ? `<div class="source-detail-item"><span class="source-detail-label">Selector:</span><span>${escapeHtml(data.selector)}</span></div>` : ''}
+              ${data.keywords && data.keywords.length ? `<div class="source-detail-item"><span class="source-detail-label">Keywords:</span><span>${data.keywords.join(', ')}</span></div>` : ''}
+              ${data.usePuppeteer ? `<div class="source-detail-item"><span class="source-detail-label">Mode:</span><span>🚀 Dynamic (Puppeteer)</span></div>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Open add modal
+    function openAddModal() {
+      editingId = null;
+      document.getElementById('modalTitle').textContent = 'Add New Source';
+      document.getElementById('sourceForm').reset();
+      document.getElementById('sourceId').value = '';
+      document.getElementById('sourceModal').classList.add('active');
+    }
+
+    // Edit source
+    function editSource(id) {
+      const source = sources.find(s => s.id === id);
+      if (!source) return;
+      
+      editingId = id;
+      const data = source.data;
+      
+      document.getElementById('modalTitle').textContent = 'Edit Source';
+      document.getElementById('sourceId').value = id;
+      document.getElementById('sourceName').value = data.name || '';
+      document.getElementById('sourceUrl').value = data.url || '';
+      document.getElementById('sourceSelector').value = data.selector || '';
+      document.getElementById('sourceKeywords').value = (data.keywords || []).join(', ');
+      document.getElementById('sourceMinLength').value = data.minLength || '';
+      document.getElementById('sourcePuppeteer').checked = data.usePuppeteer || false;
+      document.getElementById('sourceAI').checked = data.useAI || false;
+      
+      document.getElementById('sourceModal').classList.add('active');
+    }
+
+    // Close modal
+    function closeModal() {
+      document.getElementById('sourceModal').classList.remove('active');
+      editingId = null;
+    }
+
+    // Handle form submit
+    async function handleSubmit(e) {
+      e.preventDefault();
+      
+      const sourceData = {
+        name: document.getElementById('sourceName').value.trim(),
+        url: document.getElementById('sourceUrl').value.trim(),
+        selector: document.getElementById('sourceSelector').value.trim() || undefined,
+        keywords: document.getElementById('sourceKeywords').value
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0),
+        minLength: parseInt(document.getElementById('sourceMinLength').value) || undefined,
+        usePuppeteer: document.getElementById('sourcePuppeteer').checked || undefined,
+        useAI: document.getElementById('sourceAI').checked || undefined
+      };
+
+      try {
+        const isEdit = editingId !== null;
+        const url = isEdit ? `/api/sources/${editingId}` : '/api/sources/add';
+        const method = isEdit ? 'PUT' : 'POST';
+        
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sourceData)
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || 'Failed to save source');
+        }
+
+        closeModal();
+        await loadSources();
+        alert(isEdit ? 'Source updated successfully!' : 'Source added successfully!');
+      } catch (e) {
+        console.error('Error saving source:', e);
+        alert(e.message || 'Failed to save source');
+      }
+    }
+
+    // Delete source
+    async function deleteSource(id) {
+      if (!confirm('Are you sure you want to delete this source?')) return;
+      
+      try {
+        const res = await fetch(`/api/sources/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Failed to delete source');
+        
+        await loadSources();
+        alert('Source deleted successfully!');
+      } catch (e) {
+        console.error('Error deleting source:', e);
+        alert('Failed to delete source');
+      }
+    }
+
+    // Utility: Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('sourceModal').addEventListener('click', (e) => {
+      if (e.target.id === 'sourceModal') closeModal();
+    });
+
+    // Initialize
+    fetchUserInfo();
+    loadSources();
+  </script>
+
+</body>
+</html>

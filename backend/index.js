@@ -8,10 +8,20 @@ const sqlite3 = require('sqlite3').verbose();
 const winston = require('winston');
 const puppeteer = require('puppeteer');
 const express = require('express');
-const expressLayouts = require('express-ejs-layouts');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// Initialize Google Gemini client
+let geminiModel = null;
+if (process.env.GEMINI_API_KEY) {
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+  console.log('✅ Google Gemini AI initialized for lead extraction');
+} else {
+  console.warn('⚠️ GEMINI_API_KEY not found in .env - AI extraction disabled');
+}
 
 // === LOGGING ===
 const logger = winston.createLogger({
@@ -49,6 +59,8 @@ function buildTextForFilter(item, source) {
   return normalizeText(item);
 }
 
+//To decide if text passes the source filters
+
 function textPassesFilters(text, source) {
   const t = (text || '').toString();
   const minLength = Number.isFinite(source?.minLength) ? source.minLength : 20;
@@ -79,6 +91,59 @@ function textPassesFilters(text, source) {
     if (bad) return false;
   }
   return true;
+}
+
+// === AI EXTRACTION WITH GOOGLE GEMINI ===
+async function extractLeadWithAI(htmlText, sourceName) {
+  if (!geminiModel) {
+    logger.warn('Google Gemini not configured, skipping AI extraction');
+    return null;
+  }
+
+  try {
+    // Limit text to avoid token limits (6000 chars)
+    const truncatedText = htmlText.substring(0, 6000);
+    
+    const prompt = `Extract construction/building project lead information from the following text and return ONLY a valid JSON object with these exact fields:
+
+- permit_number: Building permit number or project ID (string or null)
+- address: Full street address of the construction/project site (string or null)
+- phone: Phone number for contact (format: XXX-XXX-XXXX, do NOT put phone numbers in the value field)
+- email: Email address for contact (string or null)
+- company_name: Company or organization name (string or null)
+- value: Project budget/cost/value as a dollar amount like "$1,500,000" (NOT phone numbers, only dollar amounts)
+- description: Brief description of the project type, purpose, or scope (string or null)
+- page_url: Any specific project URL found in the text (string or null)
+
+IMPORTANT:
+- "value" field should contain ONLY project budget/cost/estimated value (like "$500,000"), never phone numbers
+- "phone" field should contain phone numbers (like "602-322-6100")
+- "description" should explain what the project is about (office building, renovation, etc.)
+- Use null for any missing fields
+- Return ONLY the JSON object, no explanations or markdown formatting
+
+Text to extract from:
+${truncatedText}`;
+
+    const result = await geminiModel.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    // Clean up response (remove markdown if present)
+    let cleanedText = text.trim();
+    if (cleanedText.startsWith('```json')) {
+      cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    } else if (cleanedText.startsWith('```')) {
+      cleanedText = cleanedText.replace(/```\n?/g, '');
+    }
+    
+    const extracted = JSON.parse(cleanedText);
+    logger.info(`✨ AI extracted lead from ${sourceName}`);
+    return extracted;
+  } catch (error) {
+    logger.error(`AI extraction failed for ${sourceName}: ${error.message}`);
+    return null;
+  }
 }
 
 // === HTTP with retry ===
@@ -123,117 +188,17 @@ function dbAll(sql, params = []) {
   });
 }
 
-async function writeDashboardHTML(limit = 200) {
-  try {
-    const rows = await dbAll(
-      `SELECT permit_number, address, value, description, source, date_added
-       FROM leads ORDER BY id DESC LIMIT ?`, [limit]
-    );
-    const esc = s => (s == null ? '' : String(s)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;'));
-
-    const html = `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Shiiman Leads · Dashboard</title>
-  <style>
-    :root { --bg:#020617; --fg:#e5e7eb; --muted:#94a3b8; --accent:#22c55e; --card:#0b1220; --border:#1f2937; }
-    *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--fg);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial}
-    header{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-    .brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--fg)}
-    .logo{display:grid;place-items:center;height:32px;width:32px;border-radius:999px;background:rgba(34,197,94,.1);color:#34d399;border:1px solid rgba(34,197,94,.35)}
-    .meta{font-size:12px;color:var(--muted)}
-    .wrap{padding:16px 24px;max-width:1200px;margin:0 auto}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;overflow:hidden}
-    table{width:100%;border-collapse:collapse}
-    thead th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#06101e;position:sticky;top:0;z-index:2}
-    th,td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:top}
-    tbody tr:hover{background:#081224}
-    .pill{display:inline-block;padding:2px 8px;border:1px solid #334155;border-radius:999px;font-size:12px;color:#cbd5e1}
-    .value{color:var(--accent);font-weight:600}
-    .cta{display:inline-block;padding:10px 14px;border-radius:8px;background:#22c55e;color:#041316;text-decoration:none;font-weight:600}
-    footer{padding:16px 24px;color:var(--muted);font-size:12px;border-top:1px solid var(--border)}
-    .sub{display:flex;gap:12px;align-items:center;color:var(--muted)}
-    .grid{display:grid;grid-template-columns:1fr;gap:16px}
-    @media (min-width:1000px){ .grid{grid-template-columns:3fr 1fr} }
-  </style>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
-  </head>
-<body>
-  <header>
-    <a class="brand" href="/">
-      <span class="logo">S</span>
-      <strong>Shiiman Leads</strong>
-    </a>
-    <div class="meta">Last update: ${esc(new Date().toLocaleString())} · Showing latest ${rows.length}</div>
-  </header>
-  <div class="wrap">
-    <div class="grid">
-      <div class="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Source</th>
-              <th>Permit #</th>
-              <th>Address</th>
-              <th>Value</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map(r => `
-              <tr>
-                <td>${esc(r.date_added || '')}</td>
-                <td><span class="pill">${esc(r.source || '')}</span></td>
-                <td>${esc(r.permit_number || 'N/A')}</td>
-                <td>${esc(r.address || '')}</td>
-                <td class="value">${esc(r.value || 'N/A')}</td>
-                <td>${esc(r.description || '')}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-      <aside class="card" style="padding:16px">
-        <h3 style="margin:0 0 8px 0">Get full access</h3>
-        <p class="sub">Sign in to browse all leads, filter, and view details.</p>
-        <div style="margin-top:12px">
-          <a class="cta" href="/login">Sign in</a>
-        </div>
-      </aside>
-    </div>
-  </div>
-  <footer>
-    <div class="wrap sub">
-      <span>© ${new Date().getFullYear()} Shiiman Leads</span>
-      <span>File: output/dashboard.html · Generated by backend/index.js</span>
-    </div>
-  </footer>
-</body>
-</html>`;
-    fs.writeFileSync('output/dashboard.html', html, 'utf-8');
-    logger.info(`Dashboard updated → output/dashboard.html`);
-  } catch (e) {
-    logger.error(`Failed to write dashboard: ${e.message}`);
-  }
-}
-
-async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '' }) {
+async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId }) {
   const hash = CryptoJS.MD5(raw + hashSalt).toString();
-  const row = await dbGet(`SELECT hash FROM seen WHERE hash = ?`, [hash]);
+  const row = await dbGet(`SELECT hash FROM seen WHERE hash = ? AND user_id = ?`, [hash, userId]);
   if (row) return false;
 
-  await dbRun(`INSERT INTO seen (hash) VALUES (?)`, [hash]);
+  await dbRun(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`, [hash, userId]);
   await dbRun(
-    `INSERT INTO leads (hash, raw_text, permit_number, address, value, description, source, date_added)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ,
+    `INSERT INTO leads (user_id, hash, raw_text, permit_number, address, value, description, source, date_added, phone, page_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
     [
+      userId,
       hash,
       raw,
       lead.permit_number,
@@ -241,7 +206,9 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '' }) {
       lead.value,
       lead.description,
       sourceName,
-      new Date().toISOString()
+      new Date().toISOString(),
+      lead.phone,
+      lead.page_url
     ]
   );
   fs.appendFileSync('output/latest_leads.jsonl', JSON.stringify({
@@ -258,23 +225,36 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '' }) {
 // === DATABASE ===
 const db = new sqlite3.Database('leads.db');
 db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS seen (hash TEXT PRIMARY KEY)`);
+  db.run(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
   db.run(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    hash TEXT UNIQUE,
+    user_id INTEGER NOT NULL,
+    hash TEXT,
     raw_text TEXT,
     permit_number TEXT,
     address TEXT,
     value TEXT,
     description TEXT,
     source TEXT,
-    date_added TEXT
+    date_added TEXT,
+    UNIQUE(hash, user_id)
   )`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
+    email TEXT UNIQUE,
     password_hash TEXT NOT NULL,
-    role TEXT DEFAULT 'client'
+    role TEXT DEFAULT 'client',
+    created_at TEXT
+  )`);
+  // Per-user source configuration (JSON stored as text)
+  db.run(`CREATE TABLE IF NOT EXISTS user_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    source_data TEXT NOT NULL,
+    created_at TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
   // Simple contact/inquiry storage for landing page form
   db.run(`CREATE TABLE IF NOT EXISTS inquiries (
@@ -285,7 +265,7 @@ db.serialize(() => {
     message TEXT,
     created_at TEXT
   )`);
-  // Attempt to add IP column if missing (safe no-op if already exists)
+  // Attempt to add columns if missing (safe migrations)
   db.get("PRAGMA table_info(inquiries)", (err) => {
     if (!err) {
       db.all("PRAGMA table_info(inquiries)", (e, cols) => {
@@ -293,6 +273,23 @@ db.serialize(() => {
           db.run('ALTER TABLE inquiries ADD COLUMN ip TEXT');
         }
       });
+    }
+  });
+  // Add user_id to existing leads if missing
+  db.all("PRAGMA table_info(leads)", (e, cols) => {
+    if (!e && cols) {
+      if (!cols.find(c => c.name === 'user_id')) {
+        db.run('ALTER TABLE leads ADD COLUMN user_id INTEGER DEFAULT 1');
+        logger.info('Added user_id column to leads table');
+      }
+      if (!cols.find(c => c.name === 'phone')) {
+        db.run('ALTER TABLE leads ADD COLUMN phone TEXT');
+        logger.info('Added phone column to leads table');
+      }
+      if (!cols.find(c => c.name === 'page_url')) {
+        db.run('ALTER TABLE leads ADD COLUMN page_url TEXT');
+        logger.info('Added page_url column to leads table');
+      }
     }
   });
 });
@@ -311,15 +308,16 @@ function loadSources() {
 }
 
 // === MAIN SCRAPER ===
-async function scrape() {
-  logger.info('Starting new scrape cycle...');
-  const SOURCES = loadSources();
+async function scrapeForUser(userId, userSources) {
+  logger.info(`Starting scrape cycle for user ${userId}...`);
+  const SOURCES = userSources;
   for (const source of SOURCES) {
     try {
-      logger.info(`Checking → ${source.name}`);
+      logger.info(`Checking → ${source.name} for user ${userId}`);
       let data; // can be JSON array or HTML string
       let axiosResponse;
       let usedPuppeteer = false;
+      let newLeads = 0; // Track new leads for this source
 
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
       if (source.usePuppeteer === true) { 
@@ -400,10 +398,12 @@ async function scrape() {
           const lead = {
             permit_number: item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || 'N/A',
             address: item.address || item.location?.address || item.permit_location || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
-            value: item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.value || item.total_job_cost || item.job_cost || item.Phone || 'N/A',
-            description: item.description || item.work_class || item.permit_type || item.Details || 'N/A'
+            value: item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.value || item.total_job_cost || item.job_cost || 'N/A',
+            description: item.description || item.work_class || item.permit_type || item.Details || 'N/A',
+            phone: item.Phone || item.telephone || item.phone || null,
+            page_url: source.url
           };
-          if (await insertLeadIfNew({ raw, sourceName: source.name, lead })) inserted++;
+          if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) inserted++;
         }
         logger.info(`Found ${jsonItems.length} records from ${source.name} (JSON API)`);
         logger.info(`Inserted ${inserted} new leads from ${source.name}`);
@@ -434,6 +434,8 @@ async function scrape() {
                   const zip = addr.postalCode || addr.zip || '';
                   const phone = n.telephone || (Array.isArray(n.contactPoint) ? n.contactPoint.find(c=>c.telephone)?.telephone : n.contactPoint?.telephone) || '';
                   const display = n.name || n.legalName || n.alternateName || '';
+                  const page_url = n.url || '';
+                  const budget = n.priceRange || n.foundingDate || n.permit_value || n.estimated_cost || '';
                   extracted.push({
                     Title: display,
                     DisplayName: display,
@@ -442,7 +444,9 @@ async function scrape() {
                     State: state,
                     Zip: zip,
                     Phone: phone,
-                    Details: n.description || ''
+                    Details: n.description || '',
+                    PageURL: page_url,
+                    value: budget
                   });
                 }
               });
@@ -460,10 +464,12 @@ async function scrape() {
           const lead = {
             permit_number: item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || 'N/A',
             address: item.address || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
-            value: item.permit_value || item.estimated_cost || item.Phone || 'N/A',
-            description: item.description || item.Details || 'N/A'
+            value: item.permit_value || item.estimated_cost || 'N/A',
+            description: item.description || item.Details || 'N/A',
+            phone: item.Phone || null,
+            page_url: source.url
           };
-          if (await insertLeadIfNew({ raw, sourceName: source.name, lead })) insertedJsonLd++;
+          if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) insertedJsonLd++;
         }
         logger.info(`Found ${jsonItems.length} records from ${source.name} (schema.org JSON-LD)`);
         logger.info(`Inserted ${insertedJsonLd} new leads from ${source.name}`);
@@ -490,10 +496,12 @@ async function scrape() {
                 const lead = {
                   permit_number: item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || 'N/A',
                   address: item.address || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
-                  value: item.permit_value || item.estimated_cost || item.Phone || 'N/A',
-                  description: item.description || item.Details || 'N/A'
+                  value: item.permit_value || item.estimated_cost || 'N/A',
+                  description: item.description || item.Details || 'N/A',
+                  phone: item.Phone || null,
+                  page_url: source.url
                 };
-                if (await insertLeadIfNew({ raw, sourceName: source.name, lead })) insertedAttr++;
+                if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) insertedAttr++;
               }
               logger.info(`Found ${jsonItems.length} records from ${source.name} (HTML attribute JSON)`);
               logger.info(`Inserted ${insertedAttr} new leads from ${source.name}`);
@@ -504,26 +512,81 @@ async function scrape() {
           }
         }
       }
-      let newLeads = 0;
+
+      // Auto-enable AI if no selector provided (for simple user experience)
+      if (!source.selector && !source.useAI && geminiModel) {
+        source.useAI = true;
+        logger.info(`Auto-enabled AI extraction for ${source.name} (no selector provided)`);
+      }
 
       const matches = source.selector ? $(source.selector) : [];
-      try {
-        logger.info(`Selector '${source.selector}' matched ${matches.length} elements on ${source.name}`);
-      } catch {}
+      
+      // If no selector, try full-page AI extraction
+      if (!source.selector && source.useAI && geminiModel) {
+        logger.info(`Using full-page AI extraction for ${source.name}`);
+        const fullPageText = $('body').text().replace(/\s+/g, ' ').trim();
+        
+        if (textPassesFilters(fullPageText, source)) {
+          const aiLead = await extractLeadWithAI(fullPageText, source.name);
+          if (aiLead) {
+            const lead = {
+              permit_number: aiLead.permit_number || 'N/A',
+              address: aiLead.address || 'N/A',
+              value: aiLead.value || 'N/A',
+              description: aiLead.description || fullPageText.substring(0, 300),
+              phone: aiLead.phone || null,
+              page_url: aiLead.page_url || source.url
+            };
+            if (await insertLeadIfNew({ raw: fullPageText, sourceName: source.name, lead, hashSalt: source.url, userId })) {
+              newLeads++;
+              logger.info(`✨ AI extracted lead from full page: ${source.name}`);
+            }
+          }
+        }
+      } else {
+        // Original selector-based scraping
+        try {
+          logger.info(`Selector '${source.selector}' matched ${matches.length} elements on ${source.name}`);
+        } catch {}
 
       for (const el of matches.toArray()) {
         const raw = $(el).text().replace(/\s+/g, ' ').trim();
         if (!textPassesFilters(raw, source)) continue;
 
-        const phoneMatch = raw.match(/\b(?:\+?1[\-.\s]?)?(?:\(?\d{3}\)?[\-.\s]?\d{3}[\-.\s]?\d{4})\b/);
-        const lead = {
-          permit_number: raw.match(/[A-Z]?\d{5,12}[A-Z]?/i)?.[0] || 'N/A',
-          address: raw.match(/\d{3,6}\s+.{5,70}(St|Rd|Ave|Blvd|Dr|Ln|Ct|Pl|Way|Cir|Lane|Boulevard|Drive|Street|Road|Avenue)/i)?.[0] || 'Check manually',
-          value: raw.match(/\$[\d,]+/g)?.[0] || phoneMatch?.[0] || 'N/A',
-          description: raw.substring(0, 300)
-        };
-        if (await insertLeadIfNew({ raw, sourceName: source.name, lead, hashSalt: source.url })) newLeads++;
+        let lead;
+        
+        // Try AI extraction if enabled for this source
+        if (source.useAI && geminiModel) {
+          const aiLead = await extractLeadWithAI(raw, source.name);
+          if (aiLead) {
+            lead = {
+              permit_number: aiLead.permit_number || 'N/A',
+              address: aiLead.address || 'N/A',
+              value: aiLead.value || 'N/A',
+              description: aiLead.description || raw.substring(0, 300),
+              phone: aiLead.phone || null,
+              page_url: aiLead.page_url || source.url
+            };
+            logger.info(`✨ AI extracted lead from ${source.name}`);
+          }
+        }
+        
+        // Fallback to pattern matching if AI didn't work or not enabled
+        if (!lead) {
+          const phoneMatch = raw.match(/\b(?:\+?1[\-.\s]?)?(?:\(?\d{3}\)?[\-.\s]?\d{3}[\-.\s]?\d{4})\b/);
+          lead = {
+            permit_number: raw.match(/[A-Z]?\d{5,12}[A-Z]?/i)?.[0] || 'N/A',
+            address: raw.match(/\d{3,6}\s+.{5,70}(St|Rd|Ave|Blvd|Dr|Ln|Ct|Pl|Way|Cir|Lane|Boulevard|Drive|Street|Road|Avenue)/i)?.[0] || 'Check manually',
+            value: raw.match(/\$[\d,]+/g)?.[0] || 'N/A',
+            description: raw.substring(0, 300),
+            phone: phoneMatch?.[0] || null,
+            page_url: source.url
+          };
+        }
+        
+        if (await insertLeadIfNew({ raw, sourceName: source.name, lead, hashSalt: source.url, userId })) newLeads++;
       }
+      } // Close selector-based else block
 
       logger.info(`Inserted ${newLeads} new leads from ${source.name}`);
       if (source.usePuppeteer) {
@@ -533,18 +596,75 @@ async function scrape() {
       logger.error(`Failed ${source.name}: ${err.message}`);
     }
   }
-  await writeDashboardHTML();
-  logger.info('Scrape cycle finished.\n');
+  logger.info(`Scrape cycle finished for user ${userId}.\n`);
+}
+
+// === SCRAPER ORCHESTRATOR (runs for all users) ===
+async function scrapeAllUsers() {
+  try {
+    logger.info('=== Starting scrape cycle for all users ===');
+    const users = await dbAll('SELECT id, username, role FROM users');
+    
+    // Also scrape sources.json for all users
+    try {
+      const sourcesJsonPath = path.join(__dirname, 'sources.json');
+      if (fs.existsSync(sourcesJsonPath)) {
+        const sourcesFromFile = JSON.parse(fs.readFileSync(sourcesJsonPath, 'utf-8'));
+        if (Array.isArray(sourcesFromFile) && sourcesFromFile.length > 0) {
+          logger.info(`Found ${sourcesFromFile.length} sources in sources.json - scraping for all users`);
+          for (const user of users) {
+            try {
+              await scrapeForUser(user.id, sourcesFromFile);
+            } catch (userErr) {
+              logger.error(`Error scraping sources.json for user ${user.username} (${user.id}): ${userErr.message}`);
+            }
+          }
+        }
+      }
+    } catch (jsonErr) {
+      logger.error(`Error loading sources.json: ${jsonErr.message}`);
+    }
+    
+    // Then scrape user-specific sources from database
+    for (const user of users) {
+      try {
+        // Get user's sources
+        const sourceRows = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ?', [user.id]);
+        if (!sourceRows.length) {
+          logger.info(`User ${user.username} (${user.id}) has no custom sources configured`);
+          continue;
+        }
+        
+        const userSources = sourceRows.map(row => {
+          try {
+            return JSON.parse(row.source_data);
+          } catch (e) {
+            logger.error(`Invalid JSON in user_sources for user ${user.id}: ${e.message}`);
+            return null;
+          }
+        }).filter(Boolean);
+        
+        if (userSources.length) {
+          logger.info(`Scraping ${userSources.length} custom sources for user ${user.username} (${user.id})`);
+          await scrapeForUser(user.id, userSources);
+        }
+      } catch (userErr) {
+        logger.error(`Error scraping custom sources for user ${user.username} (${user.id}): ${userErr.message}`);
+      }
+    }
+    
+    // await writeDashboardHTML(); // Disabled - using user-specific client-portal.html instead
+    logger.info('=== Scrape cycle complete for all users ===');
+  } catch (e) {
+    logger.error(`Scraper orchestrator error: ${e.message}`);
+  }
 }
 
 // === SERVER ===
 function startServer() {
   const app = express();
-  app.set('view engine', 'ejs');
-  app.set('views', path.resolve(__dirname, 'views'));
-  app.use(expressLayouts);
-  app.set('layout', 'layout');
   app.use(express.urlencoded({ extended: true }));
+  app.use(express.json()); // Parse JSON request bodies
   app.use(session({
     secret: process.env.SESSION_SECRET || 'change-me-in-.env',
     resave: false,
@@ -586,8 +706,11 @@ function startServer() {
   // Minimal CORS for future separate frontends
   app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
     next();
   });
 
@@ -623,24 +746,77 @@ function startServer() {
 
   // --- Auth routes ---
   app.get('/login', (req, res) => {
-    if (req.session?.user) return res.redirect('/app');
-    res.render('login', { title: 'Sign In', error: null });
+    if (req.session?.user) return res.redirect('/dashboard');
+    res.sendFile(path.join(__dirname, '../frontend/login.html'));
   });
   app.post('/login', async (req, res) => {
     const { username, password } = req.body || {};
     try {
       const user = await dbGet('SELECT * FROM users WHERE username = ?', [String(username || '')]);
-      if (!user) return res.status(401).render('login', { title: 'Sign In', error: 'Invalid credentials' });
+      if (!user) return res.status(401).redirect('/login?error=Invalid+credentials');
       const ok = await bcrypt.compare(String(password || ''), user.password_hash);
-      if (!ok) return res.status(401).render('login', { title: 'Sign In', error: 'Invalid credentials' });
+      if (!ok) return res.status(401).redirect('/login?error=Invalid+credentials');
       req.session.user = { id: user.id, username: user.username, role: user.role };
-      res.redirect('/app');
+      res.redirect('/dashboard');
     } catch (e) {
-      res.status(500).render('login', { title: 'Sign In', error: 'Server error' });
+      logger.error(`Login error: ${e.message}`);
+      res.status(500).redirect('/login?error=Server+error');
     }
   });
   app.post('/logout', (req, res) => {
     req.session.destroy(() => res.redirect('/login'));
+  });
+  
+  // Serve signup page
+  app.get('/signup', (req, res) => {
+    if (req.session?.user) return res.redirect('/dashboard');
+    res.sendFile(path.join(__dirname, '../frontend/signup.html'));
+  });
+  
+  // Handle signup form submission
+  app.post('/signup', async (req, res) => {
+    const { username, email, password, confirmPassword } = req.body || {};
+    try {
+      if (!username || !email || !password) {
+        return res.status(400).send('All fields required');
+      }
+      if (password !== confirmPassword) {
+        return res.status(400).send('Passwords do not match');
+      }
+      
+      // Check if user exists
+      const existing = await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [username, email]);
+      if (existing) {
+        return res.status(400).send('Username or email already exists');
+      }
+      
+      // Create user
+      const hash = await bcrypt.hash(password, 10);
+      await dbRun('INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)', 
+        [username, email, hash, 'client', new Date().toISOString()]);
+      
+      // Auto-login
+      const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
+      req.session.user = { id: user.id, username: user.username, role: user.role };
+      res.redirect('/dashboard');
+    } catch (e) {
+      logger.error(`Signup error: ${e.message}`);
+      res.status(500).send('Server error');
+    }
+  });
+
+  // --- Client Dashboard Route ---
+  app.get('/dashboard', (req, res) => {
+    // Check if logged in
+    if (!req.session.user) return res.redirect('/login');
+    // Serve your client-portal.html
+    res.sendFile(path.join(__dirname, '../frontend/client-portal.html'));
+  });
+
+  // --- My Sources Page ---
+  app.get('/my-sources', (req, res) => {
+    if (!req.session.user) return res.redirect('/login');
+    res.sendFile(path.join(__dirname, '../frontend/my-sources.html'));
   });
 
   // --- Contact form submission (public) ---
@@ -672,133 +848,17 @@ function startServer() {
   });
 
   // --- App UI (protected) ---
-  app.get('/app', ensureAuth, (req, res) => res.redirect('/app/leads'));
-  app.get('/app/leads', ensureAuth, async (req, res) => {
-    try {
-      const page = Math.max(parseInt(req.query.page || '1', 10), 1);
-      const pageSize = Math.min(parseInt(req.query.pageSize || '20', 10), 100);
-      const offset = (page - 1) * pageSize;
-      const q = req.query.q ? String(req.query.q) : null;
-      const source = req.query.source ? String(req.query.source) : null;
-      const days = req.query.days ? parseInt(req.query.days, 10) : null;
 
-      const where = [];
-      const params = [];
-      if (source) { where.push('source = ?'); params.push(source); }
-      if (q) {
-        where.push('(permit_number LIKE ? OR address LIKE ? OR description LIKE ? OR raw_text LIKE ?)');
-        const like = `%${q}%`;
-        params.push(like, like, like, like);
-      }
-      if (Number.isFinite(days) && days > 0) {
-        const cutoff = new Date(Date.now() - days*24*60*60*1000).toISOString();
-        where.push('date_added >= ?');
-        params.push(cutoff);
-      }
-
-      const countRow = await dbGet(`SELECT COUNT(1) as c FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`, params);
-      const total = countRow?.c || 0;
-      const pages = Math.max(Math.ceil(total / pageSize), 1);
-
-      const rows = await dbAll(
-        `SELECT id, hash, permit_number, address, value, description, source, date_added
-         FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-         ORDER BY id DESC LIMIT ? OFFSET ?`, [...params, pageSize, offset]
-      );
-
-      // distinct sources for filter dropdown
-      const srcRows = await dbAll('SELECT DISTINCT source FROM leads ORDER BY source');
-      const sources = srcRows.map(r => r.source).filter(Boolean);
-
-      res.render('leads_list', {
-        title: 'Leads',
-        rows, total, page, pages, pageSize, q, source, sources, days
-      });
-    } catch (e) {
-      res.status(500).send('Server error');
+  // API: Get current logged-in user info
+  app.get('/api/user', (req, res) => {
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
     }
-  });
-
-  // Inquiries admin view (latest 200)
-  app.get('/app/inquiries', ensureAuth, async (req, res) => {
-    try {
-      const rows = await dbAll('SELECT id, name, email, company, message, created_at, ip FROM inquiries ORDER BY id DESC LIMIT 200');
-      res.render('inquiries_list', { title: 'Inquiries', inquiries: rows });
-    } catch (e) {
-      res.status(500).send('Server error');
-    }
-  });
-  // Test email route
-  app.get('/app/test-email', ensureAuth, async (req, res) => {
-    try {
-      await sendNotificationEmail('Test Email', 'This is a test notification from Aurora Leads.');
-      res.send('Test email attempted (check logs & inbox).');
-    } catch (e) {
-      res.status(500).send('Failed to send test email');
-    }
-  });
-
-  // CSV export using the same filters as the list view
-  app.get('/app/leads.csv', ensureAuth, async (req, res) => {
-    try {
-      const q = req.query.q ? String(req.query.q) : null;
-      const source = req.query.source ? String(req.query.source) : null;
-      const days = req.query.days ? parseInt(req.query.days, 10) : null;
-
-      const where = [];
-      const params = [];
-      if (source) { where.push('source = ?'); params.push(source); }
-      if (q) {
-        where.push('(permit_number LIKE ? OR address LIKE ? OR description LIKE ? OR raw_text LIKE ?)');
-        const like = `%${q}%`;
-        params.push(like, like, like, like);
-      }
-      if (Number.isFinite(days) && days > 0) {
-        const cutoff = new Date(Date.now() - days*24*60*60*1000).toISOString();
-        where.push('date_added >= ?');
-        params.push(cutoff);
-      }
-      const rows = await dbAll(
-        `SELECT id, permit_number, address, value, description, source, date_added
-         FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-         ORDER BY id DESC`, params
-      );
-
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename="leads.csv"');
-      const header = ['id','date_added','source','permit_number','address','value','description'];
-      const escapeCsv = v => {
-        const s = v == null ? '' : String(v);
-        if (/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
-        return s;
-      };
-      const lines = [header.join(',')].concat(rows.map(r => header.map(k => escapeCsv(r[k])).join(',')));
-      res.send(lines.join('\n'));
-    } catch (e) {
-      res.status(500).send('Server error');
-    }
-  });
-
-  // Scrape Now trigger
-  app.post('/app/scrape-now', ensureAuth, async (req, res) => {
-    try {
-      // Fire and forget; do not await full cycle to keep UI responsive
-      scrape().catch(err => logger.error('Scrape-now error: ' + err.message));
-      res.redirect('/app/leads');
-    } catch (e) {
-      res.redirect('/app/leads');
-    }
-  });
-
-  app.get('/app/leads/:id', ensureAuth, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id, 10);
-      const row = await dbGet('SELECT * FROM leads WHERE id = ?', [id]);
-      if (!row) return res.status(404).send('Not found');
-      res.render('lead_detail', { title: `Lead ${row.permit_number || row.id}`, lead: row });
-    } catch (e) {
-      res.status(500).send('Server error');
-    }
+    res.json({
+      username: req.session.user.username,
+      role: req.session.user.role,
+      id: req.session.user.id
+    });
   });
 
   // Simple leads API with optional filters: ?limit=200&source=...&q=...&days=7
@@ -823,7 +883,7 @@ function startServer() {
         where.push('date_added >= ?');
         params.push(cutoff);
       }
-      const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added
+      const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added, phone, page_url
                    FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
@@ -854,7 +914,7 @@ function startServer() {
         where.push('date_added >= ?');
         params.push(cutoff);
       }
-      const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added
+      const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added, phone, page_url
                    FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
@@ -875,20 +935,230 @@ function startServer() {
     }
   });
 
-  // Landing page (marketing) – pass query params for status messages
-  app.get('/', (req, res) => {
-    res.render('landing', { title: 'Home', query: req.query || {} });
-  });
-  // Protect dashboard: only authenticated users can view
-  app.get('/dashboard', ensureAuth, (req, res) => {
+  // Get current user's configured sources
+  app.get('/api/sources/mine', async (req, res) => {
     try {
-      res.sendFile(require('path').resolve('output/dashboard.html'));
+      if (!req.session || !req.session.user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+      const userId = req.session.user.id;
+      const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
+      const sources = rows.map(row => {
+        try {
+          return {
+            id: row.id,
+            data: JSON.parse(row.source_data),
+            created_at: row.created_at
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      res.json({ data: sources });
     } catch (e) {
-      res.status(500).send('Dashboard unavailable');
+      res.status(500).json({ error: e.message });
     }
   });
+
+  // Add a new source for current user
+  app.post('/api/sources/add', express.json(), async (req, res) => {
+    try {
+      if (!req.session || !req.session.user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+      const userId = req.session.user.id;
+      const sourceData = req.body;
+      
+      // Validate required fields
+      if (!sourceData.name || !sourceData.url) {
+        return res.status(400).json({ error: 'Source name and URL are required' });
+      }
+      
+      // Store as JSON string
+      const sourceJson = JSON.stringify(sourceData);
+      const result = await dbRun(
+        'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
+        [userId, sourceJson, new Date().toISOString()]
+      );
+      
+      res.json({ success: true, id: result.lastID });
+    } catch (e) {
+      logger.error(`Add source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Update an existing source
+  app.put('/api/sources/:id', express.json(), async (req, res) => {
+    try {
+      if (!req.session || !req.session.user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+      const userId = req.session.user.id;
+      const sourceId = parseInt(req.params.id, 10);
+      const sourceData = req.body;
+      
+      // Validate required fields
+      if (!sourceData.name || !sourceData.url) {
+        return res.status(400).json({ error: 'Source name and URL are required' });
+      }
+      
+      // Check ownership
+      const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      if (!existing) {
+        return res.status(404).json({ error: 'Source not found or access denied' });
+      }
+      
+      const sourceJson = JSON.stringify(sourceData);
+      await dbRun('UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?', [sourceJson, sourceId, userId]);
+      
+      res.json({ success: true });
+    } catch (e) {
+      logger.error(`Update source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Delete a source
+  app.delete('/api/sources/:id', async (req, res) => {
+    try {
+      if (!req.session || !req.session.user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+      const userId = req.session.user.id;
+      const sourceId = parseInt(req.params.id, 10);
+      
+      // Check ownership before deleting
+      const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      if (!existing) {
+        return res.status(404).json({ error: 'Source not found or access denied' });
+      }
+      
+      await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      res.json({ success: true });
+    } catch (e) {
+      logger.error(`Delete source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // === ADMIN ENDPOINTS ===
+  
+  // Middleware to check admin role
+  function ensureAdmin(req, res, next) {
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    if (req.session.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  }
+
+  // Admin: Get all users
+  app.get('/api/admin/users', ensureAdmin, async (req, res) => {
+    try {
+      const users = await dbAll('SELECT id, username, email, role, created_at FROM users ORDER BY id');
+      res.json(users);
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Get sources for a specific user
+  app.get('/api/admin/sources/:userId', ensureAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId, 10);
+      const sourceRows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
+      
+      const sources = sourceRows.map(row => {
+        try {
+          return {
+            id: row.id,
+            data: JSON.parse(row.source_data),
+            created_at: row.created_at
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      
+      res.json({ data: sources });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Add source for any user
+  app.post('/api/admin/sources/:userId', ensureAdmin, express.json(), async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId, 10);
+      const sourceData = req.body;
+      
+      // Validate required fields
+      if (!sourceData.name || !sourceData.url) {
+        return res.status(400).json({ error: 'Source name and URL are required' });
+      }
+      
+      // Auto-enable AI if no selector provided
+      if (!sourceData.selector) {
+        sourceData.useAI = true;
+      }
+      
+      // Store as JSON string
+      const sourceJson = JSON.stringify(sourceData);
+      const result = await dbRun(
+        'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
+        [userId, sourceJson, new Date().toISOString()]
+      );
+      
+      logger.info(`Admin added source "${sourceData.name}" for user ID ${userId}`);
+      res.json({ success: true, id: result.lastID });
+    } catch (e) {
+      logger.error(`Admin add source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Delete source for any user
+  app.delete('/api/admin/sources/:userId/:sourceId', ensureAdmin, async (req, res) => {
+    try {
+      const userId = parseInt(req.params.userId, 10);
+      const sourceId = parseInt(req.params.sourceId, 10);
+      
+      const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      if (!existing) {
+        return res.status(404).json({ error: 'Source not found' });
+      }
+      
+      await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      logger.info(`Admin deleted source ID ${sourceId} for user ID ${userId}`);
+      res.json({ success: true });
+    } catch (e) {
+      logger.error(`Admin delete source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Admin: Serve admin sources page
+  app.get('/admin/sources', ensureAuth, (req, res) => {
+    if (req.session.user.role !== 'admin') {
+      return res.status(403).send('Admin access required');
+    }
+    res.sendFile(path.join(__dirname, '../frontend/admin-sources.html'));
+  });
+
+  // Landing page – serve index.html
+  app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  });
+  
   // Serve frontend static bundle (internal app demo)
   app.use('/frontend', express.static(path.resolve(__dirname, '../frontend')));
+  
+  // Serve CSS and JS at root level too for easier access
+  app.use('/style.css', express.static(path.resolve(__dirname, '../frontend/style.css')));
+  app.use('/app.js', express.static(path.resolve(__dirname, '../frontend/app.js')));
 
   // Automatic port fallback: tries preferred then increments until a free port is found
   function startListening(preferredPort) {
@@ -922,8 +1192,8 @@ function startServer() {
 
 // === START ===
 startServer();
-cron.schedule('*/5 * * * *', scrape);
-scrape();
+cron.schedule('*/5 * * * *', scrapeAllUsers);
+scrapeAllUsers();
 
-logger.info('AURORA LEADS IS LIVE – Making you money every 5 minutes');
-logger.info('Check output/latest_leads.jsonl → this is what you sell!');
+logger.info('SHIIMAN LEADS IS LIVE – Multi-tenant scraper running every 5 minutes');
+logger.info('Each user sees only their own leads!');

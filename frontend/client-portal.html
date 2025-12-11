@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Client Dashboard · Shiiman Leads</title>
+  <link rel="stylesheet" href="/frontend/style.css" />
+</head>
+<body>
+
+    <nav class="navbar">
+    <div class="nav-container">
+      <div class="nav-logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="url(#gradient1)"></rect>
+          <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+          <defs>
+            <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0%" stop-color="#6366f1"></stop>
+              <stop offset="100%" stop-color="#8b5cf6"></stop>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">Shiiman Leads</span>
+      </div>
+      <div class="nav-links">
+        <a href="#data">Data Sources</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="/my-sources">My Sources</a>
+        <button class="btn-contact">Need Help</button>
+        <div class="user-profile">
+          <span class="user-icon">👁️</span>
+          <span id="userName">Loading...</span>
+        </div>
+        <form action="/logout" method="POST" style="display: inline;">
+          <button type="submit" class="btn-logout">Sign Out</button>
+        </form>
+      </div>
+    </div>
+  </nav>
+  
+<section id="dashboard" class="dashboard-section">
+    <div class="section-container">
+      <div class="section-header">
+        <h2 class="section-title">Live Dashboard</h2>
+        <div class="filters">
+          <input id="search" type="text" placeholder="🔍︎ Search leads...">
+          <select id="sourceFilter"><option value="">All Sources</option></select>
+          <select id="daysFilter">
+            <option value="">All Dates</option>
+            <option value="1">Last 24 hours</option>
+            <option value="7">Last 7 days</option>
+            <option value="30" selected="">Last 30 days</option>
+          </select>
+          <button id="refreshBtn">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M12 7C12 9.76142 9.76142 12 7 12C4.23858 12 2 9.76142 2 7C2 4.23858 4.23858 2 7 2C8.86384 2 10.4299 3.0381 11.1924 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+              <path d="M11 2V5H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table id="leadsTable">
+          <thead>
+            <tr>
+              <th>Permit #</th>
+              <th>Address</th>
+              <th>Value</th>
+              <th>Phone</th>
+              <th>Description</th>
+              <th>Source</th>
+              <th>Page URL</th>
+              <th>Date Added</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="status"></div>
+    </div>
+  </section>
+  <footer class="footer">
+    <div class="footer-container">
+      <div class="footer-content">
+        <div class="footer-col">
+          <div class="footer-logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect width="32" height="32" rx="8" fill="url(#gradient2)"></rect>
+              <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+              <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
+              <defs>
+                <linearGradient id="gradient2" x1="0" y1="0" x2="32" y2="32">
+                  <stop offset="0%" stop-color="#6366f1"></stop>
+                  <stop offset="100%" stop-color="#8b5cf6"></stop>
+                </linearGradient>
+              </defs>
+            </svg>
+            <span>LeadStream</span>
+          </div>
+          <p class="footer-description">Premium leads and data intelligence platform. Real-time updates from verified sources.</p>
+        </div>
+        <div class="footer-col">
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#data">Data Sources</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#api">API Docs</a>
+        </div>
+        <div class="footer-col">
+          <h4>Company</h4>
+          <a href="#about">About Us</a>
+          <a href="#blog">Blog</a>
+          <a href="#careers">Careers</a>
+          <a href="#contact">Contact</a>
+        </div>
+        <div class="footer-col">
+          <h4>Legal</h4>
+          <a href="#privacy">Privacy Policy</a>
+          <a href="#terms">Terms of Service</a>
+          <a href="#compliance">Compliance</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>© 2025 Shiiman-Leads. All rights reserved.</p>
+        <div class="footer-social">
+          <a href="#" aria-label="Twitter">𝕏</a>
+          <a href="#" aria-label="LinkedIn">in</a>
+          <a href="#" aria-label="GitHub">@</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/frontend/app.js"></script>
+  <script>
+    // Fetch logged-in user info
+    async function fetchUserInfo() {
+      try {
+        const res = await fetch('/api/user');
+        if (res.ok) {
+          const user = await res.json();
+          document.getElementById('userName').textContent = user.username || 'User';
+        } else {
+          // Not logged in, redirect to login
+          window.location.href = '/login';
+        }
+      } catch (e) {
+        console.error('Failed to fetch user info:', e);
+        document.getElementById('userName').textContent = 'User';
+      }
+    }
+    
+    // Load user info on page load
+    fetchUserInfo();
+  </script>
+   
+</body>
+</html>

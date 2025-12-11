@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login · Shiiman Leads</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="nav-container">
+      <div class="nav-logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <rect width="32" height="32" rx="8" fill="url(#gradient1)"/>
+          <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0%" stop-color="#6366f1"/>
+              <stop offset="100%" stop-color="#8b5cf6"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span class="logo-text">Shiiman Leads</span>
+      </div>
+      <div class="nav-links">
+        <a href="/">Home</a>
+        <a href="/signup">Sign Up</a>
+        <button class="btn-contact">Need Help?</button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Login Section -->
+  <section class="hero" style="min-height: calc(100vh - 80px); display: flex; align-items: center;">
+    <div class="hero-container" style="max-width: 750px; margin: 0 auto; padding: 2rem;">
+      <div class="hero-content" style="text-align: center;">
+        <div class="hero-badge">
+          <span class="badge-icon">🔐</span>
+          <span>Secure client portal</span>
+        </div>
+        <h1 class="hero-title" style="font-size: 2.25rem; margin-bottom: 0.75rem;">
+          Welcome Back
+        </h1>
+        <p class="hero-description" style="margin-bottom: 1.5rem; font-size: 0.95rem;">
+          Login to access your personalized lead dashboard and data sources.
+        </p>
+        
+        <div class="signin-container" style="background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 16px; padding: 2rem 3rem;">
+          <form action="/login" method="POST" class="signin-form">
+            <label for="username" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Username</label>
+            <input type="text" id="username" name="username" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+
+            <label for="password" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Password</label>
+            <input type="password" id="password" name="password" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+
+            <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem;">
+              Sign In
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </form>
+         
+          <p class="signup-link" style="color: #94a3b8; font-size: 14px; margin-top: 1rem;">
+            Don't have an account? <a href="/signup" style="color: #6366f1; text-decoration: none; font-weight: 600;">Sign up here</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>

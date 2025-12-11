@@ -26,7 +26,7 @@ async function fetchLeads() {
   if (days) params.set('days', days);
   const url = '/api/leads?' + params.toString();
   const tBody = document.querySelector('#leadsTable tbody');
-  tBody.innerHTML = '<tr><td colspan="6">Loading...</td></tr>';
+  tBody.innerHTML = '<tr><td colspan="8">Loading...</td></tr>';
   try {
     const res = await fetch(url);
     const json = await res.json();
@@ -38,15 +38,17 @@ async function fetchLeads() {
         <td>${r.permit_number || ''}</td>
         <td>${r.address || ''}</td>
         <td>${r.value || ''}</td>
+        <td>${r.phone || 'N/A'}</td>
         <td>${(r.description || '').substring(0,160)}</td>
         <td>${r.source || ''}</td>
+        <td>${r.page_url ? `<a href="${r.page_url}" target="_blank" style="color: #6366f1; text-decoration: underline;">View</a>` : 'N/A'}</td>
         <td>${formatDate(r.date_added)}</td>
       `;
       tBody.appendChild(tr);
     });
     document.getElementById('status').textContent = `Showing ${rows.length} lead(s).`;
   } catch (e) {
-    tBody.innerHTML = '<tr><td colspan="6">Error loading data</td></tr>';
+    tBody.innerHTML = '<tr><td colspan="8">Error loading data</td></tr>';
     document.getElementById('status').textContent = e.message;
   }
 }

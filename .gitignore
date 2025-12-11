@@ -15,10 +15,6 @@ logs/
 *.log
 npm-debug.log*
 
-# Build output
-dist/
-output/
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -29,5 +25,3 @@ Thumbs.db
 *.swp
 *.swo
 
-# Local Netlify folder
-.netlify
