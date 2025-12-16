@@ -11,6 +11,7 @@ const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Initialize Google Gemini client
@@ -246,8 +247,12 @@ db.serialize(() => {
     email TEXT UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT DEFAULT 'client',
-    created_at TEXT
+    created_at TEXT,    
+    email_verified INTEGER DEFAULT 0,
+    verification_token TEXT
   )`);
+
+
   // Per-user source configuration (JSON stored as text)
   db.run(`CREATE TABLE IF NOT EXISTS user_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -265,6 +270,8 @@ db.serialize(() => {
     message TEXT,
     created_at TEXT
   )`);
+
+
   // Attempt to add columns if missing (safe migrations)
   db.get("PRAGMA table_info(inquiries)", (err) => {
     if (!err) {
@@ -693,7 +700,7 @@ function startServer() {
     if (!mailTransport) return;
     try {
       await mailTransport.sendMail({
-        from: `Aurora Leads <${process.env.SMTP_USER}>`,
+        from: `Shiiman Leads <${process.env.SMTP_USER}>`,
         to: process.env.NOTIFY_TO,
         subject,
         text
@@ -754,6 +761,12 @@ function startServer() {
     try {
       const user = await dbGet('SELECT * FROM users WHERE username = ?', [String(username || '')]);
       if (!user) return res.status(401).redirect('/login?error=Invalid+credentials');
+      
+      // Check if email is verified (skip for admin)
+      if (user.role !== 'admin' && !user.email_verified) {
+        return res.status(403).redirect('/login?error=Please+verify+your+email+first');
+      }
+      
       const ok = await bcrypt.compare(String(password || ''), user.password_hash);
       if (!ok) return res.status(401).redirect('/login?error=Invalid+credentials');
       req.session.user = { id: user.id, username: user.username, role: user.role };
@@ -778,30 +791,68 @@ function startServer() {
     const { username, email, password, confirmPassword } = req.body || {};
     try {
       if (!username || !email || !password) {
-        return res.status(400).send('All fields required');
+        return res.status(400).redirect('/signup?error=All+fields+required');
       }
       if (password !== confirmPassword) {
-        return res.status(400).send('Passwords do not match');
+        return res.status(400).redirect('/signup?error=Passwords+do+not+match');
       }
       
       // Check if user exists
       const existing = await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [username, email]);
       if (existing) {
-        return res.status(400).send('Username or email already exists');
+        return res.status(400).redirect('/signup?error=Username+or+email+already+exists');
       }
+      
+      // Generate unique verification token for this user
+      const verificationToken = crypto.randomBytes(32).toString('hex');
       
       // Create user
       const hash = await bcrypt.hash(password, 10);
-      await dbRun('INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)', 
-        [username, email, hash, 'client', new Date().toISOString()]);
+      await dbRun('INSERT INTO users (username, email, password_hash, role, created_at, email_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?)', 
+        [username, email, hash, 'client', new Date().toISOString(), 0, verificationToken]);
       
-      // Auto-login
-      const user = await dbGet('SELECT * FROM users WHERE username = ?', [username]);
-      req.session.user = { id: user.id, username: user.username, role: user.role };
-      res.redirect('/dashboard');
+      // Send verification email
+      const verifyLink = `http://localhost:4000/verify-email?token=${verificationToken}`;
+      await mailTransport.sendMail({
+        from: `Shiiman Leads <${process.env.SMTP_USER}>`,
+        to: email,
+        subject: 'Verify your email - Shiiman Leads',
+        html: `
+          <h2>Welcome to Shiiman Leads!</h2>
+          <p>Hi ${username},</p>
+          <p>Please verify your email by clicking the link below:</p>
+          <a href="${verifyLink}">${verifyLink}</a>
+          <p>This link is unique to your account.</p>
+        `
+      });
+
+      res.redirect('/signup?success=Check+your+email+to+verify+your+account');
     } catch (e) {
       logger.error(`Signup error: ${e.message}`);
-      res.status(500).send('Server error');
+      res.status(500).redirect('/signup?error=Server+error');
+    }
+  });
+
+  // Email verification route
+  app.get('/verify-email', async (req, res) => {
+    const { token } = req.query;
+    
+    try {
+      const user = await dbGet('SELECT * FROM users WHERE verification_token = ?', [token]);
+      
+      if (!user) {
+        return res.status(400).redirect('/login?error=Invalid+or+expired+verification+link');
+      }
+      
+      // Mark as verified
+      await dbRun('UPDATE users SET email_verified = 1, verification_token = NULL WHERE id = ?', [user.id]);
+      
+      // Auto-login
+      req.session.user = { id: user.id, username: user.username, role: user.role };
+      res.redirect('/dashboard?verified=1');
+    } catch (e) {
+      logger.error(`Email verification error: ${e.message}`);
+      res.status(500).redirect('/login?error=Verification+failed');
     }
   });
 

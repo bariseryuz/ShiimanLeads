@@ -1,4 +1,5 @@
 [
+ 
 {
 "name": "Austin TX – Issued Construction Permits (Live API – Fixed)",
 "url": "https://data.austintexas.gov/resource/3syk-w9eu.json?$limit=500&$order=issue_date%20DESC",
@@ -115,4 +116,29 @@
   "minLength": 20,
   "useAI": true
 }
+
+,
+
+{
+  "name": "Data Nashville – Building Permits Issued (HTML)",
+  "url": "https://data.nashville.gov/datasets/2576bfb2d74f418b8ba8c4538e4f729f_0/explore?filters=eyJQZXJtaXRfVHlwZV9EZXNjcmlwdGlvbiI6WyJCdWlsZGluZyBSZXNpZGVudGlhbCAtIE5ldyJdLCJQZXJtaXRfU3VidHlwZV9EZXNjcmlwdGlvbiI6WyJNdWx0aWZhbWlseSwgVHJpLVBsZXgsIFF1YWQsIEFwYXJ0bWVudHMiLCJNdWx0aWZhbWlseSwgVG93bmhvbWUiXSwiRGF0ZV9FbnRlcmVkIjpbMTUwMTY1MDAwMDAwMCwxNzY0ODI4MDAwMDAwXSwiRGF0ZV9Jc3N1ZWQiOlsxNjcwMjIwMDAwMDAwLDE3NjUwODcyMDAwMDBdLCJDb25zdF9Db3N0IjpbMCwyMjYwNjg3NTldfQ%3D%3D&location=36.209334%2C-86.071734%2C8.14&showTable=true",
+  "selector": ".role",
+  "keywords": [],
+  "minLength": 10,
+  "useAI": true
+
+}
+, 
+
+{
+  "name": "Data Nashville – Building Permits Issued (HTML)",
+  "url": "https://data.nashville.gov/datasets/2576bfb2d74f418b8ba8c4538e4f729f_0/explore?filters=eyJQZXJtaXRfVHlwZV9EZXNjcmlwdGlvbiI6WyJCdWlsZGluZyBSZXNpZGVudGlhbCAtIE5ldyJdLCJQZXJtaXRfU3VidHlwZV9EZXNjcmlwdGlvbiI6WyJNdWx0aWZhbWlseSwgVHJpLVBsZXgsIFF1YWQsIEFwYXJ0bWVudHMiLCJNdWx0aWZhbWlseSwgVG93bmhvbWUiXSwiRGF0ZV9FbnRlcmVkIjpbMTUwMTY1MDAwMDAwMCwxNzY0ODI4MDAwMDAwXSwiRGF0ZV9Jc3N1ZWQiOlsxNjcwMjIwMDAwMDAwLDE3NjUwODcyMDAwMDBdLCJDb25zdF9Db3N0IjpbMCwyMjYwNjg3NTldfQ%3D%3D&location=36.209334%2C-86.071734%2C8.14&showTable=true",
+  "selector": ".role",
+  "keywords": [],
+  "minLength": 20,
+  "useAI": true
+
+} 
+
 ]
+

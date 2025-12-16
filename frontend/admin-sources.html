@@ -433,7 +433,7 @@
 
         if (!res.ok) throw new Error('Failed to add source');
         
-        showAlert('✅ Source added successfully!', 'success');
+        showAlert(' Source added successfully!', 'success');
         document.getElementById('addSourceForm').reset();
         await loadClientSources();
       } catch (e) {
