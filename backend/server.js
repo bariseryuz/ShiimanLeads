@@ -14,7 +14,24 @@ app.use((req, res, next) => {
 
 // SQLite connection (read-only usage)
 const dbPath = path.join(__dirname, 'leads.db');
-const db = new sqlite3.Database(dbPath);
+let db = null;
+
+// Try to connect to database, but don't fail if it doesn't exist
+try {
+  if (fs.existsSync(dbPath)) {
+    db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        console.error('Database connection error:', err.message);
+      } else {
+        console.log('✅ Connected to leads database');
+      }
+    });
+  } else {
+    console.warn('⚠️ leads.db not found - API endpoints will not work until database is created');
+  }
+} catch (error) {
+  console.error('❌ Database initialization failed:', error.message);
+}
 
 // Helper: build WHERE clause based on query params
 function buildFilters(query) {
@@ -39,6 +56,9 @@ function buildFilters(query) {
 
 // GET /api/leads?limit=100&offset=0&source=...&search=...&sinceDays=7
 app.get('/api/leads', (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
   const limit = Math.min(Number(req.query.limit) || 100, 1000);
   const offset = Number(req.query.offset) || 0;
   const { where, params } = buildFilters(req.query);
