@@ -42,7 +42,7 @@ app.get('/api/leads', (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 1000);
   const offset = Number(req.query.offset) || 0;
   const { where, params } = buildFilters(req.query);
-  const sql = `SELECT permit_number, address, value, description, source, date_added FROM leads ${where} ORDER BY date_added DESC LIMIT ? OFFSET ?`;
+  const sql = `SELECT permit_number, address, value, description, source, date_added, date_issued FROM leads ${where} ORDER BY date_added DESC LIMIT ? OFFSET ?`;
   db.all(sql, [...params, limit, offset], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ data: rows });
@@ -52,8 +52,26 @@ app.get('/api/leads', (req, res) => {
 // GET /api/sources (reads sources.json)
 app.get('/api/sources', (req, res) => {
   try {
+    // Read global sources
     const raw = fs.readFileSync(path.join(__dirname, 'sources.json'), 'utf-8');
-    res.json({ data: JSON.parse(raw) });
+    const globalSources = JSON.parse(raw);
+
+    // If you have user sessions:
+    let userId = req.session && req.session.user ? req.session.user.id : null;
+    if (!userId) {
+      // Not logged in, just return global sources
+      return res.json({ data: globalSources });
+    }
+
+    // Query user-specific sources
+    db.all('SELECT source_data FROM user_sources WHERE user_id = ?', [userId], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const userSources = rows.map(row => {
+        try { return JSON.parse(row.source_data); } catch { return null; }
+      }).filter(Boolean);
+      // Merge and return
+      res.json({ data: [...globalSources, ...userSources] });
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -75,7 +93,7 @@ if (fs.existsSync(publicDir)) {
   console.warn('Frontend directory not found, static hosting skipped.');
 }
 
-const port = process.env.FRONTEND_PORT || 3000;
-app.listen(port, () => {
-  console.log(`Frontend/API server listening on http://localhost:${port}`);
+const port = process.env.PORT || process.env.FRONTEND_PORT || 3000;
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Frontend/API server listening on port ${port}`);
 });
