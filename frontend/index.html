@@ -13,12 +13,22 @@
   <!-- Navigation -->
   <nav class="navbar">
     <div class="nav-container">
-      <a href="/" class="nav-logo">
-        <span class="logo-text">Shiiman Leads</span>
+      <a href="/" class="nav-logo" style="display: flex; align-items: center; gap: 0.75rem; text-decoration: none;">
+        <div style="width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.875rem;">
+          S
+        </div>
+        <span class="logo-text brand-name" style="font-weight: 700; font-size: 1.125rem;">Shiiman Leads</span>
       </a>
       
+      <!-- Hamburger Menu Button (Mobile) -->
+      <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileMenu()" aria-label="Toggle menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+      
       <!-- Default nav for logged out users -->
-      <div class="nav-links" id="navLinksLoggedOut">
+      <div class="nav-links desktop-nav" id="navLinksLoggedOut">
         <a href="#home">Home</a>
         <a href="#about">About</a>
         <a href="#contact">Contact Us</a>
@@ -26,11 +36,11 @@
       </div>
       
       <!-- Nav for logged in users -->
-      <div style="display: none; align-items: center; gap: 2rem;" id="navLinksLoggedIn">
+      <div style="display: none; align-items: center; gap: 2rem;" class="desktop-nav" id="navLinksLoggedIn">
         <div class="nav-links">
           <a href="/">Home</a>
-          <a href="/dashboard">Dashboard</a>
-          <a href="/my-sources">My Sources</a>
+          <a href="/client-portal.html">Dashboard</a>
+          <a href="/my-sources.html">My Sources</a>
         </div>
         
         <div style="display: flex; align-items: center; gap: 1rem;">
@@ -52,6 +62,94 @@
       </div>
     </div>
   </nav>
+
+  <!-- Mobile Menu Overlay -->
+  <div class="mobile-menu-overlay" id="mobileMenuOverlay" onclick="toggleMobileMenu()"></div>
+  
+  <!-- Mobile Menu -->
+  <div class="mobile-menu" id="mobileMenu">
+    <div class="mobile-menu-header">
+      <h3 style="margin: 0; color: var(--gray-900); font-size: 1.125rem;">Menu</h3>
+      <button onclick="toggleMobileMenu()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-600);">×</button>
+    </div>
+    
+    <div class="mobile-menu-content" id="mobileMenuContent">
+      <!-- Content will be updated based on login status -->
+    </div>
+  </div>
+
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      const overlay = document.getElementById('mobileMenuOverlay');
+      const hamburger = document.getElementById('hamburgerBtn');
+      const body = document.body;
+      
+      const isOpen = menu.classList.contains('active');
+      
+      if (isOpen) {
+        menu.classList.remove('active');
+        overlay.classList.remove('active');
+        hamburger.classList.remove('active');
+        body.style.overflow = '';
+      } else {
+        menu.classList.add('active');
+        overlay.classList.add('active');
+        hamburger.classList.add('active');
+        body.style.overflow = 'hidden';
+      }
+    }
+    
+    // Update mobile menu content based on login status
+    function updateMobileMenu(isLoggedIn) {
+      const menuContent = document.getElementById('mobileMenuContent');
+      if (isLoggedIn) {
+        menuContent.innerHTML = `
+          <a href="/" class="mobile-menu-item">
+            <span>🏠</span>
+            <span>Home</span>
+          </a>
+          <a href="/client-portal.html" class="mobile-menu-item">
+            <span>📊</span>
+            <span>Dashboard</span>
+          </a>
+          <a href="/my-sources.html" class="mobile-menu-item">
+            <span>⚙️</span>
+            <span>My Sources</span>
+          </a>
+          <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0;">
+          <a href="#" onclick="showProfileIndex(); toggleMobileMenu(); return false;" class="mobile-menu-item">
+            <span>👤</span>
+            <span>Profile</span>
+          </a>
+          <a href="#" onclick="logoutIndex(); return false;" class="mobile-menu-item" style="color: var(--danger);">
+            <span>🚪</span>
+            <span>Logout</span>
+          </a>
+        `;
+      } else {
+        menuContent.innerHTML = `
+          <a href="#home" onclick="toggleMobileMenu()" class="mobile-menu-item">
+            <span>🏠</span>
+            <span>Home</span>
+          </a>
+          <a href="#about" onclick="toggleMobileMenu()" class="mobile-menu-item">
+            <span>📖</span>
+            <span>About</span>
+          </a>
+          <a href="#contact" onclick="toggleMobileMenu()" class="mobile-menu-item">
+            <span>📧</span>
+            <span>Contact Us</span>
+          </a>
+          <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0;">
+          <a href="/login.html" class="mobile-menu-item" style="color: var(--primary); font-weight: 600;">
+            <span>🔐</span>
+            <span>Login</span>
+          </a>
+        `;
+      }
+    }
+  </script>
 
   <!-- Hero Section / Home -->
   <section id="home" class="hero">
@@ -319,6 +417,12 @@
       document.getElementById('currentPlanIndex').textContent = user.plan || 'Starter';
       document.getElementById('memberSinceIndex').textContent = new Date().toLocaleDateString();
       document.getElementById('userIdIndex').textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      
+      // Update mobile menu for logged in user
+      updateMobileMenu(true);
+    } else {
+      // Update mobile menu for logged out user
+      updateMobileMenu(false);
     }
 
     function showProfileIndex() {
