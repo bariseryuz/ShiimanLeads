@@ -2,12 +2,51 @@ const express = require('express');
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
+const SqliteStore = require('better-sqlite3-session-store')(session);
+const Database = require('better-sqlite3');
 const app = express();
+
+// Session store database
+const sessionDb = new Database(path.join(__dirname, 'sessions.db'));
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Session configuration
+app.use(session({
+  store: new SqliteStore({
+    client: sessionDb,
+    expired: {
+      clear: true,
+      intervalMs: 900000 // 15 minutes
+    }
+  }),
+  secret: process.env.SESSION_SECRET || 'shiiman-leads-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  }
+}));
+
+// Force HTTPS redirect in production
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'production' && req.headers['x-forwarded-proto'] !== 'https') {
+    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
 
 // Simple CORS (adjust origins as needed)
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
 });
@@ -24,6 +63,34 @@ try {
         console.error('Database connection error:', err.message);
       } else {
         console.log('✅ Connected to leads database');
+        // Create users table if it doesn't exist
+        db.run(`
+          CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME
+          )
+        `, (err) => {
+          if (err) console.error('Error creating users table:', err.message);
+          else console.log('✅ Users table ready');
+        });
+        
+        // Create user_sources table if it doesn't exist
+        db.run(`
+          CREATE TABLE IF NOT EXISTS user_sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            source_data TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+          )
+        `, (err) => {
+          if (err) console.error('Error creating user_sources table:', err.message);
+          else console.log('✅ User sources table ready');
+        });
       }
     });
   } else {
@@ -53,6 +120,127 @@ function buildFilters(query) {
   }
   return { where: clauses.length ? 'WHERE ' + clauses.join(' AND ') : '', params };
 }
+
+// Authentication middleware
+function requireAuth(req, res, next) {
+  if (req.session && req.session.user) {
+    return next();
+  }
+  res.status(401).json({ error: 'Authentication required' });
+}
+
+// POST /signup - Create new user
+app.post('/signup', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  const { username, email, password } = req.body;
+  
+  if (!username || !email || !password) {
+    return res.status(400).json({ error: 'Username, email, and password are required' });
+  }
+  
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    
+    db.run(
+      'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)',
+      [username, email, passwordHash],
+      function(err) {
+        if (err) {
+          if (err.message.includes('UNIQUE')) {
+            return res.status(400).json({ error: 'Username or email already exists' });
+          }
+          return res.status(500).json({ error: 'Failed to create user' });
+        }
+        
+        const userId = this.lastID;
+        req.session.user = { id: userId, username, email };
+        
+        res.json({
+          success: true,
+          message: 'Account created successfully',
+          user: { id: userId, username, email },
+          redirect: '/client-portal.html'
+        });
+      }
+    );
+  } catch (error) {
+    console.error('Signup error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /login - Authenticate user
+app.post('/login', async (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  
+  db.get(
+    'SELECT id, username, email, password_hash FROM users WHERE username = ?',
+    [username],
+    async (err, user) => {
+      if (err) {
+        return res.status(500).json({ error: 'Server error' });
+      }
+      
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid username or password' });
+      }
+      
+      try {
+        const isValid = await bcrypt.compare(password, user.password_hash);
+        
+        if (!isValid) {
+          return res.status(401).json({ error: 'Invalid username or password' });
+        }
+        
+        // Update last login
+        db.run('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+        
+        // Create session
+        req.session.user = { id: user.id, username: user.username, email: user.email };
+        
+        res.json({
+          success: true,
+          message: 'Login successful',
+          user: { id: user.id, username: user.username, email: user.email },
+          redirect: '/client-portal.html'
+        });
+      } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Server error' });
+      }
+    }
+  );
+});
+
+// POST /logout - End user session
+app.post('/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Logout failed' });
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
+  });
+});
+
+// GET /api/me - Get current user info
+app.get('/api/me', requireAuth, (req, res) => {
+  res.json({ user: req.session.user });
+});
 
 // GET /api/leads?limit=100&offset=0&source=...&search=...&sinceDays=7
 app.get('/api/leads', (req, res) => {
