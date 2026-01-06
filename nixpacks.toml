@@ -8,7 +8,7 @@ cmds = ['cd backend && npm install --production']
 cmds = ['echo "Build complete"']
 
 [start]
-cmd = 'cd backend && node index.js'
+cmd = 'cd backend && node server.js'
 
 [variables]
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true'

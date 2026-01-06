@@ -55,49 +55,92 @@ app.use((req, res, next) => {
 const dbPath = path.join(__dirname, 'leads.db');
 let db = null;
 
-// Try to connect to database, but don't fail if it doesn't exist
-try {
-  if (fs.existsSync(dbPath)) {
-    db = new sqlite3.Database(dbPath, (err) => {
-      if (err) {
-        console.error('Database connection error:', err.message);
-      } else {
-        console.log('✅ Connected to leads database');
-        // Create users table if it doesn't exist
-        db.run(`
-          CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_login DATETIME
-          )
-        `, (err) => {
-          if (err) console.error('Error creating users table:', err.message);
-          else console.log('✅ Users table ready');
-        });
-        
-        // Create user_sources table if it doesn't exist
-        db.run(`
-          CREATE TABLE IF NOT EXISTS user_sources (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            source_data TEXT NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-          )
-        `, (err) => {
-          if (err) console.error('Error creating user_sources table:', err.message);
-          else console.log('✅ User sources table ready');
-        });
-      }
-    });
-  } else {
-    console.warn('⚠️ leads.db not found - API endpoints will not work until database is created');
-  }
-} catch (error) {
-  console.error('❌ Database initialization failed:', error.message);
+// Create database if it doesn't exist and initialize tables
+if (!fs.existsSync(dbPath)) {
+  console.log('📦 Creating new leads.db database...');
+  db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      console.error('❌ Database creation error:', err.message);
+    } else {
+      console.log('✅ Database created successfully');
+      initializeTables();
+    }
+  });
+} else {
+  db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+      console.error('Database connection error:', err.message);
+    } else {
+      console.log('✅ Connected to leads database');
+      initializeTables();
+    }
+  });
+}
+
+function initializeTables() {
+  // Create users table if it doesn't exist
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT DEFAULT 'client',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login DATETIME,
+      email_verified INTEGER DEFAULT 0,
+      verification_token TEXT
+    )
+  `, (err) => {
+    if (err) console.error('Error creating users table:', err.message);
+    else console.log('✅ Users table ready');
+  });
+  
+  // Create leads table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS leads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      hash TEXT,
+      raw_text TEXT,
+      permit_number TEXT,
+      address TEXT,
+      value TEXT,
+      description TEXT,
+      source TEXT,
+      date_added TEXT,
+      UNIQUE(hash, user_id)
+    )
+  `, (err) => {
+    if (err) console.error('Error creating leads table:', err.message);
+    else console.log('✅ Leads table ready');
+  });
+  
+  // Create seen table
+  db.run(`
+    CREATE TABLE IF NOT EXISTS seen (
+      hash TEXT,
+      user_id INTEGER,
+      PRIMARY KEY(hash, user_id)
+    )
+  `, (err) => {
+    if (err) console.error('Error creating seen table:', err.message);
+    else console.log('✅ Seen table ready');
+  });
+  
+  // Create user_sources table if it doesn't exist
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_sources (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      source_data TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `, (err) => {
+    if (err) console.error('Error creating user_sources table:', err.message);
+    else console.log('✅ User sources table ready');
+  });
 }
 
 // Helper: build WHERE clause based on query params
