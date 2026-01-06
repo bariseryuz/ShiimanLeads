@@ -95,6 +95,129 @@ gap: 6rem;
   color: var(--primary);
 }
 
+/* Hamburger Menu Button */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  z-index: 1001;
+  order: 3; /* Ensures it's on the right */
+}
+
+.hamburger span {
+  display: block;
+  width: 24px;
+  height: 2px;
+  background: var(--gray-700);
+  transition: all 0.3s ease;
+  border-radius: 2px;
+}
+
+.hamburger.active span:nth-child(1) {
+  transform: rotate(45deg) translate(5px, 5px);
+}
+
+.hamburger.active span:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger.active span:nth-child(3) {
+  transform: rotate(-45deg) translate(7px, -6px);
+}
+
+/* Brand Name */
+.brand-name {
+  transition: font-size 0.3s ease;
+}
+
+/* Mobile Menu Overlay */
+.mobile-menu-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  z-index: 999;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.mobile-menu-overlay.active {
+  display: block;
+  opacity: 1;
+}
+
+/* Mobile Menu */
+.mobile-menu {
+  position: fixed;
+  top: 0;
+  right: -100%;
+  width: 80%;
+  max-width: 320px;
+  height: 100vh;
+  background: white;
+  z-index: 1000;
+  transition: right 0.3s ease;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.15);
+  overflow-y: auto;
+}
+
+.mobile-menu.active {
+  right: 0;
+}
+
+.mobile-menu-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50);
+}
+
+.mobile-menu-content {
+  padding: 1rem 0;
+}
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  color: var(--gray-700);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.mobile-menu-item:hover {
+  background: var(--gray-50);
+  color: var(--primary);
+  border-left-color: var(--primary);
+}
+
+.mobile-menu-item.active {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary);
+  border-left-color: var(--primary);
+  font-weight: 600;
+}
+
+.mobile-menu-item span:first-child {
+  font-size: 1.25rem;
+  width: 24px;
+  text-align: center;
+}
+
 /* Buttons */
 .btn {
   padding: 0.625rem 1.25rem;
@@ -619,18 +742,26 @@ tr:hover {
   /* Navigation */
   .nav-container {
     padding: 0.75rem 1rem;
-    flex-wrap: wrap;
-    gap: 0.75rem;
+    justify-content: space-between;
+  }
+  
+  /* Make brand name smaller on mobile */
+  .brand-name {
+    font-size: 0.875rem !important;
+  }
+  
+  /* Show hamburger on top right, hide desktop nav */
+  .hamburger {
+    display: flex;
+    margin-left: auto;
+  }
+  
+  .desktop-nav {
+    display: none !important;
   }
   
   .nav-links {
-    display: none; /* Hide nav links on mobile by default */
-  }
-  
-  .nav-container > div:last-child {
-    flex-direction: column;
-    width: 100%;
-    gap: 0.5rem;
+    display: none;
   }
   
   /* Hero Section */

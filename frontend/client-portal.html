@@ -11,23 +11,24 @@
   <!-- Top Navigation Bar -->
   <nav class="navbar">
     <div class="nav-container">
-      <!-- Left side: User info -->
-      <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
-        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
-          U
+      <!-- Left side: Logo/Brand -->
+      <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+        <div style="width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 0.875rem;">
+          S
         </div>
-        <span style="font-weight: 600; color: var(--gray-900); font-size: 0.875rem;" id="userName">Loading...</span>
+        <span class="brand-name" style="font-weight: 700; color: var(--gray-900); font-size: 1.125rem;">Shiiman Leads</span>
       </div>
       
-      <!-- Right side: Navigation and buttons -->
-      <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-        <div class="nav-links" style="display: none;">
+      <!-- Desktop Navigation -->
+      <div class="desktop-nav" style="display: flex; align-items: center; gap: 1rem;">
+        <div class="nav-links">
           <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
-          <a href="/dashboard" style="color: var(--primary); font-weight: 600;">Dashboard</a>
-          <a href="/my-sources" style="color: var(--gray-600); font-weight: 500;">My Sources</a>
+          <a href="/client-portal.html" style="color: var(--primary); font-weight: 600;">Dashboard</a>
+          <a href="/my-sources.html" style="color: var(--gray-600); font-weight: 500;">My Sources</a>
         </div>
         
         <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="font-weight: 600; color: var(--gray-700); font-size: 0.813rem; margin-right: 0.5rem;" id="userName">Loading...</span>
           <button onclick="showProfile()" class="btn btn-secondary" style="padding: 0.5rem 0.75rem; font-size: 0.75rem;">
             👤
           </button>
@@ -37,8 +38,73 @@
           </button>
         </div>
       </div>
+      
+      <!-- Hamburger Menu Button (Mobile) - Top Right -->
+      <button class="hamburger" id="hamburgerBtn" onclick="toggleMobileMenu()" aria-label="Toggle menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
     </div>
   </nav>
+
+  <!-- Mobile Menu Overlay -->
+  <div class="mobile-menu-overlay" id="mobileMenuOverlay" onclick="toggleMobileMenu()"></div>
+  
+  <!-- Mobile Menu -->
+  <div class="mobile-menu" id="mobileMenu">
+    <div class="mobile-menu-header">
+      <h3 style="margin: 0; color: var(--gray-900); font-size: 1.125rem;">Menu</h3>
+      <button onclick="toggleMobileMenu()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-600);">×</button>
+    </div>
+    
+    <div class="mobile-menu-content">
+      <a href="/" class="mobile-menu-item">
+        <span>🏠</span>
+        <span>Home</span>
+      </a>
+      <a href="/client-portal.html" class="mobile-menu-item active">
+        <span>📊</span>
+        <span>Dashboard</span>
+      </a>
+      <a href="/my-sources.html" class="mobile-menu-item">
+        <span>⚙️</span>
+        <span>My Sources</span>
+      </a>
+      <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0;">
+      <a href="#" onclick="showProfile(); toggleMobileMenu(); return false;" class="mobile-menu-item">
+        <span>👤</span>
+        <span>Profile</span>
+      </a>
+      <a href="#" onclick="logout(); return false;" class="mobile-menu-item" style="color: var(--danger);">
+        <span>🚪</span>
+        <span>Logout</span>
+      </a>
+    </div>
+  </div>
+
+  <script>
+    function toggleMobileMenu() {
+      const menu = document.getElementById('mobileMenu');
+      const overlay = document.getElementById('mobileMenuOverlay');
+      const hamburger = document.getElementById('hamburgerBtn');
+      const body = document.body;
+      
+      const isOpen = menu.classList.contains('active');
+      
+      if (isOpen) {
+        menu.classList.remove('active');
+        overlay.classList.remove('active');
+        hamburger.classList.remove('active');
+        body.style.overflow = '';
+      } else {
+        menu.classList.add('active');
+        overlay.classList.add('active');
+        hamburger.classList.add('active');
+        body.style.overflow = 'hidden';
+      }
+    }
+  </script>
 
   <div class="container">
     <!-- Add Source Section -->
