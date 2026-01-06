@@ -751,6 +751,15 @@ tr:hover {
   .nav-container {
     padding: 0.75rem 1rem;
     justify-content: space-between;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+  }
+  
+  /* Logo stays on left */
+  .nav-logo {
+    flex: 0 0 auto;
+    order: 1;
   }
   
   /* Make brand name smaller on mobile */
@@ -758,23 +767,21 @@ tr:hover {
     font-size: 1rem !important;
   }
   
-  /* Show hamburger on top right, hide desktop nav */
+  /* Show hamburger on far right */
   .hamburger {
-    display: flex;
+    display: flex !important;
     margin-left: auto;
     flex-shrink: 0;
+    order: 3;
   }
   
+  /* Hide desktop nav completely */
   .desktop-nav {
     display: none !important;
   }
   
   .nav-links {
-    display: none;
-  }
-  
-  .nav-logo {
-    flex: 0 1 auto;
+    display: none !important;
   }
   
   /* Hero Section */
