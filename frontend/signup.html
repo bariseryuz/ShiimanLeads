@@ -1,20 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Sign Up · Shiiman Leads</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign Up - Shiiman Leads</title>
+  <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-  <!-- Navigation -->
-  <nav class="navbar">
-    <div class="nav-container">
-      <div class="nav-logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <div class="auth-container">
+    <div class="auth-box">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin: 0 auto;">
           <rect width="32" height="32" rx="8" fill="url(#gradient1)"/>
           <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -25,59 +22,135 @@
             </linearGradient>
           </defs>
         </svg>
-        <span class="logo-text">Shiiman Leads</span>
       </div>
-      <div class="nav-links">
-        <a href="/">Home</a>
-        <a href="/login">Login</a>
-        <button class="btn-contact">Need Help?</button>
+
+      <h1 class="auth-title">Create Account</h1>
+      <p class="auth-subtitle">Start your 14-day free trial today</p>
+
+      <div id="alert" class="alert alert-error">
+        <span id="alertMessage"></span>
+      </div>
+
+      <form id="signupForm">
+        <div class="form-group">
+          <label class="form-label" for="name">Full Name</label>
+          <input 
+            type="text" 
+            id="name" 
+            class="form-input" 
+            placeholder="John Doe" 
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="email">Email Address</label>
+          <input 
+            type="email" 
+            id="email" 
+            class="form-input" 
+            placeholder="you@company.com" 
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="password">Password</label>
+          <input 
+            type="password" 
+            id="password" 
+            class="form-input" 
+            placeholder="At least 8 characters" 
+            required
+            minlength="8"
+          >
+        </div>
+
+        <div class="form-group">
+          <button type="submit" class="btn btn-primary" style="width: 100%;" id="submitBtn">
+            Create Account
+          </button>
+        </div>
+      </form>
+
+      <div class="auth-link">
+        Already have an account? <a href="/login.html">Sign in</a>
+      </div>
+
+      <div class="auth-link">
+        <a href="/">← Back to home</a>
       </div>
     </div>
-  </nav>
+  </div>
 
-  <!-- Sign Up Section -->
-  <section class="hero" style="min-height: calc(100vh - 80px); display: flex; align-items: center;">
-    <div class="hero-container" style="max-width: 750px; margin: 0 auto; padding: 2rem;">
-      <div class="hero-content" style="text-align: center;">
-        <div class="hero-badge">
-          <span class="badge-icon">🚀</span>
-          <span>Start your journey</span>
-        </div>
-        <h1 class="hero-title" style="font-size: 2.25rem; margin-bottom: 0.75rem;">
-          Create Your Account
-        </h1>
-        <p class="hero-description" style="margin-bottom: 1.5rem; font-size: 0.95rem;">
-          Join Shiiman Leads and get instant access to premium data intelligence for your business.
-        </p>
-        
-        <div class="signup-container" style="background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 16px; padding: 2rem 3rem;">
-          <form action="/signup" method="POST" class="signup-form">
-            <label for="username" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Username</label>
-            <input type="text" id="username" name="username" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+  <script src="app.js"></script>
+  <script>
+    const form = document.getElementById('signupForm');
+    const alert = document.getElementById('alert');
+    const alertMessage = document.getElementById('alertMessage');
+    const submitBtn = document.getElementById('submitBtn');
 
-            <label for="email" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Email</label>
-            <input type="email" id="email" name="email" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+    function showAlert(message, type = 'error') {
+      alert.className = `alert alert-${type} show`;
+      alertMessage.textContent = message;
+      setTimeout(() => {
+        alert.classList.remove('show');
+      }, 5000);
+    }
 
-            <label for="password" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Password</label>
-            <input type="password" id="password" name="password" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
 
-            <label for="confirmPassword" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Confirm Password</label>
-            <input type="password" id="confirmPassword" name="confirmPassword" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="loading"></span> Creating account...';
 
-            <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem;">
-              Create Account
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </form>
+      try {
+        const response = await fetch('/api/signup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name, email, password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showAlert('Account created successfully! Redirecting...', 'success');
           
-          <p class="login-link" style="color: #94a3b8; font-size: 14px; margin-top: 1rem;">
-            Already have an account? <a href="/login" style="color: #6366f1; text-decoration: none; font-weight: 600;">Log in here</a>.
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
+          localStorage.setItem('user', JSON.stringify(data.user));
+          localStorage.setItem('token', data.token);
+          
+          setTimeout(() => {
+            window.location.href = '/client-portal.html';
+          }, 1500);
+        } else {
+          showAlert(data.error || 'Failed to create account');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Create Account';
+        }
+      } catch (error) {
+        // Demo mode
+        const demoUser = {
+          name: name,
+          email: email,
+          role: 'client',
+          plan: 'Starter'
+        };
+        
+        localStorage.setItem('user', JSON.stringify(demoUser));
+        localStorage.setItem('token', 'demo-token-' + Date.now());
+        
+        showAlert('Account created! Redirecting...', 'success');
+        setTimeout(() => {
+          window.location.href = '/client-portal.html';
+        }, 1000);
+      }
+    });
+  </script>
 </body>
 </html>

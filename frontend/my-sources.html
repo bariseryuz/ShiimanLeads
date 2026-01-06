@@ -1,113 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>My Sources · Shiiman Leads</title>
-  <link rel="stylesheet" href="/frontend/style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Sources - Shiiman Leads</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    body {
+      background: var(--gray-50);
+      min-height: 100vh;
+      padding-top: 80px; /* Space for fixed navbar */
+    }
+    
     .sources-container {
       max-width: 1200px;
       margin: 0 auto;
-      padding: 32px 24px;
+      padding: 2rem;
     }
-    .sources-header {
+    
+    .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 32px;
+      margin-bottom: 2rem;
     }
-    .sources-title {
-      font-size: 28px;
-      font-weight: 600;
-      color: #e5e7eb;
+    
+    .header h1 {
+      color: var(--gray-900);
+      font-size: 2rem;
     }
-    .btn-add-source {
-      padding: 10px 20px;
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.2s;
-    }
-    .btn-add-source:hover {
-      transform: translateY(-2px);
-    }
-    .sources-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-      gap: 24px;
-      margin-bottom: 32px;
-    }
+    
     .source-card {
-      background: #0b1220;
-      border: 1px solid #1f2937;
+      background: white;
       border-radius: 12px;
-      padding: 20px;
-      transition: border-color 0.2s;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: var(--shadow);
+      transition: transform 0.2s;
+      border: 1px solid var(--gray-200);
     }
+    
     .source-card:hover {
-      border-color: #6366f1;
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
     }
-    .source-card-header {
+    
+    .source-header {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 16px;
+      align-items: start;
+      margin-bottom: 1rem;
     }
+    
     .source-name {
-      font-size: 18px;
+      font-size: 1.25rem;
       font-weight: 600;
-      color: #e5e7eb;
-      margin: 0;
+      color: var(--gray-900);
     }
+    
+    .source-url {
+      color: var(--primary);
+      text-decoration: none;
+      font-size: 0.875rem;
+      word-break: break-all;
+    }
+    
     .source-actions {
       display: flex;
-      gap: 8px;
+      gap: 0.5rem;
     }
-    .btn-edit, .btn-delete {
-      padding: 6px 12px;
+    
+    .btn-small {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
       border: none;
       border-radius: 6px;
-      font-size: 12px;
       cursor: pointer;
-      transition: opacity 0.2s;
+      font-weight: 500;
+      transition: all 0.2s;
     }
+    
     .btn-edit {
-      background: #3b82f6;
+      background: var(--primary);
       color: white;
     }
+    
+    .btn-edit:hover {
+      background: var(--primary-dark);
+    }
+    
     .btn-delete {
-      background: #ef4444;
+      background: var(--danger);
       color: white;
     }
-    .btn-edit:hover, .btn-delete:hover {
-      opacity: 0.8;
+    
+    .btn-delete:hover {
+      background: #dc2626;
     }
-    .source-url {
-      color: #94a3b8;
-      font-size: 14px;
-      word-break: break-all;
-      margin-bottom: 12px;
-    }
-    .source-details {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      font-size: 13px;
-      color: #cbd5e1;
-    }
-    .source-detail-item {
-      display: flex;
-      gap: 8px;
-    }
-    .source-detail-label {
-      font-weight: 600;
-      color: #94a3b8;
-      min-width: 80px;
-    }
+    
     .modal {
       display: none;
       position: fixed;
@@ -115,418 +106,547 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.8);
+      background: rgba(0,0,0,0.5);
       z-index: 1000;
       align-items: center;
       justify-content: center;
     }
-    .modal.active {
+    
+    .modal.show {
       display: flex;
     }
+    
     .modal-content {
-      background: #0b1220;
-      border: 1px solid #1f2937;
+      background: white;
       border-radius: 12px;
-      padding: 32px;
+      padding: 2rem;
       max-width: 600px;
       width: 90%;
       max-height: 90vh;
       overflow-y: auto;
     }
+    
     .modal-header {
-      font-size: 24px;
-      font-weight: 600;
-      color: #e5e7eb;
-      margin-bottom: 24px;
-    }
-    .form-group {
-      margin-bottom: 20px;
-    }
-    .form-label {
-      display: block;
-      color: #cbd5e1;
-      font-size: 14px;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .form-input, .form-textarea {
-      width: 100%;
-      padding: 10px 14px;
-      background: #020617;
-      border: 1px solid #1f2937;
-      border-radius: 8px;
-      color: #e5e7eb;
-      font-size: 14px;
-      font-family: inherit;
-    }
-    .form-input:focus, .form-textarea:focus {
-      outline: none;
-      border-color: #6366f1;
-    }
-    .form-textarea {
-      min-height: 80px;
-      resize: vertical;
-    }
-    .form-help {
-      font-size: 12px;
-      color: #94a3b8;
-      margin-top: 4px;
-    }
-    .form-checkbox {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 8px;
+      margin-bottom: 1.5rem;
     }
-    .form-checkbox input {
-      width: 18px;
-      height: 18px;
-      cursor: pointer;
+    
+    .modal-header h2 {
+      margin: 0;
+      color: var(--gray-900);
     }
-    .modal-actions {
-      display: flex;
-      gap: 12px;
-      margin-top: 24px;
-    }
-    .btn-submit, .btn-cancel {
-      flex: 1;
-      padding: 12px;
+    
+    .close-modal {
+      background: none;
       border: none;
-      border-radius: 8px;
-      font-weight: 600;
+      font-size: 1.5rem;
       cursor: pointer;
-      transition: opacity 0.2s;
+      color: var(--gray-600);
     }
-    .btn-submit {
-      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-      color: white;
-    }
-    .btn-cancel {
-      background: #1f2937;
-      color: #cbd5e1;
-    }
-    .btn-submit:hover, .btn-cancel:hover {
-      opacity: 0.8;
-    }
+    
     .empty-state {
       text-align: center;
-      padding: 64px 24px;
-      color: #94a3b8;
+      padding: 4rem 2rem;
+      background: white;
+      border-radius: 12px;
     }
-    .empty-state-icon {
-      font-size: 64px;
-      margin-bottom: 16px;
+    
+    .empty-state h2 {
+      color: var(--gray-900);
+      margin-bottom: 0.5rem;
     }
-    .empty-state-title {
-      font-size: 20px;
-      font-weight: 600;
-      color: #cbd5e1;
-      margin-bottom: 8px;
-    }
-    .empty-state-text {
-      margin-bottom: 24px;
+    
+    .empty-state p {
+      color: var(--gray-600);
+      margin-bottom: 2rem;
     }
   </style>
 </head>
 <body>
-
-  <nav class="navbar">
+  <!-- Top Navigation Bar -->
+  <nav class="navbar" style="background: white; box-shadow: var(--shadow-sm);">
     <div class="nav-container">
-      <div class="nav-logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="8" fill="url(#gradient1)"></rect>
-          <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-          <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-          <defs>
-            <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
-              <stop offset="0%" stop-color="#6366f1"></stop>
-              <stop offset="100%" stop-color="#8b5cf6"></stop>
-            </linearGradient>
-          </defs>
-        </svg>
-        <span class="logo-text">Shiiman Leads</span>
-      </div>
-      <div class="nav-links">
-        <a href="/dashboard">Dashboard</a>
-        <a href="/my-sources" style="color: #6366f1;">My Sources</a>
-        <button class="btn-contact">Need Help</button>
-        <div class="user-profile">
-          <span class="user-icon">👁️</span>
-          <span id="userName">Loading...</span>
+      <!-- Left side: User info -->
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
+          U
         </div>
-        <form action="/logout" method="POST" style="display: inline;">
-          <button type="submit" class="btn-logout">Sign Out</button>
-        </form>
+        <span style="font-weight: 600; color: var(--gray-900);" id="userName">Loading...</span>
+      </div>
+      
+      <!-- Right side: Navigation and buttons -->
+      <div style="display: flex; align-items: center; gap: 2rem;">
+        <div class="nav-links">
+          <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
+          <a href="/dashboard" style="color: var(--gray-600); font-weight: 500;">Dashboard</a>
+          <a href="/my-sources" style="color: var(--primary); font-weight: 600;">My Sources</a>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <button onclick="showProfile()" class="btn btn-secondary" style="padding: 0.5rem 1rem;">
+            👤 Profile
+          </button>
+          
+          <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 1rem;">
+            🚪 Exit
+          </button>
+        </div>
       </div>
     </div>
   </nav>
 
   <div class="sources-container">
-    <div class="sources-header">
-      <h1 class="sources-title">My Data Sources</h1>
-      <button class="btn-add-source" onclick="openAddModal()">+ Add Source</button>
+    <div class="header">
+      <div>
+        <h1>My Data Sources</h1>
+        <p style="color: var(--gray-600);">Manage your scraping sources</p>
+      </div>
+      <div style="display: flex; gap: 1rem;">
+        <button class="btn btn-primary" onclick="openAddModal()">+ Add Source</button>
+      </div>
     </div>
 
-    <div id="sourcesGrid" class="sources-grid">
-      <!-- Sources will be loaded here -->
-    </div>
-
+    <div id="sourcesList"></div>
+    
     <div id="emptyState" class="empty-state" style="display: none;">
-      <div class="empty-state-icon">📊</div>
-      <div class="empty-state-title">No sources configured yet</div>
-      <div class="empty-state-text">Add your first data source to start collecting leads automatically</div>
-      <button class="btn-add-source" onclick="openAddModal()">+ Add Your First Source</button>
+      <h2>No Sources Yet</h2>
+      <p>Add your first data source to start extracting leads automatically</p>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add Your First Source</button>
     </div>
   </div>
 
   <!-- Add/Edit Source Modal -->
   <div id="sourceModal" class="modal">
     <div class="modal-content">
-      <h2 class="modal-header" id="modalTitle">Add New Source</h2>
-      <form id="sourceForm" onsubmit="handleSubmit(event)">
-        <input type="hidden" id="sourceId" value="">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add Source</h2>
+        <button class="close-modal" onclick="closeModal()">×</button>
+      </div>
+      
+      <form id="sourceForm">
+        <input type="hidden" id="sourceId">
         
         <div class="form-group">
-          <label class="form-label" for="sourceName">Source Name *</label>
-          <input type="text" id="sourceName" class="form-input" required placeholder="e.g., Ryan Companies Projects">
-          <div class="form-help">A friendly name to identify this data source</div>
+          <label class="form-label">Source Name *</label>
+          <input type="text" id="sourceName" class="form-input" placeholder="e.g., Miami Construction Permits" required>
         </div>
-
+        
         <div class="form-group">
-          <label class="form-label" for="sourceUrl">Website URL *</label>
-          <input type="url" id="sourceUrl" class="form-input" required placeholder="https://example.com/projects">
-          <div class="form-help">Full URL to the page containing leads</div>
+          <label class="form-label">Source Type *</label>
+          <select id="sourceType" class="form-input" onchange="toggleSourceType()" required>
+            <option value="html">HTML Scraping (Website Pages)</option>
+            <option value="json">REST API / JSON Endpoint</option>
+          </select>
         </div>
-
+        
         <div class="form-group">
-          <label class="form-label" for="sourceKeywords">Keywords (Optional)</label>
-          <input type="text" id="sourceKeywords" class="form-input" placeholder="construction, commercial, industrial">
-          <div class="form-help">Comma-separated keywords to filter relevant data</div>
+          <label class="form-label">Website URL *</label>
+          <input type="url" id="sourceUrl" class="form-input" placeholder="https://example.com/permits" required>
         </div>
-
-        <!-- Advanced Settings (Collapsible) -->
-        <details style="margin-bottom: 20px;">
-          <summary style="cursor: pointer; color: #6366f1; font-weight: 600; margin-bottom: 16px;">⚙️ Advanced Settings (Optional)</summary>
+        
+        <!-- HTML Scraping Options -->
+        <div id="htmlOptions">
+          <div class="form-group">
+            <label class="form-label">CSS Selector (optional)</label>
+            <input type="text" id="sourceSelector" class="form-input" placeholder="e.g., .permit-item">
+            <small style="color: var(--gray-600);">Leave empty to use AI for full-page extraction</small>
+          </div>
+        </div>
+        
+        <!-- REST API Options -->
+        <div id="apiOptions" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">HTTP Method</label>
+            <select id="apiMethod" class="form-input">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
           
-        <!-- Advanced Settings (Collapsible) -->
-        <details style="margin-bottom: 20px;">
-          <summary style="cursor: pointer; color: #6366f1; font-weight: 600; margin-bottom: 16px;">⚙️ Advanced Settings (Optional)</summary>
+          <div class="form-group">
+            <label class="form-label">Query Parameters (JSON format, optional)</label>
+            <textarea id="apiParams" class="form-input" rows="4" placeholder='{"where": "status='approved'", "outFields": "*", "f": "json"}'></textarea>
+            <small style="color: var(--gray-600);">JSON object for query string or POST body</small>
+          </div>
           
           <div class="form-group">
-            <label class="form-label" for="sourceSelector">CSS Selector</label>
-            <input type="text" id="sourceSelector" class="form-input" placeholder="Leave empty to scan entire page with AI">
-            <div class="form-help">Target specific elements (e.g., .project-card). Leave empty for full-page AI extraction.</div>
+            <label class="form-label">JSON Path to Data (optional)</label>
+            <input type="text" id="jsonPath" class="form-input" placeholder="e.g., features[*].attributes or data.records">
+            <small style="color: var(--gray-600);">Path to array of records in response (use [*] for arrays)</small>
           </div>
-
+          
           <div class="form-group">
-            <label class="form-label" for="sourceMinLength">Minimum Text Length</label>
-            <input type="number" id="sourceMinLength" class="form-input" placeholder="20" min="0">
-            <div class="form-help">Minimum character length for valid leads (default: 20)</div>
+            <label class="form-label">Fields to Extract (comma-separated)</label>
+            <input type="text" id="jsonFields" class="form-input" placeholder="e.g., permit_number, contact_name, phone, address">
+            <small style="color: var(--gray-600);">Leave empty to extract all fields</small>
           </div>
-
-          <div class="form-group">
-            <div class="form-checkbox">
-              <input type="checkbox" id="sourcePuppeteer">
-              <label class="form-label" for="sourcePuppeteer" style="margin: 0;">🌐 Website Loads Slowly (Use Browser)</label>
-            </div>
-            <div class="form-help">Enable for JavaScript-heavy sites that require browser rendering</div>
-          </div>
-
-          <div class="form-group">
-            <div class="form-checkbox">
-              <input type="checkbox" id="sourceAI" checked>
-              <label class="form-label" for="sourceAI" style="margin: 0;">✨ Use AI Extraction (Gemini)</label>
-            </div>
-            <div class="form-help">Automatically enabled when no CSS selector provided. Extracts phone, address, value, and more!</div>
-          </div>
-        </details>
-
-        <div class="modal-actions">
-          <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
-          <button type="submit" class="btn-submit">💾 Save Source</button>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">
+            <input type="checkbox" id="useAI" checked> Use AI Extraction
+          </label>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">
+            <input type="checkbox" id="usePuppeteer"> Use Dynamic Rendering (for JavaScript sites)
+          </label>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">
+            <input type="checkbox" id="extractTable"> Extract Data from HTML Table
+          </label>
+          <small style="color: var(--gray-600);">Check this if the page shows data in a table (like Nashville permits)</small>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Include Keywords (comma-separated)</label>
+          <input type="text" id="includeKeywords" class="form-input" placeholder="e.g., commercial, construction">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Exclude Keywords (comma-separated)</label>
+          <input type="text" id="excludeKeywords" class="form-input" placeholder="e.g., residential, remodel">
+        </div>
+        
+        <div class="form-group" style="display: flex; gap: 1rem;">
+          <button type="submit" class="btn btn-primary" style="flex: 1;">Save Source</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal()" style="flex: 1;">Cancel</button>
         </div>
       </form>
     </div>
   </div>
 
   <script>
-    let sources = [];
-    let editingId = null;
+    let editingSourceId = null;
 
-    // Fetch user info
-    async function fetchUserInfo() {
+    // Check authentication on page load
+    async function checkAuth() {
       try {
-        const res = await fetch('/api/user');
-        if (res.ok) {
-          const user = await res.json();
-          document.getElementById('userName').textContent = user.username || 'User';
-        } else {
+        const response = await fetch('/api/user');
+        if (!response.ok) {
+          alert('Your session has expired. Please log in again.');
           window.location.href = '/login';
+          return false;
         }
-      } catch (e) {
-        console.error('Failed to fetch user info:', e);
+        return true;
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        alert('Connection error. Please check if the server is running.');
+        return false;
       }
     }
 
-    // Load sources
+    // Toggle between HTML and API source types
+    function toggleSourceType() {
+      const type = document.getElementById('sourceType').value;
+      const htmlOptions = document.getElementById('htmlOptions');
+      const apiOptions = document.getElementById('apiOptions');
+      
+      if (type === 'json') {
+        htmlOptions.style.display = 'none';
+        apiOptions.style.display = 'block';
+        document.getElementById('useAI').checked = false;
+        document.getElementById('usePuppeteer').checked = false;
+        document.getElementById('extractTable').checked = false;
+      } else {
+        htmlOptions.style.display = 'block';
+        apiOptions.style.display = 'none';
+      }
+    }
+
+    // Load sources on page load
+    loadSources();
+
     async function loadSources() {
       try {
-        const res = await fetch('/api/sources/mine');
-        if (!res.ok) throw new Error('Failed to load sources');
-        const result = await res.json();
-        sources = result.data || [];
-        renderSources();
-      } catch (e) {
-        console.error('Error loading sources:', e);
+        const response = await fetch('/api/sources/mine');
+        const data = await response.json();
+        
+        const sourcesList = document.getElementById('sourcesList');
+        const emptyState = document.getElementById('emptyState');
+        
+        if (!data.data || data.data.length === 0) {
+          sourcesList.innerHTML = '';
+          emptyState.style.display = 'block';
+          return;
+        }
+        
+        emptyState.style.display = 'none';
+        sourcesList.innerHTML = data.data.map(source => `
+          <div class="source-card">
+            <div class="source-header">
+              <div>
+                <div class="source-name">${escapeHtml(source.data.name)}</div>
+                <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
+              </div>
+              <div class="source-actions">
+                <button class="btn-small btn-edit" onclick="editSource(${source.id})">Edit</button>
+                <button class="btn-small btn-delete" onclick="deleteSource(${source.id}, '${escapeHtml(source.data.name)}')">Delete</button>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
+              <div><strong>Type:</strong> ${source.data.type === 'json' ? 'REST API' : 'HTML Scraping'}</div>
+              ${source.data.type === 'json' ? `<div><strong>Method:</strong> ${source.data.method || 'GET'}</div>` : ''}
+              ${source.data.type === 'json' && source.data.jsonPath ? `<div><strong>JSON Path:</strong> ${escapeHtml(source.data.jsonPath)}</div>` : ''}
+              ${source.data.type !== 'json' && source.data.selector ? `<div><strong>Selector:</strong> ${escapeHtml(source.data.selector)}</div>` : ''}
+              ${source.data.type !== 'json' && !source.data.selector ? '<div><strong>Mode:</strong> AI Full-Page</div>' : ''}
+              ${source.data.useAI ? '<div><strong>AI:</strong> ✓ Enabled</div>' : ''}
+              ${source.data.usePuppeteer ? '<div><strong>Dynamic:</strong> ✓ Enabled</div>' : ''}
+              ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
+              ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        console.error('Error loading sources:', error);
         alert('Failed to load sources');
       }
     }
 
-    // Render sources
-    function renderSources() {
-      const grid = document.getElementById('sourcesGrid');
-      const emptyState = document.getElementById('emptyState');
-      
-      if (sources.length === 0) {
-        grid.style.display = 'none';
-        emptyState.style.display = 'block';
-        return;
-      }
-
-      grid.style.display = 'grid';
-      emptyState.style.display = 'none';
-      
-      grid.innerHTML = sources.map(source => {
-        const data = source.data;
-        return `
-          <div class="source-card">
-            <div class="source-card-header">
-              <h3 class="source-name">${escapeHtml(data.name)}</h3>
-              <div class="source-actions">
-                <button class="btn-edit" onclick="editSource(${source.id})">Edit</button>
-                <button class="btn-delete" onclick="deleteSource(${source.id})">Delete</button>
-              </div>
-            </div>
-            <div class="source-url">${escapeHtml(data.url)}</div>
-            <div class="source-details">
-              ${data.selector ? `<div class="source-detail-item"><span class="source-detail-label">Selector:</span><span>${escapeHtml(data.selector)}</span></div>` : ''}
-              ${data.keywords && data.keywords.length ? `<div class="source-detail-item"><span class="source-detail-label">Keywords:</span><span>${data.keywords.join(', ')}</span></div>` : ''}
-              ${data.usePuppeteer ? `<div class="source-detail-item"><span class="source-detail-label">Mode:</span><span>🚀 Dynamic (Puppeteer)</span></div>` : ''}
-            </div>
-          </div>
-        `;
-      }).join('');
-    }
-
-    // Open add modal
     function openAddModal() {
-      editingId = null;
-      document.getElementById('modalTitle').textContent = 'Add New Source';
+      editingSourceId = null;
+      document.getElementById('modalTitle').textContent = 'Add Source';
       document.getElementById('sourceForm').reset();
       document.getElementById('sourceId').value = '';
-      document.getElementById('sourceModal').classList.add('active');
+      document.getElementById('sourceType').value = 'html';
+      document.getElementById('useAI').checked = true;
+      toggleSourceType();
+      document.getElementById('sourceModal').classList.add('show');
     }
 
-    // Edit source
-    function editSource(id) {
-      const source = sources.find(s => s.id === id);
-      if (!source) return;
-      
-      editingId = id;
-      const data = source.data;
-      
-      document.getElementById('modalTitle').textContent = 'Edit Source';
-      document.getElementById('sourceId').value = id;
-      document.getElementById('sourceName').value = data.name || '';
-      document.getElementById('sourceUrl').value = data.url || '';
-      document.getElementById('sourceSelector').value = data.selector || '';
-      document.getElementById('sourceKeywords').value = (data.keywords || []).join(', ');
-      document.getElementById('sourceMinLength').value = data.minLength || '';
-      document.getElementById('sourcePuppeteer').checked = data.usePuppeteer || false;
-      document.getElementById('sourceAI').checked = data.useAI || false;
-      
-      document.getElementById('sourceModal').classList.add('active');
-    }
-
-    // Close modal
-    function closeModal() {
-      document.getElementById('sourceModal').classList.remove('active');
-      editingId = null;
-    }
-
-    // Handle form submit
-    async function handleSubmit(e) {
-      e.preventDefault();
-      
-      const sourceData = {
-        name: document.getElementById('sourceName').value.trim(),
-        url: document.getElementById('sourceUrl').value.trim(),
-        selector: document.getElementById('sourceSelector').value.trim() || undefined,
-        keywords: document.getElementById('sourceKeywords').value
-          .split(',')
-          .map(k => k.trim())
-          .filter(k => k.length > 0),
-        minLength: parseInt(document.getElementById('sourceMinLength').value) || undefined,
-        usePuppeteer: document.getElementById('sourcePuppeteer').checked || undefined,
-        useAI: document.getElementById('sourceAI').checked || undefined
-      };
-
+    async function editSource(id) {
       try {
-        const isEdit = editingId !== null;
-        const url = isEdit ? `/api/sources/${editingId}` : '/api/sources/add';
-        const method = isEdit ? 'PUT' : 'POST';
+        const response = await fetch('/api/sources/mine');
+        const data = await response.json();
+        const source = data.data.find(s => s.id === id);
         
-        const res = await fetch(url, {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sourceData)
-        });
-
-        if (!res.ok) {
-          const error = await res.json();
-          throw new Error(error.error || 'Failed to save source');
+        if (!source) {
+          alert('Source not found');
+          return;
         }
-
-        closeModal();
-        await loadSources();
-        alert(isEdit ? 'Source updated successfully!' : 'Source added successfully!');
-      } catch (e) {
-        console.error('Error saving source:', e);
-        alert(e.message || 'Failed to save source');
+        
+        editingSourceId = id;
+        document.getElementById('modalTitle').textContent = 'Edit Source';
+        document.getElementById('sourceId').value = id;
+        document.getElementById('sourceName').value = source.data.name || '';
+        document.getElementById('sourceUrl').value = source.data.url || '';
+        
+        // Set source type
+        const sourceType = source.data.type || 'html';
+        document.getElementById('sourceType').value = sourceType;
+        toggleSourceType();
+        
+        // HTML scraping fields
+        document.getElementById('sourceSelector').value = source.data.selector || '';
+        document.getElementById('useAI').checked = source.data.useAI !== false;
+        document.getElementById('usePuppeteer').checked = source.data.usePuppeteer === true;
+        document.getElementById('extractTable').checked = source.data.extractTable === true;
+        
+        // API fields
+        if (sourceType === 'json') {
+          document.getElementById('apiMethod').value = source.data.method || 'GET';
+          document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
+          document.getElementById('jsonPath').value = source.data.jsonPath || '';
+          document.getElementById('jsonFields').value = source.data.jsonFields?.join(', ') || '';
+        }
+        
+        document.getElementById('includeKeywords').value = source.data.includeWords?.join(', ') || '';
+        document.getElementById('excludeKeywords').value = source.data.excludeWords?.join(', ') || '';
+        
+        document.getElementById('sourceModal').classList.add('show');
+      } catch (error) {
+        console.error('Error loading source:', error);
+        alert('Failed to load source details');
       }
     }
 
-    // Delete source
-    async function deleteSource(id) {
-      if (!confirm('Are you sure you want to delete this source?')) return;
+    async function deleteSource(id, name) {
+      if (!confirm(`Are you sure you want to delete "${name}"?`)) {
+        return;
+      }
       
       try {
-        const res = await fetch(`/api/sources/${id}`, { method: 'DELETE' });
-        if (!res.ok) throw new Error('Failed to delete source');
+        const response = await fetch(`/api/sources/${id}`, {
+          method: 'DELETE'
+        });
         
-        await loadSources();
-        alert('Source deleted successfully!');
-      } catch (e) {
-        console.error('Error deleting source:', e);
+        if (response.ok) {
+          alert('Source deleted successfully');
+          loadSources();
+        } else {
+          alert('Failed to delete source');
+        }
+      } catch (error) {
+        console.error('Error deleting source:', error);
         alert('Failed to delete source');
       }
     }
 
-    // Utility: Escape HTML
+    function closeModal() {
+      document.getElementById('sourceModal').classList.remove('show');
+      editingSourceId = null;
+    }
+
+    document.getElementById('sourceForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const sourceType = document.getElementById('sourceType').value;
+      const sourceData = {
+        name: document.getElementById('sourceName').value,
+        url: document.getElementById('sourceUrl').value,
+        type: sourceType,
+        includeWords: document.getElementById('includeKeywords').value.split(',').map(s => s.trim()).filter(Boolean),
+        excludeWords: document.getElementById('excludeKeywords').value.split(',').map(s => s.trim()).filter(Boolean)
+      };
+      
+      if (sourceType === 'html') {
+        sourceData.selector = document.getElementById('sourceSelector').value || null;
+        sourceData.useAI = document.getElementById('useAI').checked;
+        sourceData.usePuppeteer = document.getElementById('usePuppeteer').checked;
+        sourceData.extractTable = document.getElementById('extractTable').checked;
+      } else if (sourceType === 'json') {
+        sourceData.method = document.getElementById('apiMethod').value;
+        const paramsText = document.getElementById('apiParams').value.trim();
+        try {
+          sourceData.params = paramsText ? JSON.parse(paramsText) : {};
+        } catch (err) {
+          alert('Invalid JSON in Query Parameters field');
+          return;
+        }
+        sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
+        const fieldsText = document.getElementById('jsonFields').value.trim();
+        sourceData.jsonFields = fieldsText ? fieldsText.split(',').map(s => s.trim()).filter(Boolean) : [];
+      }
+      
+      try {
+        let response;
+        if (editingSourceId) {
+          response = await fetch(`/api/sources/${editingSourceId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sourceData)
+          });
+        } else {
+          response = await fetch('/api/sources/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sourceData)
+          });
+        }
+        
+        if (response.ok) {
+          alert(editingSourceId ? 'Source updated successfully' : 'Source added successfully');
+          closeModal();
+          loadSources();
+        } else {
+          const data = await response.json();
+          alert('Failed to save source: ' + (data.error || 'Unknown error'));
+        }
+      } catch (error) {
+        console.error('Error saving source:', error);
+        alert('Failed to save source');
+      }
+    });
+
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
     }
 
-    // Close modal when clicking outside
-    document.getElementById('sourceModal').addEventListener('click', (e) => {
-      if (e.target.id === 'sourceModal') closeModal();
-    });
+    // Profile modal functions
+    function showProfile() {
+      document.getElementById('profileModal').style.display = 'flex';
+    }
 
-    // Initialize
-    fetchUserInfo();
-    loadSources();
+    function hideProfile() {
+      document.getElementById('profileModal').style.display = 'none';
+    }
+
+    // Load user info
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userName = user.name || user.username || 'User';
+    const userInitial = userName.charAt(0).toUpperCase();
+    
+    document.getElementById('userName').textContent = userName;
+    document.getElementById('userAvatar').textContent = userInitial;
+    document.getElementById('profileName').textContent = userName;
+    document.getElementById('profileEmail').textContent = user.email || 'user@example.com';
+    document.getElementById('profileAvatar').textContent = userInitial;
+    document.getElementById('currentPlan').textContent = user.plan || 'Starter';
+    document.getElementById('memberSince').textContent = new Date().toLocaleDateString();
+    document.getElementById('userId').textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+    function logout() {
+      if (confirm('Are you sure you want to logout?')) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = '/login.html';
+      }
+    }
   </script>
 
+  <!-- Profile Modal -->
+  <div id="profileModal" class="modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: none; align-items: center; justify-content: center;">
+    <div style="background: white; border-radius: 12px; padding: 2rem; max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto;">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 2rem; margin: 0 auto 1rem;" id="profileAvatar">U</div>
+        <h2 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;" id="profileName">User Name</h2>
+        <p style="color: var(--gray-600);" id="profileEmail">user@example.com</p>
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--gray-900);">📋 Account Information</h3>
+        <div style="background: white; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 1rem;">
+          <div style="display: grid; gap: 0.75rem;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--gray-600);">Account Status:</span>
+              <span style="font-weight: 600; color: var(--success);">✓ Active</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--gray-600);">Member Since:</span>
+              <span style="font-weight: 600;" id="memberSince">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--gray-600);">User ID:</span>
+              <span style="font-weight: 600; font-family: monospace; font-size: 0.875rem;" id="userId">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--gray-900);">💼 Current Plan</h3>
+        <div style="background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border-radius: var(--radius); padding: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+              <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.25rem;">Current Plan</div>
+              <div style="font-size: 1.75rem; font-weight: 700;" id="currentPlan">Professional</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.2); padding: 0.5rem 1rem; border-radius: var(--radius); font-weight: 600;">
+              $299/mo
+            </div>
+          </div>
+          <div style="opacity: 0.95; font-size: 0.875rem; line-height: 1.6;">
+            ✓ 10,000 leads/month<br>
+            ✓ All data sources<br>
+            ✓ Advanced filtering<br>
+            ✓ API access<br>
+            ✓ Priority support
+          </div>
+          <button onclick="alert('Contact sales@shiimanleads.com to upgrade')" class="btn" style="margin-top: 1rem; background: white; color: var(--primary); width: 100%;">
+            Upgrade Plan
+          </button>
+        </div>
+      </div>
+
+      <button onclick="hideProfile()" class="btn btn-secondary" style="width: 100%;">Close</button>
+    </div>
+  </div>
 </body>
 </html>

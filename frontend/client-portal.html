@@ -1,161 +1,435 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Client Dashboard · Shiiman Leads</title>
-  <link rel="stylesheet" href="/frontend/style.css" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Portal - Shiiman Leads</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
-
-    <nav class="navbar">
+  <!-- Top Navigation Bar -->
+  <nav class="navbar">
     <div class="nav-container">
-      <div class="nav-logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-          <rect width="32" height="32" rx="8" fill="url(#gradient1)"></rect>
-          <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-          <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-          <defs>
-            <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
-              <stop offset="0%" stop-color="#6366f1"></stop>
-              <stop offset="100%" stop-color="#8b5cf6"></stop>
-            </linearGradient>
-          </defs>
-        </svg>
-        <span class="logo-text">Shiiman Leads</span>
-      </div>
-      <div class="nav-links">
-        <a href="#data">Data Sources</a>
-        <a href="#dashboard">Dashboard</a>
-        <a href="/my-sources">My Sources</a>
-        <button class="btn-contact">Need Help</button>
-        <div class="user-profile">
-          <span class="user-icon">👁️</span>
-          <span id="userName">Loading...</span>
+      <!-- Left side: User info -->
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
+          U
         </div>
-        <form action="/logout" method="POST" style="display: inline;">
-          <button type="submit" class="btn-logout">Sign Out</button>
-        </form>
+        <span style="font-weight: 600; color: var(--gray-900);" id="userName">Loading...</span>
       </div>
-    </div>
-  </nav>
-  
-<section id="dashboard" class="dashboard-section">
-    <div class="section-container">
-      <div class="section-header">
-        <h2 class="section-title">Live Dashboard</h2>
-        <div class="filters">
-          <input id="search" type="text" placeholder="🔍︎ Search leads...">
-          <select id="sourceFilter"><option value="">All Sources</option></select>
-          <select id="daysFilter">
-            <option value="">All Dates</option>
-            <option value="1">Last 24 hours</option>
-            <option value="7">Last 7 days</option>
-            <option value="30" selected="">Last 30 days</option>
-          </select>
-          <button id="refreshBtn">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M12 7C12 9.76142 9.76142 12 7 12C4.23858 12 2 9.76142 2 7C2 4.23858 4.23858 2 7 2C8.86384 2 10.4299 3.0381 11.1924 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
-              <path d="M11 2V5H8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-            Refresh
+      
+      <!-- Right side: Navigation and buttons -->
+      <div style="display: flex; align-items: center; gap: 2rem;">
+        <div class="nav-links">
+          <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
+          <a href="/dashboard" style="color: var(--primary); font-weight: 600;">Dashboard</a>
+          <a href="/my-sources" style="color: var(--gray-600); font-weight: 500;">My Sources</a>
+        </div>
+        
+        <div style="display: flex; align-items: center; gap: 1rem;">
+          <button onclick="showProfile()" class="btn btn-secondary" style="padding: 0.5rem 1rem;">
+            👤 Profile
+          </button>
+          
+          <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 1rem;">
+            🚪 Exit
           </button>
         </div>
       </div>
-      <div class="table-wrapper">
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Add Source Section -->
+    <div class="card" style="background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h3 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">Manage Data Sources</h3>
+          <p style="opacity: 0.95; font-size: 0.875rem;">
+            Configure and manage your custom scraping sources
+          </p>
+        </div>
+        <a href="/my-sources" class="btn" style="background: white; color: var(--primary); font-weight: 600; padding: 0.75rem 1.5rem; text-decoration: none;">
+          Manage Sources
+        </a>
+      </div>
+    </div>
+
+    <!-- Add Source Form (Hidden by default) -->
+    <div id="addSourceForm" class="card" style="display: none; border: 2px solid var(--primary);">
+      <h3 class="card-title">Request New Data Source</h3>
+      <form id="sourceRequestForm">
+        <div class="form-group">
+          <label class="form-label">Source Name *</label>
+          <input type="text" class="form-input" id="sourceName" placeholder="Phoenix Building Permits" required>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Source URL *</label>
+          <input type="url" class="form-input" id="sourceUrl" placeholder="https://permits.phoenix.gov" required>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Description / Special Requirements</label>
+          <textarea class="form-textarea" id="sourceDescription" placeholder="Describe what information you need from this source..."></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 1rem;">
+          <button type="submit" class="btn btn-primary">Submit Request</button>
+          <button type="button" onclick="hideAddSourceForm()" class="btn btn-secondary">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Leads Section Title -->
+    <div style="margin-bottom: 1.5rem;">
+      <h2 style="font-size: 2rem; font-weight: 700; color: var(--gray-900); margin-bottom: 0.5rem;">
+        📊 Your Construction Leads
+      </h2>
+      <p style="color: var(--gray-600);">
+        View and filter all your construction project leads in one place
+      </p>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid" style="margin-bottom: 2rem;">
+      <div class="stat-card">
+        <div class="stat-label">Total Leads</div>
+        <div class="stat-value" id="totalLeads">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">This Week</div>
+        <div class="stat-value" id="weekLeads">-</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Sources</div>
+        <div class="stat-value" id="activeSources">-</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card">
+      <h3 class="card-title">🔍 Filter & Search Leads</h3>
+      <div class="filters">
+        <div class="filter-group">
+          <label class="form-label">Data Source</label>
+          <select id="sourceFilter" class="form-select">
+            <option value="">All Sources</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label class="form-label">Time Range</label>
+          <select id="daysFilter" class="form-select">
+            <option value="">All Time</option>
+            <option value="1">Last 24 Hours</option>
+            <option value="7" selected>Last 7 Days</option>
+            <option value="30">Last 30 Days</option>
+          </select>
+        </div>
+        
+        <div class="filter-group">
+          <label class="form-label">Search</label>
+          <input 
+            type="text" 
+            id="searchInput" 
+            class="form-input" 
+            placeholder="Address, permit number, description..."
+          >
+        </div>
+      </div>
+      <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+        <button class="btn btn-primary" onclick="loadLeads()">🔎 Apply Filters</button>
+        <button class="btn btn-secondary" onclick="clearFilters()">🔄 Clear</button>
+        <button class="btn btn-secondary" onclick="exportToCSV()">📥 Export CSV</button>
+      </div>
+    </div>
+
+    <!-- Leads Display Div -->
+    <div id="statusMessage" style="color: var(--gray-600); margin: 1.5rem 0;"></div>
+
+    <div class="card" id="leadsDisplayDiv" style="padding: 0; overflow: hidden;">
+      <div class="table-container">
         <table id="leadsTable">
           <thead>
             <tr>
               <th>Permit #</th>
+              <th>Issued Date</th>
               <th>Address</th>
               <th>Value</th>
               <th>Phone</th>
               <th>Description</th>
               <th>Source</th>
-              <th>Page URL</th>
+              <th>Link</th>
               <th>Date Added</th>
             </tr>
           </thead>
-          <tbody></tbody>
+          <tbody>
+            <tr>
+              <td colspan="9" style="text-align: center; padding: 4rem;">
+                <div class="loading" style="margin: 0 auto 1rem;"></div>
+                <p style="color: var(--gray-600);">Loading your leads...</p>
+              </td>
+            </tr>
+          </tbody>
         </table>
       </div>
-      <div id="status"></div>
     </div>
-  </section>
-  <footer class="footer">
-    <div class="footer-container">
-      <div class="footer-content">
-        <div class="footer-col">
-          <div class="footer-logo">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <rect width="32" height="32" rx="8" fill="url(#gradient2)"></rect>
-              <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-              <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path>
-              <defs>
-                <linearGradient id="gradient2" x1="0" y1="0" x2="32" y2="32">
-                  <stop offset="0%" stop-color="#6366f1"></stop>
-                  <stop offset="100%" stop-color="#8b5cf6"></stop>
-                </linearGradient>
-              </defs>
-            </svg>
-            <span>LeadStream</span>
-          </div>
-          <p class="footer-description">Premium leads and data intelligence platform. Real-time updates from verified sources.</p>
-        </div>
-        <div class="footer-col">
-          <h4>Product</h4>
-          <a href="#features">Features</a>
-          <a href="#data">Data Sources</a>
-          <a href="#pricing">Pricing</a>
-          <a href="#api">API Docs</a>
-        </div>
-        <div class="footer-col">
-          <h4>Company</h4>
-          <a href="#about">About Us</a>
-          <a href="#blog">Blog</a>
-          <a href="#careers">Careers</a>
-          <a href="#contact">Contact</a>
-        </div>
-        <div class="footer-col">
-          <h4>Legal</h4>
-          <a href="#privacy">Privacy Policy</a>
-          <a href="#terms">Terms of Service</a>
-          <a href="#compliance">Compliance</a>
-        </div>
-      </div>
-      <div class="footer-bottom">
-        <p>© 2025 Shiiman-Leads. All rights reserved.</p>
-        <div class="footer-social">
-          <a href="#" aria-label="Twitter">𝕏</a>
-          <a href="#" aria-label="LinkedIn">in</a>
-          <a href="#" aria-label="GitHub">@</a>
-        </div>
-      </div>
-    </div>
-  </footer>
+  </div>
 
-  <script src="/frontend/app.js"></script>
+  <!-- Profile Modal (Hidden) -->
+  <div id="profileModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div class="card" style="max-width: 500px; width: 90%; margin: 2rem; max-height: 90vh; overflow-y: auto;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <h2 style="font-size: 1.75rem; font-weight: 700; color: var(--gray-900);">👤 My Profile</h2>
+        <button onclick="hideProfile()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-600);">✕</button>
+      </div>
+      
+      <div style="background: var(--gray-50); padding: 1.5rem; border-radius: var(--radius); margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;">
+          <div style="width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 700; font-size: 1.5rem;" id="profileAvatar">
+            U
+          </div>
+          <div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; color: var(--gray-900);" id="profileName">Loading...</h3>
+            <p style="color: var(--gray-600); font-size: 0.875rem;" id="profileEmail">email@example.com</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--gray-900);">📋 Account Information</h3>
+        <div style="background: white; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 1rem;">
+          <div style="display: grid; gap: 0.75rem;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--gray-600);">Account Status:</span>
+              <span style="font-weight: 600; color: var(--success);">✓ Active</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--gray-600);">Member Since:</span>
+              <span style="font-weight: 600;" id="memberSince">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--gray-600);">User ID:</span>
+              <span style="font-weight: 600; font-family: monospace; font-size: 0.875rem;" id="userId">-</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--gray-900);">💼 Current Plan</h3>
+        <div style="background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border-radius: var(--radius); padding: 1.5rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div>
+              <div style="font-size: 0.875rem; opacity: 0.9; margin-bottom: 0.25rem;">Current Plan</div>
+              <div style="font-size: 1.75rem; font-weight: 700;" id="currentPlan">Professional</div>
+            </div>
+            <div style="background: rgba(255,255,255,0.2); padding: 0.5rem 1rem; border-radius: var(--radius); font-weight: 600;">
+              $299/mo
+            </div>
+          </div>
+          <div style="opacity: 0.95; font-size: 0.875rem; line-height: 1.6;">
+            ✓ 10,000 leads/month<br>
+            ✓ All data sources<br>
+            ✓ Advanced filtering<br>
+            ✓ API access<br>
+            ✓ Priority support
+          </div>
+          <button onclick="alert('Contact sales@shiimanleads.com to upgrade')" class="btn" style="margin-top: 1rem; background: white; color: var(--primary); width: 100%;">
+            Upgrade Plan
+          </button>
+        </div>
+      </div>
+
+      <button onclick="hideProfile()" class="btn btn-secondary" style="width: 100%;">Close</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
   <script>
-    // Fetch logged-in user info
-    async function fetchUserInfo() {
+    // Check authentication
+    checkAuth();
+
+    // Load user info
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const userName = user.name || 'User';
+    const userInitial = userName.charAt(0).toUpperCase();
+    
+    document.getElementById('userName').textContent = userName;
+    document.getElementById('userAvatar').textContent = userInitial;
+    document.getElementById('profileName').textContent = userName;
+    document.getElementById('profileEmail').textContent = user.email || 'user@example.com';
+    document.getElementById('profileAvatar').textContent = userInitial;
+    document.getElementById('currentPlan').textContent = user.plan || 'Starter';
+    document.getElementById('memberSince').textContent = new Date().toLocaleDateString();
+    document.getElementById('userId').textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+    // Profile modal functions
+    function showProfile() {
+      document.getElementById('profileModal').style.display = 'flex';
+    }
+
+    function hideProfile() {
+      document.getElementById('profileModal').style.display = 'none';
+    }
+
+    // Add source form functions
+    function showAddSourceForm() {
+      document.getElementById('addSourceForm').style.display = 'block';
+      window.scrollTo({ top: document.getElementById('addSourceForm').offsetTop - 100, behavior: 'smooth' });
+    }
+
+    function hideAddSourceForm() {
+      document.getElementById('addSourceForm').style.display = 'none';
+      document.getElementById('sourceRequestForm').reset();
+    }
+
+    document.getElementById('sourceRequestForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('sourceName').value;
+      const url = document.getElementById('sourceUrl').value;
+      const desc = document.getElementById('sourceDescription').value;
+      
+      alert(`Thank you! Your request for "${name}" has been submitted to our team. We'll contact you within 24 hours.`);
+      hideAddSourceForm();
+    });
+
+    // Load sources for filter
+    async function loadSources() {
       try {
-        const res = await fetch('/api/user');
-        if (res.ok) {
-          const user = await res.json();
-          document.getElementById('userName').textContent = user.username || 'User';
-        } else {
-          // Not logged in, redirect to login
-          window.location.href = '/login';
-        }
-      } catch (e) {
-        console.error('Failed to fetch user info:', e);
-        document.getElementById('userName').textContent = 'User';
+        const response = await fetch('/api/sources');
+        const data = await response.json();
+        const sources = data.data || [];
+        
+        const select = document.getElementById('sourceFilter');
+        sources.forEach(source => {
+          const option = document.createElement('option');
+          option.value = source.name;
+          option.textContent = source.name;
+          select.appendChild(option);
+        });
+        
+        document.getElementById('activeSources').textContent = sources.length;
+      } catch (error) {
+        console.error('Failed to load sources:', error);
       }
     }
-    
-    // Load user info on page load
-    fetchUserInfo();
+
+    // Load leads
+    async function loadLeads() {
+      const source = document.getElementById('sourceFilter').value;
+      const days = document.getElementById('daysFilter').value;
+      const search = document.getElementById('searchInput').value.trim();
+      
+      const params = new URLSearchParams();
+      params.set('limit', '500');
+      if (source) params.set('source', source);
+      if (days) params.set('sinceDays', days);
+      if (search) params.set('search', search);
+      
+      const tbody = document.querySelector('#leadsTable tbody');
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</td></tr>';
+      
+      try {
+        const response = await fetch('/api/leads?' + params.toString());
+        const result = await response.json();
+        const leads = result.data || [];
+        
+        tbody.innerHTML = '';
+        
+        if (leads.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</td></tr>';
+          document.getElementById('statusMessage').textContent = '';
+          document.getElementById('totalLeads').textContent = '0';
+          return;
+        }
+        
+        leads.forEach(lead => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${escapeHtml(lead.permit_number || '-')}</td>
+            <td style="white-space: nowrap;">${lead.date_issued ? formatDate(lead.date_issued) : 'N/A'}</td>
+            <td>${escapeHtml(lead.address || '-')}</td>
+            <td>${escapeHtml(lead.value || '-')}</td>
+            <td>${escapeHtml(lead.phone || 'N/A')}</td>
+            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(lead.description || '')}">
+              ${escapeHtml((lead.description || '-').substring(0, 100))}
+            </td>
+            <td>${escapeHtml(lead.source || '-')}</td>
+            <td>
+              ${lead.page_url ? `<a href="${escapeHtml(lead.page_url)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>` : '-'}
+            </td>
+            <td style="white-space: nowrap;">${formatDate(lead.date_added)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+        
+        document.getElementById('statusMessage').textContent = `✓ Showing ${leads.length} lead(s)`;
+        document.getElementById('totalLeads').textContent = leads.length;
+        
+        // Calculate this week
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        const weekCount = leads.filter(lead => new Date(lead.date_added) >= oneWeekAgo).length;
+        document.getElementById('weekLeads').textContent = weekCount;
+        
+      } catch (error) {
+        console.error('Failed to load leads:', error);
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--danger);">Error loading leads. Please try again.</td></tr>';
+        document.getElementById('statusMessage').textContent = '❌ Error: ' + error.message;
+      }
+    }
+
+    // Export to CSV
+    function exportToCSV() {
+      const table = document.getElementById('leadsTable');
+      const rows = Array.from(table.querySelectorAll('tbody tr'));
+      
+      if (rows.length === 0 || rows[0].cells.length === 1) {
+        alert('No data to export');
+        return;
+      }
+      
+      let csv = 'Permit Number,Address,Value,Phone,Description,Source,Link,Date Added\n';
+      
+      rows.forEach(row => {
+        const cells = Array.from(row.cells);
+        const rowData = cells.map(cell => {
+          let text = cell.textContent.trim();
+          const link = cell.querySelector('a');
+          if (link) text = link.href;
+          return `"${text.replace(/"/g, '""')}"`;
+        });
+        csv += rowData.join(',') + '\n';
+      });
+      
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `shiiman-leads-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
+
+    // Clear filters
+    function clearFilters() {
+      document.getElementById('sourceFilter').value = '';
+      document.getElementById('daysFilter').value = '7';
+      document.getElementById('searchInput').value = '';
+      loadLeads();
+    }
+
+    // Event listeners
+    document.getElementById('searchInput').addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') loadLeads();
+    });
+
+    // Initialize
+    loadSources();
+    loadLeads();
   </script>
-   
 </body>
 </html>

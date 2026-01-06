@@ -1,20 +1,151 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Login · Shiiman Leads</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="stylesheet" href="style.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Shiiman Leads</title>
+  <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Animated gradient background with waves */
+    body {
+      margin: 0 !important;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
+      overflow: auto !important;
+      background: linear-gradient(315deg, rgba(101,0,94,1) 3%, rgba(60,132,206,1) 38%, rgba(48,238,226,1) 68%, rgba(255,25,25,1) 98%) !important;
+      animation: gradient 15s ease infinite !important;
+      background-size: 400% 400% !important;
+      background-attachment: fixed !important;
+      min-height: 100vh !important;
+    }
+
+    @keyframes gradient {
+      0% {
+        background-position: 0% 0%;
+      }
+      50% {
+        background-position: 100% 100%;
+      }
+      100% {
+        background-position: 0% 0%;
+      }
+    }
+
+    .wave {
+      background: rgb(255 255 255 / 25%);
+      border-radius: 1000% 1000% 0 0;
+      position: fixed;
+      width: 200%;
+      height: 12em;
+      animation: wave 10s -3s linear infinite;
+      transform: translate3d(0, 0, 0);
+      opacity: 0.8;
+      bottom: 0;
+      left: 0;
+      z-index: -1;
+    }
+
+    .wave:nth-of-type(2) {
+      bottom: -1.25em;
+      animation: wave 18s linear reverse infinite;
+      opacity: 0.8;
+    }
+
+    .wave:nth-of-type(3) {
+      bottom: -2.5em;
+      animation: wave 20s -1s reverse infinite;
+      opacity: 0.9;
+    }
+
+    @keyframes wave {
+      2% {
+        transform: translateX(1);
+      }
+      25% {
+        transform: translateX(-25%);
+      }
+      50% {
+        transform: translateX(-50%);
+      }
+      75% {
+        transform: translateX(-25%);
+      }
+      100% {
+        transform: translateX(1);
+      }
+    }
+
+    .auth-container {
+      position: relative;
+      z-index: 1;
+    }
+
+    .auth-box {
+      backdrop-filter: blur(16px);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px 0 rgba(99, 102, 241, 0.37);
+    }
+
+    .form-input {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: white;
+    }
+
+    .form-input::placeholder {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .form-label {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .auth-title {
+      color: white;
+    }
+
+    .auth-subtitle {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .auth-link {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    .auth-link a {
+      color: #818cf8;
+    }
+
+    /* basic alert styles so show/hide works */
+    .alert { display: none; padding: .5rem 1rem; border-radius: 6px; margin: 1rem 0; }
+    .alert.show { display: block; }
+    .alert-error { background: rgba(255,0,0,0.08); color: #ffbaba; border: 1px solid rgba(255,0,0,0.12); }
+    .alert-success { background: rgba(0,255,0,0.04); color: #baffc9; border: 1px solid rgba(0,255,0,0.08); }
+
+    /* simple button loading indicator */
+    .loading {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255,255,255,0.6);
+      border-top-color: transparent;
+      border-radius: 50%;
+      vertical-align: middle;
+      margin-right: 8px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
 </head>
 <body>
-  <!-- Navigation -->
-  <nav class="navbar">
-    <div class="nav-container">
-      <div class="nav-logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+  <div class="wave"></div>
+  <div class="wave"></div>
+  <div class="wave"></div>
+  <div class="auth-container">
+    <div class="auth-box" style="max-width:420px;margin:4rem auto;padding:2rem;border-radius:12px;">
+      <div style="text-align: center; margin-bottom: 2rem;">
+        <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin: 0 auto;">
           <rect width="32" height="32" rx="8" fill="url(#gradient1)"/>
           <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
           <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -25,53 +156,122 @@
             </linearGradient>
           </defs>
         </svg>
-        <span class="logo-text">Shiiman Leads</span>
       </div>
-      <div class="nav-links">
-        <a href="/">Home</a>
-        <a href="/signup">Sign Up</a>
-        <button class="btn-contact">Need Help?</button>
+
+      <h1 class="auth-title" style="text-align:center;margin:0 0 .5rem;">Welcome Back</h1>
+      <p class="auth-subtitle" style="text-align:center;margin:0 0 1rem;">Sign in to access your leads dashboard</p>
+
+      <div id="alert" class="alert alert-error">
+        <span id="alertMessage"></span>
+      </div>
+
+      <form id="loginForm">
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label class="form-label" for="username">Username</label>
+          <input 
+            type="text" 
+            id="username" 
+            name="username"
+            class="form-input" 
+            placeholder="Enter your username" 
+            required
+            style="width:100%;padding:.75rem;border-radius:8px;box-sizing:border-box;margin-top:.25rem;"
+          >
+        </div>
+
+        <div class="form-group" style="margin-bottom:1rem;">
+          <label class="form-label" for="password">Password</label>
+          <input 
+            type="password" 
+            id="password" 
+            class="form-input" 
+            placeholder="••••••••" 
+            required
+            style="width:100%;padding:.75rem;border-radius:8px;box-sizing:border-box;margin-top:.25rem;"
+          >
+        </div>
+
+        <div class="form-group">
+          <button type="submit" class="btn btn-primary" style="width: 100%;padding:.75rem;border-radius:8px;background:#6366f1;border:none;color:#fff;font-weight:700;" id="submitBtn">
+            Sign In
+          </button>
+        </div>
+      </form>
+
+      <div class="auth-link" style="text-align:center;margin-top:1rem;">
+        Don't have an account? <a href="/signup.html">Sign up for free</a>
+      </div>
+
+      <div class="auth-link" style="text-align:center;margin-top:.5rem;">
+        <a href="/">← Back to home</a>
       </div>
     </div>
-  </nav>
+  </div>
 
-  <!-- Login Section -->
-  <section class="hero" style="min-height: calc(100vh - 80px); display: flex; align-items: center;">
-    <div class="hero-container" style="max-width: 750px; margin: 0 auto; padding: 2rem;">
-      <div class="hero-content" style="text-align: center;">
-        <div class="hero-badge">
-          <span class="badge-icon">🔐</span>
-          <span>Secure client portal</span>
-        </div>
-        <h1 class="hero-title" style="font-size: 2.25rem; margin-bottom: 0.75rem;">
-          Welcome Back
-        </h1>
-        <p class="hero-description" style="margin-bottom: 1.5rem; font-size: 0.95rem;">
-          Login to access your personalized lead dashboard and data sources.
-        </p>
-        
-        <div class="signin-container" style="background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(148, 163, 184, 0.1); border-radius: 16px; padding: 2rem 3rem;">
-          <form action="/login" method="POST" class="signin-form">
-            <label for="username" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Username</label>
-            <input type="text" id="username" name="username" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+  <script src="app.js"></script>
+  <script>
+    const form = document.getElementById('loginForm');
+    const alert = document.getElementById('alert');
+    const alertMessage = document.getElementById('alertMessage');
+    const submitBtn = document.getElementById('submitBtn');
 
-            <label for="password" style="display: block; color: #cbd5e1; font-size: 14px; font-weight: 600; margin-bottom: 8px; text-align: left;">Password</label>
-            <input type="password" id="password" name="password" required style="width: 100%; padding: 12px 16px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1.25rem;" />
+    function showAlert(message, type = 'error') {
+      alert.className = `alert alert-${type} show`;
+      alertMessage.textContent = message;
+      setTimeout(() => {
+        alert.classList.remove('show');
+      }, 5000);
+    }
 
-            <button type="submit" class="btn-primary" style="width: 100%; justify-content: center; margin-bottom: 1rem;">
-              Sign In
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M6 3L11 8L6 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </form>
-         
-          <p class="signup-link" style="color: #94a3b8; font-size: 14px; margin-top: 1rem;">
-            Don't have an account? <a href="/signup" style="color: #6366f1; text-decoration: none; font-weight: 600;">Sign up here</a>.
-          </p>
-        </div>
-      </div>
-    </div>
-  </section>
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const username = document.getElementById('username')?.value;
+      const password = document.getElementById('password')?.value;
+
+      // Early validation
+      if (!username || !password) {
+        showAlert('Please enter both username and password', 'error');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="loading"></span> Signing in...';
+
+      try {
+        const response = await fetch('/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Store user data and token in localStorage
+          if (data.user) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+            localStorage.setItem('token', 'authenticated'); // Session-based auth
+          }
+          
+          showAlert('Login successful! Redirecting...', 'success');
+          setTimeout(() => {
+            window.location.href = data.redirect || '/client-portal.html';
+          }, 500);
+        } else {
+          showAlert(data.error || 'Login failed. Please check your credentials.', 'error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Sign In';
+        }
+      } catch (err) {
+        console.error('Login error:', err);
+        showAlert('Network error. Please try again.', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign In';
+      }
+    });
+  </script>
 </body>
 </html>
