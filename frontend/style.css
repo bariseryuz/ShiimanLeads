@@ -44,8 +44,13 @@ body {
   left: 0;
   right: 0;
   z-index: 50;
-  background: white;
-  border-bottom: 1px solid var(--gray-200);
+  background: linear-gradient(to bottom, 
+    rgba(255, 255, 255, 0.1) 0%, 
+    rgba(255, 255, 255, 0.3) 50%, 
+    rgba(255, 255, 255, 0.7) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.3);
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
 }
 
@@ -749,17 +754,19 @@ tr:hover {
 @media (max-width: 768px) {
   /* Navigation */
   .nav-container {
-    padding: 0.75rem 1rem;
-    justify-content: space-between;
+    padding: 0.75rem 1rem !important;
+    justify-content: space-between !important;
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
+    gap: 0 !important;
   }
   
   /* Logo stays on left */
   .nav-logo {
-    flex: 0 0 auto;
-    order: 1;
+    flex: 0 0 auto !important;
+    order: 1 !important;
+    margin-right: 0 !important;
   }
   
   /* Make brand name smaller on mobile */
@@ -770,9 +777,11 @@ tr:hover {
   /* Show hamburger on far right */
   .hamburger {
     display: flex !important;
-    margin-left: auto;
-    flex-shrink: 0;
-    order: 3;
+    margin-left: auto !important;
+    margin-right: 0 !important;
+    flex-shrink: 0 !important;
+    order: 3 !important;
+    position: relative !important;
   }
   
   /* Hide desktop nav completely */
