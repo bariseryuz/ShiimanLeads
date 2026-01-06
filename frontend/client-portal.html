@@ -12,28 +12,28 @@
   <nav class="navbar">
     <div class="nav-container">
       <!-- Left side: User info -->
-      <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
         <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
           U
         </div>
-        <span style="font-weight: 600; color: var(--gray-900);" id="userName">Loading...</span>
+        <span style="font-weight: 600; color: var(--gray-900); font-size: 0.875rem;" id="userName">Loading...</span>
       </div>
       
       <!-- Right side: Navigation and buttons -->
-      <div style="display: flex; align-items: center; gap: 2rem;">
-        <div class="nav-links">
+      <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+        <div class="nav-links" style="display: none;">
           <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
           <a href="/dashboard" style="color: var(--primary); font-weight: 600;">Dashboard</a>
           <a href="/my-sources" style="color: var(--gray-600); font-weight: 500;">My Sources</a>
         </div>
         
-        <div style="display: flex; align-items: center; gap: 1rem;">
-          <button onclick="showProfile()" class="btn btn-secondary" style="padding: 0.5rem 1rem;">
-            👤 Profile
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button onclick="showProfile()" class="btn btn-secondary" style="padding: 0.5rem 0.75rem; font-size: 0.75rem;">
+            👤
           </button>
           
-          <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 1rem;">
-            🚪 Exit
+          <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 0.75rem; font-size: 0.75rem;">
+            🚪
           </button>
         </div>
       </div>
