@@ -988,11 +988,11 @@ function startServer() {
       
       logger.info(`👤 User found: ${user.username} (ID: ${user.id}, Role: ${user.role})`);
       
-      // Early return: email verification check (skip for admin)
-      if (user.role !== 'admin' && !user.email_verified) {
-        logger.warn(`⚠️ Email not verified for user: ${user.username}`);
-        return res.status(403).json({ error: 'Please verify your email first' });
-      }
+      // Early return: email verification check (DISABLED - auto-verify on signup)
+      // if (user.role !== 'admin' && !user.email_verified) {
+      //   logger.warn(`⚠️ Email not verified for user: ${user.username}`);
+      //   return res.status(403).json({ error: 'Please verify your email first' });
+      // }
       
       // Defensive: Password comparison with explicit error handling
       let passwordValid = false;
@@ -1083,28 +1083,38 @@ function startServer() {
       // Generate unique verification token for this user
       const verificationToken = crypto.randomBytes(32).toString('hex');
       
-      // Create user
+      // Create user (auto-verified since email may not be configured)
       const hash = await bcrypt.hash(password, 10);
       await dbRun('INSERT INTO users (username, email, password_hash, role, created_at, email_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-        [username, email, hash, 'client', new Date().toISOString(), 0, verificationToken]);
+        [username, email, hash, 'client', new Date().toISOString(), 1, verificationToken]);
       
-      // Send verification email
+      // Send verification email if SMTP is configured
       const verifyLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
-      await mailTransport.sendMail({
-        from: `Shiiman Leads <${process.env.SMTP_USER}>`,
-        to: email,
-        subject: 'Verify your email - Shiiman Leads',
-        html: `
-          <h2>Welcome to Shiiman Leads!</h2>
-          <p>Hi ${username},</p>
-          <p>Please verify your email by clicking the link below:</p>
-          <a href="${verifyLink}">${verifyLink}</a>
-          <p>This link is unique to your account.</p>
-        `
-      });
-      logger.info(`Verification email sent to ${email}`);
-
-      res.redirect('/signup?success=Check+your+email+to+verify+your+account');
+      
+      if (mailTransport) {
+        try {
+          await mailTransport.sendMail({
+            from: `Shiiman Leads <${process.env.SMTP_USER}>`,
+            to: email,
+            subject: 'Verify your email - Shiiman Leads',
+            html: `
+              <h2>Welcome to Shiiman Leads!</h2>
+              <p>Hi ${username},</p>
+              <p>Please verify your email by clicking the link below:</p>
+              <a href="${verifyLink}">${verifyLink}</a>
+              <p>This link is unique to your account.</p>
+            `
+          });
+          logger.info(`Verification email sent to ${email}`);
+          res.redirect('/signup?success=Check+your+email+to+verify+your+account');
+        } catch (emailErr) {
+          logger.error(`Email send failed: ${emailErr.message}`);
+          res.redirect('/signup?error=Account+created+but+email+failed.+Contact+admin');
+        }
+      } else {
+        logger.warn(`SMTP not configured - user ${username} created but no verification email sent`);
+        res.redirect('/signup?error=Email+service+not+configured.+Contact+admin');
+      }
     } catch (e) {
       logger.error(`Signup error: ${e.message}`);
       res.status(500).redirect('/signup?error=Server+error');
@@ -1113,6 +1123,9 @@ function startServer() {
 
   // Test email endpoint
   app.get('/test-email', async (req, res) => {
+    if (!mailTransport) {
+      return res.status(500).send('SMTP not configured. Add SMTP environment variables.');
+    }
     try {
       await mailTransport.sendMail({
         from: `Shiiman Leads <${process.env.SMTP_USER}>`,
