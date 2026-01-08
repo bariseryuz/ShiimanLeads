@@ -6,25 +6,40 @@
  * Check if user is authenticated
  * Redirects to login if not authenticated
  */
-function checkAuth() {
-  const user = localStorage.getItem('user');
-  const token = localStorage.getItem('token');
-  
-  if (!user || !token) {
+async function checkAuth() {
+  try {
+    const response = await fetch('/api/me');
+    if (response.ok) {
+      const data = await response.json();
+      // Store user info in localStorage for display
+      localStorage.setItem('user', JSON.stringify(data.user));
+      return true;
+    } else {
+      // Not authenticated, redirect to login
+      window.location.href = '/login.html';
+      return false;
+    }
+  } catch (error) {
+    console.error('Auth check failed:', error);
     window.location.href = '/login.html';
     return false;
   }
-  return true;
 }
 
 /**
  * Logout user and redirect to home
  */
-function logout() {
+async function logout() {
   if (confirm('Are you sure you want to logout?')) {
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    window.location.href = '/';
+    try {
+      await fetch('/logout', { method: 'POST' });
+      localStorage.removeItem('user');
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Logout error:', error);
+      localStorage.removeItem('user');
+      window.location.href = '/';
+    }
   }
 }
 

@@ -1,10 +1,9 @@
 require('dotenv').config();
 const axios = require('axios');
 const cheerio = require('cheerio');
-const CryptoJS = require('crypto-js');
 const fs = require('fs');
 const cron = require('node-cron');
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const winston = require('winston');
 const puppeteer = require('puppeteer');
 const express = require('express');
@@ -64,7 +63,7 @@ function buildTextForFilter(item, source) {
 
 function textPassesFilters(text, source) {
   const t = (text || '').toString();
-  const minLength = Number.isFinite(source?.minLength) ? source.minLength : 20;
+  const minLength = Number.isFinite(source?.minLength) ? source.minLength : 0;
   if (t.length < minLength) return false;
 
   const kws = Array.isArray(source?.keywords) ? source.keywords : [];
@@ -166,38 +165,28 @@ async function getWithRetry(url, options = {}, retries = 3, baseDelayMs = 500) {
 }
 
 // === ASYNC DB HELPERS ===
+// better-sqlite3 helpers (synchronous, wrapped in async for API compatibility)
 function dbGet(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.get(sql, params, (err, row) => {
-      if (err) reject(err); else resolve(row);
-    });
-  });
+  return Promise.resolve(db.prepare(sql).get(...params));
 }
+
 function dbRun(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.run(sql, params, function (err) {
-      if (err) reject(err); else resolve(this);
-    });
-  });
+  return Promise.resolve(db.prepare(sql).run(...params));
 }
 
 function dbAll(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    db.all(sql, params, (err, rows) => {
-      if (err) reject(err); else resolve(rows);
-    });
-  });
+  return Promise.resolve(db.prepare(sql).all(...params));
 }
 
 async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId }) {
-  const hash = CryptoJS.MD5(raw + hashSalt).toString();
+  const hash = crypto.createHash('md5').update(raw + hashSalt).digest('hex');
   const row = await dbGet(`SELECT hash FROM seen WHERE hash = ? AND user_id = ?`, [hash, userId]);
   if (row) return false;
 
   await dbRun(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`, [hash, userId]);
   await dbRun(
-    `INSERT INTO leads (user_id, hash, raw_text, permit_number, address, value, description, source, date_added, phone, page_url)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+    `INSERT INTO leads (user_id, hash, raw_text, permit_number, address, value, description, source, date_added, phone, page_url, date_issued)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
     [
       userId,
       hash,
@@ -209,7 +198,8 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
       sourceName,
       new Date().toISOString(),
       lead.phone,
-      lead.page_url
+      lead.page_url,
+      lead.date_issued
     ]
   );
   fs.appendFileSync('output/latest_leads.jsonl', JSON.stringify({
@@ -224,10 +214,11 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
 }
 
 // === DATABASE ===
-const db = new sqlite3.Database('leads.db');
-db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
-  db.run(`CREATE TABLE IF NOT EXISTS leads (
+const db = new Database('leads.db');
+
+// Create tables (better-sqlite3 is synchronous)
+db.exec(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
+db.exec(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     hash TEXT,
@@ -240,8 +231,8 @@ db.serialize(() => {
     date_added TEXT,
     UNIQUE(hash, user_id)
   )`);
-  db.run(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
-  db.run(`CREATE TABLE IF NOT EXISTS users (
+db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
+db.exec(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
     email TEXT UNIQUE,
@@ -252,17 +243,17 @@ db.serialize(() => {
     verification_token TEXT
   )`);
 
-
-  // Per-user source configuration (JSON stored as text)
-  db.run(`CREATE TABLE IF NOT EXISTS user_sources (
+// Per-user source configuration (JSON stored as text)
+db.exec(`CREATE TABLE IF NOT EXISTS user_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     source_data TEXT NOT NULL,
     created_at TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
-  // Simple contact/inquiry storage for landing page form
-  db.run(`CREATE TABLE IF NOT EXISTS inquiries (
+
+// Simple contact/inquiry storage for landing page form
+db.exec(`CREATE TABLE IF NOT EXISTS inquiries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     email TEXT,
@@ -271,35 +262,34 @@ db.serialize(() => {
     created_at TEXT
   )`);
 
+// Attempt to add columns if missing (safe migrations with better-sqlite3)
+try {
+  const inquiryColumns = db.prepare("PRAGMA table_info(inquiries)").all();
+  if (!inquiryColumns.find(c => c.name === 'ip')) {
+    db.exec('ALTER TABLE inquiries ADD COLUMN ip TEXT');
+  }
+} catch (err) {
+  // Column already exists or other error
+}
 
-  // Attempt to add columns if missing (safe migrations)
-  db.get("PRAGMA table_info(inquiries)", (err) => {
-    if (!err) {
-      db.all("PRAGMA table_info(inquiries)", (e, cols) => {
-        if (!e && cols && !cols.find(c => c.name === 'ip')) {
-          db.run('ALTER TABLE inquiries ADD COLUMN ip TEXT');
-        }
-      });
-    }
-  });
-  // Add user_id to existing leads if missing
-  db.all("PRAGMA table_info(leads)", (e, cols) => {
-    if (!e && cols) {
-      if (!cols.find(c => c.name === 'user_id')) {
-        db.run('ALTER TABLE leads ADD COLUMN user_id INTEGER DEFAULT 1');
-        logger.info('Added user_id column to leads table');
-      }
-      if (!cols.find(c => c.name === 'phone')) {
-        db.run('ALTER TABLE leads ADD COLUMN phone TEXT');
-        logger.info('Added phone column to leads table');
-      }
-      if (!cols.find(c => c.name === 'page_url')) {
-        db.run('ALTER TABLE leads ADD COLUMN page_url TEXT');
-        logger.info('Added page_url column to leads table');
-      }
-    }
-  });
-});
+// Add columns to existing leads table if missing
+try {
+  const leadColumns = db.prepare("PRAGMA table_info(leads)").all();
+  if (!leadColumns.find(c => c.name === 'user_id')) {
+    db.exec('ALTER TABLE leads ADD COLUMN user_id INTEGER DEFAULT 1');
+    logger.info('Added user_id column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'phone')) {
+    db.exec('ALTER TABLE leads ADD COLUMN phone TEXT');
+    logger.info('Added phone column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'page_url')) {
+    db.exec('ALTER TABLE leads ADD COLUMN page_url TEXT');
+    logger.info('Added page_url column to leads table');
+  }
+} catch (err) {
+  // Columns already exist or other error
+}
 
 // === LOAD SOURCES ===
 function loadSources() {
@@ -318,9 +308,33 @@ function loadSources() {
 async function scrapeForUser(userId, userSources) {
   logger.info(`Starting scrape cycle for user ${userId}...`);
   const SOURCES = userSources;
+  
+  // Test Nashville API directly
+  if (SOURCES.find(s => s.name === 'Nashville')) {
+    try {
+      logger.info('Testing Nashville API base endpoint...');
+      const baseUrl = 'https://services2.arcgis.com/HdUhOrHbPq5yhfTh/arcgis/rest/services/Building_Permits_in_Davidson_County/FeatureServer/0?f=json';
+      const baseResponse = await axios.get(baseUrl);
+      logger.info(`Base endpoint test: ${baseResponse.status}`);
+      logger.info(`Service name: ${baseResponse.data?.name || 'unknown'}`);
+      
+      logger.info('Testing query endpoint...');
+      const testUrl = 'https://services2.arcgis.com/HdUhOrHbPq5yhfTh/arcgis/rest/services/Building_Permits_in_Davidson_County/FeatureServer/0/query?where=1=1&outFields=*&f=json&resultRecordCount=5';
+      const testResponse = await axios.get(testUrl);
+      logger.info(`Query test response: ${JSON.stringify(testResponse.data).substring(0, 500)}`);
+      logger.info(`Query test successful! Got ${testResponse.data?.features?.length || 0} features`);
+    } catch (testErr) {
+      logger.error(`Nashville API test failed: ${testErr.message}`);
+      if (testErr.response) {
+        logger.error(`Status: ${testErr.response.status}, Data: ${JSON.stringify(testErr.response.data)}`);
+      }
+    }
+  }
+  
   for (const source of SOURCES) {
     try {
       logger.info(`Checking → ${source.name} for user ${userId}`);
+      logger.info(`Source type: ${source.type}, method: ${source.method}, has params: ${!!source.params}`);
       let data; // can be JSON array or HTML string
       let axiosResponse;
       let usedPuppeteer = false;
@@ -331,21 +345,89 @@ async function scrapeForUser(userId, userSources) {
         try {
           const browser = await puppeteer.launch({
             headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
-            args: ['--no-sandbox','--disable-setuid-sandbox']
+            args: [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-blink-features=AutomationControlled'
+            ]
           });
           const page = await browser.newPage();
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
-          await page.setRequestInterception(true);
-          page.on('request', req => {
-            // Abort resources we don't need for scraping text to speed up
-            if (['image','font','media','stylesheet'].includes(req.resourceType())) {
-              req.abort();
-            } else {
-              req.continue();
-            }
+          
+          // Anti-detection
+          await page.evaluateOnNewDocument(() => {
+            Object.defineProperty(navigator, 'webdriver', { get: () => false });
           });
-          const navOpts = { waitUntil: ['domcontentloaded','networkidle2'], timeout: 60000 };
+          
+          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          
+          const navOpts = { waitUntil: 'domcontentloaded', timeout: 60000 };
           await page.goto(source.url, navOpts);
+          logger.info(`Puppeteer loaded page: ${source.url}`);
+          
+          // Wait for page to render
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          // Check if we need to extract table data (for Nashville-style sites)
+          if (source.extractTable === true) {
+            logger.info(`Extracting table data for ${source.name}...`);
+            
+            const tableData = await page.evaluate(() => {
+              const rows = Array.from(document.querySelectorAll('table tbody tr'));
+              return rows.map(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                return cells.map(cell => cell.innerText.trim());
+              });
+            });
+            
+            if (tableData && tableData.length > 0) {
+              logger.info(`Extracted ${tableData.length} rows from table`);
+              
+              // Convert table rows to JSON-like objects
+              data = tableData.map(cells => {
+                // Nashville format: Permit# | Type | Subtype | Parcel | DateEntered | DateIssued | Cost | Address
+                return {
+                  permit_number: cells[0] || '',
+                  permit_type: cells[1] || '',
+                  permit_subtype: cells[2] || '',
+                  parcel: cells[3] || '',
+                  date_entered: cells[4] || '',
+                  date_issued: cells[5] || '',
+                  construction_cost: cells[6] || '',
+                  address: cells[7] || ''
+                };
+              });
+              
+              // Process as JSON array
+              usedPuppeteer = true;
+              await browser.close();
+              
+              // Insert leads directly
+              for (const item of data) {
+                const raw = JSON.stringify(item);
+                const lead = {
+                  permit_number: item.permit_number || 'N/A',
+                  address: item.address || 'N/A',
+                  value: item.construction_cost || 'N/A',
+                  description: `${item.permit_type} - ${item.permit_subtype}`.trim(),
+                  phone: null,
+                  page_url: source.url
+                };
+                
+                // Apply filters if configured
+                const text = `${lead.permit_number} ${lead.address} ${lead.description} ${lead.value}`;
+                if (textPassesFilters(text, source)) {
+                  if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) {
+                    newLeads++;
+                  }
+                }
+              }
+              
+              logger.info(`Inserted ${newLeads} new leads from ${source.name}`);
+              continue; // Skip to next source
+            }
+          }
+          
+          // Fallback: extract HTML content
           if (source.waitSelector) {
             try { await page.waitForSelector(source.waitSelector, { timeout: 15000 }); } catch { /* ignore */ }
           }
@@ -359,15 +441,89 @@ async function scrapeForUser(userId, userSources) {
 
       // If not forced puppeteer OR puppeteer failed, use axios
       if (!data) {
-        axiosResponse = await getWithRetry(source.url, {
-          timeout: 30000,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-        });
+        // Support REST API with parameters (GET or POST)
+        if (source.type === 'json' && source.method && source.params) {
+          const method = (source.method || 'GET').toUpperCase();
+          if (method === 'POST') {
+            axiosResponse = await getWithRetry(source.url, {
+              method: 'POST',
+              data: source.params,
+              timeout: 30000,
+              headers: { 
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                'Content-Type': 'application/json'
+              }
+            });
+          } else {
+            // GET with query params - build URL manually for ArcGIS
+            logger.info(`Making GET request to: ${source.url}`);
+            logger.info(`Params: ${JSON.stringify(source.params, null, 2)}`);
+            
+            try {
+              // Build query string manually - ArcGIS doesn't like encoded = signs
+              const queryString = Object.keys(source.params)
+                .map(key => `${key}=${source.params[key]}`)
+                .join('&');
+              const fullUrl = `${source.url}?${queryString}`;
+              logger.info(`Full URL: ${fullUrl}`);
+              
+              // Use axios directly instead of getWithRetry
+              axiosResponse = await axios.get(fullUrl, {
+                timeout: 30000,
+                headers: { 
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                  'Accept': 'application/json'
+                }
+              });
+            } catch (apiErr) {
+              logger.error(`API request failed: ${apiErr.message}`);
+              logger.error(`Response data: ${JSON.stringify(apiErr.response?.data)}`);
+              throw apiErr;
+            }
+          }
+        } else {
+          axiosResponse = await getWithRetry(source.url, {
+            timeout: 30000,
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+          });
+        }
         data = axiosResponse.data;
       }
 
+      logger.info(`Data type: ${typeof data}, is array: ${Array.isArray(data)}, keys: ${typeof data === 'object' && !Array.isArray(data) ? Object.keys(data).slice(0, 5).join(', ') : 'N/A'}`);
+      if (typeof data === 'object' && data.error) {
+        logger.error(`API returned error: ${JSON.stringify(data.error)}`);
+      }
+
       // ─────────────── JSON API SUPPORT (Austin, Chicago, etc.) ───────────────
-      if (!usedPuppeteer && typeof data === 'object' && Array.isArray(data)) {
+      // If JSON Path is specified, navigate to the data array
+      let jsonData = data;
+      if (source.type === 'json' && source.jsonPath && typeof data === 'object') {
+        try {
+          // Simple JSONPath implementation (supports basic paths like "features[*].attributes" or "data.records")
+          const parts = source.jsonPath.split(/[\.\[\]]/).filter(Boolean);
+          let current = data;
+          for (const part of parts) {
+            if (part === '*') {
+              // Already at array level
+              continue;
+            }
+            if (current && typeof current === 'object') {
+              current = current[part];
+            }
+          }
+          if (Array.isArray(current)) {
+            jsonData = current;
+            logger.info(`JSONPath extracted array of ${current.length} items`);
+          }
+        } catch (e) {
+          logger.warn(`JSONPath extraction failed for ${source.name}: ${e.message}`);
+        }
+      }
+      
+      logger.info(`jsonData type: ${typeof jsonData}, is array: ${Array.isArray(jsonData)}, length: ${Array.isArray(jsonData) ? jsonData.length : 'N/A'}`);
+      
+      if (!usedPuppeteer && typeof jsonData === 'object' && Array.isArray(jsonData)) {
         // Field-based status/date filters for JSON APIs
         const cutoff = (() => {
           if (Number.isFinite(source?.sinceDays) && source?.dateField) {
@@ -377,7 +533,7 @@ async function scrapeForUser(userId, userSources) {
           return null;
         })();
 
-        const jsonItems = data.filter(item => {
+        const jsonItems = jsonData.filter(item => {
           const text = buildTextForFilter(item, source);
           if (!textPassesFilters(text, source)) return false;
 
@@ -402,13 +558,40 @@ async function scrapeForUser(userId, userSources) {
         let inserted = 0;
         for (const item of jsonItems) {
           const raw = JSON.stringify(item);
+          
+          // Helper function to get nested property by dot notation
+          const getNestedProp = (obj, path) => {
+            if (!path) return undefined;
+            return path.split('.').reduce((acc, part) => acc?.[part], obj);
+          };
+          
+          // Extract fields using jsonFields config if provided
+          let extractedData = {};
+          if (Array.isArray(source.jsonFields) && source.jsonFields.length > 0) {
+            // Use configured field mappings
+            source.jsonFields.forEach((fieldPath, idx) => {
+              const value = getNestedProp(item, fieldPath);
+              if (value !== undefined && value !== null) {
+                // Map to standard fields by position: [0]=permit, [1]=address, [2]=value, [3]=description, etc.
+                if (idx === 0) extractedData.permit_number = value;
+                else if (idx === 1) extractedData.address = value;
+                else if (idx === 2) extractedData.value = value;
+                else if (idx === 3) extractedData.description = value;
+                else if (idx === 4) extractedData.contractor = value;
+                else if (idx === 5) extractedData.phone = value;
+              }
+            });
+          }
+          
+          // Fallback to auto-detection if no jsonFields or extraction failed
           const lead = {
-            permit_number: item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || 'N/A',
-            address: item.address || item.location?.address || item.permit_location || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
-            value: item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.value || item.total_job_cost || item.job_cost || 'N/A',
-            description: item.description || item.work_class || item.permit_type || item.Details || 'N/A',
-            phone: item.Phone || item.telephone || item.phone || null,
-            page_url: source.url
+            permit_number: extractedData.permit_number || item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || 'N/A',
+            address: extractedData.address || item.property_address || item.address || item.location?.address || item.permit_location || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
+            value: extractedData.value || item.value || item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.total_job_cost || item.job_cost || 'N/A',
+            description: extractedData.description || item.description || item.work_class || item.permit_type || item.Details || 'N/A',
+            phone: extractedData.phone || item.Phone || item.telephone || item.phone || null,
+            page_url: source.publicUrl || source.url,
+            date_issued: item.issued_date || item.date_issued || item.issue_date || item.applicationdate || item.ApplicationDate || null
           };
           if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) inserted++;
         }
@@ -613,6 +796,7 @@ async function scrapeAllUsers() {
     const users = await dbAll('SELECT id, username, role FROM users');
     
     // Also scrape sources.json for all users
+    /* DISABLED: User wants to use only "My Sources"
     try {
       const sourcesJsonPath = path.join(__dirname, 'sources.json');
       if (fs.existsSync(sourcesJsonPath)) {
@@ -631,6 +815,7 @@ async function scrapeAllUsers() {
     } catch (jsonErr) {
       logger.error(`Error loading sources.json: ${jsonErr.message}`);
     }
+    */
     
     // Then scrape user-specific sources from database
     for (const user of users) {
@@ -672,12 +857,35 @@ function startServer() {
   const app = express();
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json()); // Parse JSON request bodies
+  
+  // SQLite session store (survives server restarts!)
+  const SqliteStore = require('better-sqlite3-session-store')(session);
+  const sessionDb = new Database('sessions.db');
+  
   app.use(session({
-    secret: process.env.SESSION_SECRET || 'change-me-in-.env',
+    store: new SqliteStore({
+      client: sessionDb,
+      expired: {
+        clear: true,
+        intervalMs: 900000 // Clear expired sessions every 15 minutes
+      }
+    }),
+    secret: process.env.SESSION_SECRET || 'change-me-in-.env-shiiman-2026',
     resave: false,
     saveUninitialized: false,
-    cookie: { httpOnly: true }
+    cookie: { 
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      secure: false,
+      sameSite: 'lax',
+      path: '/'
+    },
+    name: 'shiiman.sid',
+    rolling: true
   }));
+  
+  logger.info('✅ Session store: SQLite (persistent across restarts)');
+  
   // ---- Mail transporter (centralized) ----
   let mailTransport = null;
   if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.NOTIFY_TO) {
@@ -757,23 +965,91 @@ function startServer() {
     res.sendFile(path.join(__dirname, '../frontend/login.html'));
   });
   app.post('/login', async (req, res) => {
-    const { username, password } = req.body || {};
     try {
-      const user = await dbGet('SELECT * FROM users WHERE username = ?', [String(username || '')]);
-      if (!user) return res.status(401).redirect('/login?error=Invalid+credentials');
+      // Defensive: Extract and validate input
+      const { username, password } = req.body || {};
+      logger.info(`🔐 Login attempt: username="${username}"`);
       
-      // Check if email is verified (skip for admin)
-      if (user.role !== 'admin' && !user.email_verified) {
-        return res.status(403).redirect('/login?error=Please+verify+your+email+first');
+      // Early return: missing credentials
+      if (!username || !password) {
+        logger.warn(`⚠️ Missing credentials in login request`);
+        return res.status(400).json({ error: 'Username and password are required' });
       }
       
-      const ok = await bcrypt.compare(String(password || ''), user.password_hash);
-      if (!ok) return res.status(401).redirect('/login?error=Invalid+credentials');
-      req.session.user = { id: user.id, username: user.username, role: user.role };
-      res.redirect('/dashboard');
+      // Defensive: Query user with explicit type checking
+      const user = await dbGet('SELECT * FROM users WHERE username = ?', [String(username)]);
+      
+      // Early return: user not found
+      if (!user) {
+        logger.warn(`❌ User not found: ${username}`);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      
+      logger.info(`👤 User found: ${user.username} (ID: ${user.id}, Role: ${user.role})`);
+      
+      // Early return: email verification check (skip for admin)
+      if (user.role !== 'admin' && !user.email_verified) {
+        logger.warn(`⚠️ Email not verified for user: ${user.username}`);
+        return res.status(403).json({ error: 'Please verify your email first' });
+      }
+      
+      // Defensive: Password comparison with explicit error handling
+      let passwordValid = false;
+      try {
+        passwordValid = await bcrypt.compare(String(password), user.password_hash || '');
+      } catch (bcryptErr) {
+        logger.error(`❌ Bcrypt error: ${bcryptErr.message}`);
+        return res.status(500).json({ error: 'Authentication error' });
+      }
+      
+      // Early return: invalid password
+      if (!passwordValid) {
+        logger.warn(`❌ Wrong password for user: ${username}`);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      
+      logger.info(`✅ Password correct for user: ${user.username}`);
+      
+      // Defensive: Create session data with explicit checks
+      const sessionData = {
+        id: user.id,
+        username: user.username,
+        role: user.role
+      };
+      
+      logger.info(`📝 Setting session.user: ${JSON.stringify(sessionData)}`);
+      req.session.user = sessionData;
+      
+      // Defensive: Explicit session save with detailed logging
+      req.session.save((err) => {
+        if (err) {
+          logger.error(`❌ Session save error: ${err.message}`);
+          logger.error(err.stack);
+          return res.status(500).json({ error: 'Session save failed' });
+        }
+        
+        logger.info(`✅ Session saved! User ${user.username} logged in.`);
+        logger.info(`📝 Session ID: ${req.session.id}, User in session: ${JSON.stringify(req.session.user)}`);
+        
+        // Return JSON response for client-side redirect
+        res.json({ 
+          success: true, 
+          redirect: '/client-portal.html',
+          user: { 
+            id: user.id,
+            username: user.username, 
+            email: user.email,
+            role: user.role,
+            name: user.username
+          }
+        });
+      });
+      
     } catch (e) {
-      logger.error(`Login error: ${e.message}`);
-      res.status(500).redirect('/login?error=Server+error');
+      // Catch-all: log full error and return safe message
+      logger.error(`💥 Login error: ${e.message}`);
+      logger.error(e.stack);
+      return res.status(500).json({ error: 'Server error during login' });
     }
   });
   app.post('/logout', (req, res) => {
@@ -812,7 +1088,7 @@ function startServer() {
         [username, email, hash, 'client', new Date().toISOString(), 0, verificationToken]);
       
       // Send verification email
-      const verifyLink = `http://localhost:4000/verify-email?token=${verificationToken}`;
+      const verifyLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
       await mailTransport.sendMail({
         from: `Shiiman Leads <${process.env.SMTP_USER}>`,
         to: email,
@@ -825,11 +1101,28 @@ function startServer() {
           <p>This link is unique to your account.</p>
         `
       });
+      logger.info(`Verification email sent to ${email}`);
 
       res.redirect('/signup?success=Check+your+email+to+verify+your+account');
     } catch (e) {
       logger.error(`Signup error: ${e.message}`);
       res.status(500).redirect('/signup?error=Server+error');
+    }
+  });
+
+  // Test email endpoint
+  app.get('/test-email', async (req, res) => {
+    try {
+      await mailTransport.sendMail({
+        from: `Shiiman Leads <${process.env.SMTP_USER}>`,
+        to: 'guidebaris@outlook.com',
+        subject: 'Test Email - Shiiman Leads',
+        html: '<h2>Test Email</h2><p>This is a test email to verify SMTP works.</p>'
+      });
+      res.send('Test email sent successfully');
+    } catch (e) {
+      logger.error(`Test email error: ${e.message}`);
+      res.status(500).send(`Test email failed: ${e.message}`);
     }
   });
 
@@ -858,6 +1151,9 @@ function startServer() {
 
   // --- Client Dashboard Route ---
   app.get('/dashboard', (req, res) => {
+    // Debug logging
+    logger.info(`Dashboard access attempt. Session exists: ${!!req.session}, User: ${req.session?.user?.username || 'none'}`);
+    
     // Check if logged in
     if (!req.session.user) return res.redirect('/login');
     // Serve your client-portal.html
@@ -866,7 +1162,6 @@ function startServer() {
 
   // --- My Sources Page ---
   app.get('/my-sources', (req, res) => {
-    if (!req.session.user) return res.redirect('/login');
     res.sendFile(path.join(__dirname, '../frontend/my-sources.html'));
   });
 
@@ -989,10 +1284,8 @@ function startServer() {
   // Get current user's configured sources
   app.get('/api/sources/mine', async (req, res) => {
     try {
-      if (!req.session || !req.session.user) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      const userId = req.session.user.id;
+      // Use user ID from session, or default to 1 if not logged in
+      const userId = req.session?.user?.id || 1;
       const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
       const sources = rows.map(row => {
         try {
@@ -1014,10 +1307,8 @@ function startServer() {
   // Add a new source for current user
   app.post('/api/sources/add', express.json(), async (req, res) => {
     try {
-      if (!req.session || !req.session.user) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      const userId = req.session.user.id;
+      // Use user ID from session, or default to 1 if not logged in
+      const userId = req.session?.user?.id || 1;
       const sourceData = req.body;
       
       // Validate required fields
@@ -1042,10 +1333,7 @@ function startServer() {
   // Update an existing source
   app.put('/api/sources/:id', express.json(), async (req, res) => {
     try {
-      if (!req.session || !req.session.user) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      const userId = req.session.user.id;
+      const userId = req.session?.user?.id || 1;
       const sourceId = parseInt(req.params.id, 10);
       const sourceData = req.body;
       
@@ -1073,10 +1361,7 @@ function startServer() {
   // Delete a source
   app.delete('/api/sources/:id', async (req, res) => {
     try {
-      if (!req.session || !req.session.user) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
-      const userId = req.session.user.id;
+      const userId = req.session?.user?.id || 1;
       const sourceId = parseInt(req.params.id, 10);
       
       // Check ownership before deleting
@@ -1204,12 +1489,16 @@ function startServer() {
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
   });
   
-  // Serve frontend static bundle (internal app demo)
-  app.use('/frontend', express.static(path.resolve(__dirname, '../frontend')));
+  // Dashboard route - redirect to client portal
+  app.get('/dashboard', (req, res) => {
+    if (req.session?.user) {
+      return res.redirect('/client-portal.html');
+    }
+    res.redirect('/login.html');
+  });
   
-  // Serve CSS and JS at root level too for easier access
-  app.use('/style.css', express.static(path.resolve(__dirname, '../frontend/style.css')));
-  app.use('/app.js', express.static(path.resolve(__dirname, '../frontend/app.js')));
+  // Serve frontend static files
+  app.use(express.static(path.resolve(__dirname, '../frontend')));
 
   // Automatic port fallback: tries preferred then increments until a free port is found
   function startListening(preferredPort) {

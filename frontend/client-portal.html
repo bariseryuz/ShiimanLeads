@@ -22,17 +22,14 @@
         <div class="nav-links">
           <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
           <a href="/client-portal.html" style="color: var(--primary); font-weight: 600;">Dashboard</a>
-          <a href="/my-sources.html" style="color: var(--gray-600); font-weight: 500;">My Sources</a>
+          <a href="/profile.html" style="color: var(--gray-600); font-weight: 500;">Profile & Sources</a>
         </div>
         
         <div style="display: flex; align-items: center; gap: 0.5rem;">
           <span style="font-weight: 600; color: var(--gray-700); font-size: 0.813rem; margin-right: 0.5rem;" id="userName">Loading...</span>
-          <button onclick="showProfile()" class="btn btn-secondary" style="padding: 0.5rem 0.75rem; font-size: 0.75rem;">
-            👤
-          </button>
           
           <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 0.75rem; font-size: 0.75rem;">
-            🚪
+            Logout
           </button>
         </div>
       </div>
@@ -65,15 +62,11 @@
         <span>📊</span>
         <span>Dashboard</span>
       </a>
-      <a href="/my-sources.html" class="mobile-menu-item">
-        <span>⚙️</span>
-        <span>My Sources</span>
+      <a href="/profile.html" class="mobile-menu-item">
+        <span>👤</span>
+        <span>Profile & Sources</span>
       </a>
       <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0;">
-      <a href="#" onclick="showProfile(); toggleMobileMenu(); return false;" class="mobile-menu-item">
-        <span>👤</span>
-        <span>Profile</span>
-      </a>
       <a href="#" onclick="logout(); return false;" class="mobile-menu-item" style="color: var(--danger);">
         <span>🚪</span>
         <span>Logout</span>
@@ -106,7 +99,7 @@
 
   <div class="container">
     <!-- Add Source Section -->
-    <div class="card" style="background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; margin-bottom: 2rem;">
+    <div class="card" style="background: linear-gradient(135deg, #2c3e50, #34495e); color: white; margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <div>
           <h3 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem;">Manage Data Sources</h3>
@@ -114,7 +107,7 @@
             Configure and manage your custom scraping sources
           </p>
         </div>
-        <a href="/my-sources" class="btn" style="background: white; color: var(--primary); font-weight: 600; padding: 0.75rem 1.5rem; text-decoration: none;">
+        <a href="/profile.html" class="btn" style="background: white; color: #000; font-weight: 600; padding: 0.75rem 1.5rem; text-decoration: none;">
           Manage Sources
         </a>
       </div>

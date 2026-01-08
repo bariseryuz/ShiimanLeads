@@ -34,12 +34,12 @@
 
       <form id="signupForm">
         <div class="form-group">
-          <label class="form-label" for="name">Full Name</label>
+          <label class="form-label" for="username">Username</label>
           <input 
             type="text" 
-            id="name" 
+            id="username" 
             class="form-input" 
-            placeholder="John Doe" 
+            placeholder="johndoe" 
             required
           >
         </div>
@@ -102,7 +102,7 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       
-      const name = document.getElementById('name').value;
+      const username = document.getElementById('username').value;
       const email = document.getElementById('email').value;
       const password = document.getElementById('password').value;
 
@@ -110,12 +110,12 @@
       submitBtn.innerHTML = '<span class="loading"></span> Creating account...';
 
       try {
-        const response = await fetch('/api/signup', {
+        const response = await fetch('/signup', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ name, email, password })
+          body: JSON.stringify({ username, email, password })
         });
 
         const data = await response.json();
@@ -123,12 +123,14 @@
         if (response.ok) {
           showAlert('Account created successfully! Redirecting...', 'success');
           
-          localStorage.setItem('user', JSON.stringify(data.user));
-          localStorage.setItem('token', data.token);
+          if (data.user) {
+            localStorage.setItem('user', JSON.stringify(data.user));
+            localStorage.setItem('token', 'authenticated');
+          }
           
           setTimeout(() => {
-            window.location.href = '/client-portal.html';
-          }, 1500);
+            window.location.href = data.redirect || '/client-portal.html';
+          }, 1000);
         } else {
           showAlert(data.error || 'Failed to create account');
           submitBtn.disabled = false;

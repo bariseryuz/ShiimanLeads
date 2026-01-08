@@ -86,6 +86,9 @@ function initializeTables() {
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT DEFAULT 'client',
+      company_name TEXT,
+      phone TEXT,
+      website TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       last_login DATETIME,
       email_verified INTEGER DEFAULT 0,
@@ -93,7 +96,13 @@ function initializeTables() {
     )
   `, (err) => {
     if (err) console.error('Error creating users table:', err.message);
-    else console.log('✅ Users table ready');
+    else {
+      console.log('✅ Users table ready');
+      // Add new columns to existing users table if they don't exist
+      db.run(`ALTER TABLE users ADD COLUMN company_name TEXT`, () => {});
+      db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
+      db.run(`ALTER TABLE users ADD COLUMN website TEXT`, () => {});
+    }
   });
   
   // Create leads table
@@ -283,6 +292,128 @@ app.post('/logout', (req, res) => {
 // GET /api/me - Get current user info
 app.get('/api/me', requireAuth, (req, res) => {
   res.json({ user: req.session.user });
+});
+
+// GET /api/profile - Get user profile
+app.get('/api/profile', requireAuth, (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  db.get(
+    'SELECT id, username, email, company_name, phone, website FROM users WHERE id = ?',
+    [req.session.user.id],
+    (err, user) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      res.json(user);
+    }
+  );
+});
+
+// PUT /api/profile - Update user profile
+app.put('/api/profile', requireAuth, (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  const { email, company_name, phone, website } = req.body;
+  
+  db.run(
+    'UPDATE users SET email = ?, company_name = ?, phone = ?, website = ? WHERE id = ?',
+    [email, company_name, phone, website, req.session.user.id],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ success: true, message: 'Profile updated successfully' });
+    }
+  );
+});
+
+// GET /api/my-sources - Get user's custom sources
+app.get('/api/my-sources', requireAuth, (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  db.all(
+    'SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC',
+    [req.session.user.id],
+    (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      const sources = rows.map(row => {
+        try {
+          return {
+            id: row.id,
+            data: JSON.parse(row.source_data),
+            created_at: row.created_at
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      
+      res.json({ data: sources });
+    }
+  );
+});
+
+// POST /api/my-sources - Add a new custom source
+app.post('/api/my-sources', requireAuth, (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  const sourceData = req.body;
+  
+  // Validate required fields
+  if (!sourceData.name || !sourceData.url) {
+    return res.status(400).json({ error: 'Source name and URL are required' });
+  }
+  
+  // Store as JSON string
+  const sourceJson = JSON.stringify(sourceData);
+  
+  db.run(
+    'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
+    [req.session.user.id, sourceJson, new Date().toISOString()],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+      res.json({ success: true, id: this.lastID });
+    }
+  );
+});
+
+// DELETE /api/my-sources/:id - Delete a custom source
+app.delete('/api/my-sources/:id', requireAuth, (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  const sourceId = parseInt(req.params.id, 10);
+  
+  // Ensure user owns this source
+  db.get(
+    'SELECT id FROM user_sources WHERE id = ? AND user_id = ?',
+    [sourceId, req.session.user.id],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!row) return res.status(404).json({ error: 'Source not found' });
+      
+      db.run(
+        'DELETE FROM user_sources WHERE id = ? AND user_id = ?',
+        [sourceId, req.session.user.id],
+        function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
+    }
+  );
 });
 
 // GET /api/leads?limit=100&offset=0&source=...&search=...&sinceDays=7

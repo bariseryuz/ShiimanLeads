@@ -1,0 +1,25 @@
+[
+  {
+    "name": "Mesa Building Permits - Multifamily",
+    "url": "https://data.mesaaz.gov/resource/2gkz-7z4f.json",
+    "publicUrl": "https://data.mesaaz.gov/Development-Services/Building-Permits-RETIRED-/2gkz-7z4f/data",
+    "method": "json",
+    "requestMethod": "GET",
+    "params": {
+      "$where": "issued_date >= '2024-01-01T00:00:00' AND unit_number IS NOT NULL",
+      "$order": "issued_date DESC",
+      "$limit": 1000
+    },
+    "jsonFields": [
+      "permit_number",
+      "property_address",
+      "value",
+      "description",
+      "applicant",
+      "contractor_name"
+    ],
+    "useAI": false,
+    "enabled": true,
+    "notes": "Mesa AZ - Multifamily only, issued after 01/01/2024"
+  }
+]

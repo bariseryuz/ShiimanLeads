@@ -29,3 +29,8 @@ node index.js
 ```
 
 Visit `http://localhost:3000`
+
+
+
+
+add the stars to the backgroun or anythign thatbwill mak eit look futuristc so when it is sacrolled by the cliend or touched by client it can move itself
