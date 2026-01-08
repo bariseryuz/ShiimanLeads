@@ -8,8 +8,14 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 const Database = require('better-sqlite3');
 const app = express();
 
+// Create data directory if it doesn't exist
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
 // Session store database
-const sessionDb = new Database(path.join(__dirname, 'sessions.db'));
+const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
 
 // Middleware
 app.use(express.json());

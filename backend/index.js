@@ -38,6 +38,7 @@ const logger = winston.createLogger({
 });
 if (!fs.existsSync('logs')) fs.mkdirSync('logs');
 if (!fs.existsSync('output')) fs.mkdirSync('output');
+if (!fs.existsSync('data')) fs.mkdirSync('data');
 
 // === HELPERS ===
 function normalizeText(value) {
@@ -214,7 +215,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
 }
 
 // === DATABASE ===
-const db = new Database('leads.db');
+const db = new Database(path.join(__dirname, 'data', 'leads.db'));
 
 // Create tables (better-sqlite3 is synchronous)
 db.exec(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
@@ -860,7 +861,7 @@ function startServer() {
   
   // SQLite session store (survives server restarts!)
   const SqliteStore = require('better-sqlite3-session-store')(session);
-  const sessionDb = new Database('sessions.db');
+  const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
   
   app.use(session({
     store: new SqliteStore({
