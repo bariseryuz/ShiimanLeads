@@ -22,11 +22,11 @@ sqlite3 "C:\Users\fa-de\Desktop\data-based lead generation\shiiman-leads\backend
 so session is being saved on sqlite we verified it .
 
 I STILL CAN'T NAVIGATE TO Profike and Sourves  WHEN I DO I SEE BLACK SCREEN SO 
-
 -Vhecked the html for that 
 - Checked if it is a javascript issue
 - Checkd the correct path just in case 
 -It does not reaad the css detailşs
 -Page had 2 confilct parts
 -Profile and Sources are in the same spot so it might be causing the conflict as well
-
+-created extra proifle and sources htmls and linked them to correct opaths
+ISSUE RESOLVED
