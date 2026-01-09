@@ -961,6 +961,16 @@ function startServer() {
   })();
 
   // --- Auth routes ---
+  // Check current user session
+  app.get('/api/me', (req, res) => {
+    if (req.session?.user) {
+      logger.info(`✅ /api/me: User ${req.session.user.username} authenticated`);
+      return res.json({ user: req.session.user });
+    }
+    logger.info(`❌ /api/me: No session found`);
+    return res.status(401).json({ error: 'Not authenticated' });
+  });
+  
   app.get('/login', (req, res) => {
     if (req.session?.user) return res.redirect('/dashboard');
     res.sendFile(path.join(__dirname, '../frontend/login.html'));
@@ -1068,25 +1078,25 @@ function startServer() {
     const { username, email, password, confirmPassword } = req.body || {};
     try {
       if (!username || !email || !password) {
-        return res.status(400).redirect('/signup?error=All+fields+required');
+        return res.status(400).json({ error: 'All fields required' });
       }
       if (password !== confirmPassword) {
-        return res.status(400).redirect('/signup?error=Passwords+do+not+match');
+        return res.status(400).json({ error: 'Passwords do not match' });
       }
       
       // Check if user exists
       const existing = await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [username, email]);
       if (existing) {
-        return res.status(400).redirect('/signup?error=Username+or+email+already+exists');
+        return res.status(400).json({ error: 'Username or email already exists' });
       }
       
       // Generate unique verification token for this user
       const verificationToken = crypto.randomBytes(32).toString('hex');
       
-      // Create user (auto-verified since email may not be configured)
+      // Create user
       const hash = await bcrypt.hash(password, 10);
       await dbRun('INSERT INTO users (username, email, password_hash, role, created_at, email_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-        [username, email, hash, 'client', new Date().toISOString(), 1, verificationToken]);
+        [username, email, hash, 'client', new Date().toISOString(), 0, verificationToken]);
       
       // Send verification email if SMTP is configured
       const verifyLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;
@@ -1106,18 +1116,18 @@ function startServer() {
             `
           });
           logger.info(`Verification email sent to ${email}`);
-          res.redirect('/signup?success=Check+your+email+to+verify+your+account');
+          return res.json({ success: true, message: 'Account created! Check your email to verify.', redirect: '/login.html' });
         } catch (emailErr) {
           logger.error(`Email send failed: ${emailErr.message}`);
-          res.redirect('/signup?error=Account+created+but+email+failed.+Contact+admin');
+          return res.json({ success: true, message: 'Account created but email failed. You can login now.', redirect: '/login.html' });
         }
       } else {
         logger.warn(`SMTP not configured - user ${username} created but no verification email sent`);
-        res.redirect('/signup?error=Email+service+not+configured.+Contact+admin');
+        return res.json({ success: true, message: 'Account created! You can login now.', redirect: '/login.html' });
       }
     } catch (e) {
       logger.error(`Signup error: ${e.message}`);
-      res.status(500).redirect('/signup?error=Server+error');
+      res.status(500).json({ error: 'Server error during signup' });
     }
   });
 

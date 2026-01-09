@@ -8,7 +8,7 @@
  */
 async function checkAuth() {
   try {
-    const response = await fetch('/api/me');
+    const response = await fetch('/api/me', { credentials: 'include' });
     if (response.ok) {
       const data = await response.json();
       // Store user info in localStorage for display
@@ -32,7 +32,7 @@ async function checkAuth() {
 async function logout() {
   if (confirm('Are you sure you want to logout?')) {
     try {
-      await fetch('/logout', { method: 'POST' });
+      await fetch('/logout', { method: 'POST', credentials: 'include' });
       localStorage.removeItem('user');
       window.location.href = '/';
     } catch (error) {

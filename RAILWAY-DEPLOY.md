@@ -85,7 +85,32 @@ NODE_ENV=production
 
 ---
 
-### **Step 4: Connect Custom Domain**
+### **Step 4: Add Volume for Data Persistence**
+
+1. **In Railway Dashboard**:
+   - Click on your deployed service
+   - Go to "Settings" tab
+   - Scroll to "Volumes" section
+   - Click "New Volume"
+
+2. **Configure Volume**:
+   ```
+   Mount Path: /app/backend/data
+   ```
+   - This ensures your databases persist across deployments:
+     - `sessions.db` (user sessions)
+     - `leads.db` (scraped leads)
+
+3. **Save and Redeploy**:
+   - Click "Create Volume"
+   - Railway will automatically redeploy
+   - Your data will now persist permanently
+
+> **Important:** Without a volume, your database and sessions will be lost on each deployment!
+
+---
+
+### **Step 5: Connect Custom Domain**
 
 1. **In Railway Dashboard**:
    - Go to "Settings" tab
@@ -122,7 +147,7 @@ NODE_ENV=production
 
 ---
 
-### **Step 5: Verify Deployment**
+### **Step 6: Verify Deployment**
 
 Once DNS is ready, visit:
 - ✅ https://www.shiimanleads.com
@@ -142,10 +167,12 @@ Railway automatically provides SSL certificates. Your site will be:
 - In Railway Dashboard → "Deployments" → "View Logs"
 - Check for any errors
 
-### **Database**
-- SQLite database is created automatically
-- Data persists in Railway's storage
-- Located at: `backend/leads.db`
+### **Database & Sessions**
+- SQLite databases are created automatically
+- Data persists in Railway volume at `/app/backend/data/`
+  - `leads.db` - stores scraped leads
+  - `sessions.db` - stores user sessions
+- Volume ensures data survives deployments and restarts
 
 ---
 
@@ -186,9 +213,15 @@ Railway will automatically:
 - Some sites may block Railway IPs
 
 ### **Database issues:**
-- Check if `leads.db` file exists in Railway storage
-- Verify write permissions
+- Verify volume is mounted at `/app/backend/data`
+- Check if `leads.db` and `sessions.db` exist in volume
+- Verify write permissions (Railway handles this automatically)
 - Check Railway logs for SQL errors
+
+### **Session issues (users logged out):**
+- Verify volume is properly mounted
+- Check `sessions.db` exists in volume
+- Ensure `SESSION_SECRET` environment variable is set and doesn't change
 
 ---
 
@@ -219,14 +252,16 @@ Railway will automatically:
 - Scales automatically
 - Better for production
 
----
-
-## ✅ Final Checklist
-
-- [ ] Code pushed to GitHub
-- [ ] Railway project created
-- [ ] Environment variables set
+--- (GEMINI_API_KEY, SESSION_SECRET, NODE_ENV)
+- [ ] Volume mounted at `/app/backend/data`
 - [ ] App deployed successfully
+- [ ] Custom domain added
+- [ ] DNS configured
+- [ ] HTTPS working
+- [ ] Test account created
+- [ ] Zillow source added
+- [ ] Scraping tested
+- [ ] Sessions persist after logout/loginccessfully
 - [ ] Custom domain added
 - [ ] DNS configured
 - [ ] HTTPS working
