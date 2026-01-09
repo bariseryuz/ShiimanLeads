@@ -30,3 +30,7 @@ I STILL CAN'T NAVIGATE TO Profike and Sourves  WHEN I DO I SEE BLACK SCREEN SO
 -Profile and Sources are in the same spot so it might be causing the conflict as well
 -created extra proifle and sources htmls and linked them to correct opaths
 ISSUE RESOLVED
+
+
+RAILWAY SAYS SERVER:JS EXITED
+-updated railway.json to use node index.js instead of node start.js
