@@ -34,3 +34,5 @@ ISSUE RESOLVED
 
 RAILWAY SAYS SERVER:JS EXITED
 -updated railway.json to use node index.js instead of node start.js
+-Fixed nixpacks.toml to run index.js instead of server.js" the nixpack  was overriiding
+

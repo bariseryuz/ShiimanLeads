@@ -6,6 +6,8 @@
   <title>Client Portal - Shiiman Leads</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="style.css">
+  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-bold-straight/css/uicons-bold-straight.css'>
+  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css'>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
@@ -56,20 +58,20 @@
     
     <div class="mobile-menu-content">
       <a href="/" class="mobile-menu-item">
-        <span>🏠</span>
+        <span><i class="fi fi-br-house-chimney"></i></span>
         <span>Home</span>
       </a>
       <a href="/client-portal.html" class="mobile-menu-item active">
-        <span>📊</span>
+        <span><i class="fi fi-br-dashboard"></i></span>
         <span>Dashboard</span>
       </a>
       <a href="/profile.html" class="mobile-menu-item">
-        <span>👤</span>
+        <span><i class="fi fi-bs-user"></i></span>
         <span>Profile & Sources</span>
       </a>
       <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0;">
       <a href="#" onclick="logout(); return false;" class="mobile-menu-item" style="color: var(--danger);">
-        <span>🚪</span>
+        <span><i class="fi fi-br-exit"></i></span>
         <span>Logout</span>
       </a>
     </div>
@@ -142,10 +144,10 @@
 
     <!-- Leads Section Title -->
     <div style="margin-bottom: 1.5rem;">
-      <h2 style="font-size: 2rem; font-weight: 700; color: var(--gray-900); margin-bottom: 0.5rem;">
-        📊 Your Construction Leads
+      <h2 style="font-size: 2.5rem; font-weight: 800; color: #ffffff; margin-bottom: 0.5rem; letter-spacing: -0.02em; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);">
+        Your Construction Leads
       </h2>
-      <p style="color: var(--gray-600);">
+      <p style="color: rgba(255, 255, 255, 0.8);">
         View and filter all your construction project leads in one place
       </p>
     </div>
@@ -168,7 +170,7 @@
 
     <!-- Filters -->
     <div class="card">
-      <h3 class="card-title">🔍 Filter & Search Leads</h3>
+      <h3 class="card-title"><i class="fi fi-bs-search"></i> Filter & Search Leads</h3>
       <div class="filters">
         <div class="filter-group">
           <label class="form-label">Data Source</label>
@@ -198,9 +200,9 @@
         </div>
       </div>
       <div style="display: flex; gap: 1rem; justify-content: flex-end;">
-        <button class="btn btn-primary" onclick="loadLeads()">🔎 Apply Filters</button>
-        <button class="btn btn-secondary" onclick="clearFilters()">🔄 Clear</button>
-        <button class="btn btn-secondary" onclick="exportToCSV()">📥 Export CSV</button>
+        <button class="btn btn-primary" onclick="loadLeads()"><i class="fi fi-br-attention-detail"></i> Apply Filters</button>
+        <button class="btn btn-secondary" onclick="clearFilters()"><i class="fi fi-br-refresh"></i> Clear</button>
+        <button class="btn btn-secondary" onclick="exportToCSV()"><i class="fi fi-br-file-export"></i> Export CSV</button>
       </div>
     </div>
 
