@@ -236,16 +236,24 @@ gap: 6rem;
 
 .mobile-menu-item span:first-child {
   font-size: 1.25rem;
-  width: 24px;
+  width: 28px;
+  height: 28px;
   text-align: center;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .mobile-menu-item span:first-child i {
   font-size: 1.25rem;
   line-height: 1;
+  display: inline-block;
+  font-style: normal;
+}
+
+.mobile-menu-item span:first-child i::before {
+  display: inline-block;
 }
 
 /* Buttons */
