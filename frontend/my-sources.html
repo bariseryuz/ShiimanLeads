@@ -229,6 +229,9 @@
         <p style="color: var(--gray-600);">Manage your scraping sources</p>
       </div>
       <div style="display: flex; gap: 1rem;">
+        <button class="btn btn-secondary" onclick="scrapeNow()" id="scrapeBtn">
+          <img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Scrape Now
+        </button>
         <button class="btn btn-primary" onclick="openAddModal()">+ Add Source</button>
       </div>
     </div>
@@ -582,6 +585,36 @@
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    // Manual scrape trigger
+    async function scrapeNow() {
+      const btn = document.getElementById('scrapeBtn');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;animation:spin 1s linear infinite;"> Scraping...';
+      
+      try {
+        const response = await fetch('/api/scrape/now', { method: 'POST' });
+        const data = await response.json();
+        
+        if (data.success) {
+          alert(data.message || 'Scraping started! Check the dashboard in a few moments.');
+          setTimeout(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+          }, 3000);
+        } else {
+          alert('Failed to start scraping');
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      } catch (error) {
+        console.error('Scrape error:', error);
+        alert('Failed to start scraping');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
     }
 
     // Profile modal functions

@@ -1315,11 +1315,28 @@ function startServer() {
     }
   });
 
-  // Sources list for frontend dropdown
+  // Sources list for frontend dropdown - now includes configured sources
   app.get('/api/sources', async (req, res) => {
     try {
-      const rows = await dbAll('SELECT DISTINCT source FROM leads ORDER BY source');
-      res.json({ data: rows.map(r => ({ name: r.source })) });
+      const userId = req.session?.user?.id || 1;
+      
+      // Get all configured sources for the user
+      const userSources = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
+      const sourceNames = new Set();
+      
+      userSources.forEach(row => {
+        try {
+          const data = JSON.parse(row.source_data);
+          if (data.name) sourceNames.add(data.name);
+        } catch (e) {}
+      });
+      
+      // Also get sources that have leads (in case some were scraped)
+      const leadsRows = await dbAll('SELECT DISTINCT source FROM leads WHERE user_id = ? ORDER BY source', [userId]);
+      leadsRows.forEach(r => sourceNames.add(r.source));
+      
+      const uniqueSources = Array.from(sourceNames).map(name => ({ name }));
+      res.json({ data: uniqueSources });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
@@ -1367,7 +1384,15 @@ function startServer() {
         [userId, sourceJson, new Date().toISOString()]
       );
       
-      res.json({ success: true, id: result.lastID });
+      // Immediately scrape the newly added source
+      logger.info(`New source added by user ${userId}, triggering immediate scrape`);
+      scrapeForUser(userId, [sourceData]).then((newLeads) => {
+        logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
+      }).catch((err) => {
+        logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
+      });
+      
+      res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
     } catch (e) {
       logger.error(`Add source error: ${e.message}`);
       res.status(500).json({ error: e.message });
@@ -1411,6 +1436,59 @@ function startServer() {
       // Check ownership before deleting
       const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
       if (!existing) {
+        return res.status(404).json({ error: 'Source not found or access denied' });
+      }
+      
+      await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      res.json({ success: true });
+    } catch (e) {
+      logger.error(`Delete source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Manually trigger scraping for current user
+  app.post('/api/scrape/now', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      
+      // Get user's sources
+      const sourceRows = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ?', [userId]);
+      if (!sourceRows.length) {
+        return res.json({ success: true, message: 'No sources configured to scrape', leadsFound: 0 });
+      }
+      
+      const userSources = sourceRows.map(row => {
+        try {
+          return JSON.parse(row.source_data);
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      
+      if (!userSources.length) {
+        return res.json({ success: true, message: 'No valid sources found', leadsFound: 0 });
+      }
+      
+      logger.info(`Manual scrape triggered by user ${userId} for ${userSources.length} sources`);
+      
+      // Scrape in background and respond immediately
+      scrapeForUser(userId, userSources).then((newLeads) => {
+        logger.info(`Manual scrape completed for user ${userId}: ${newLeads} new leads`);
+      }).catch((err) => {
+        logger.error(`Manual scrape error for user ${userId}: ${err.message}`);
+      });
+      
+      res.json({ 
+        success: true, 
+        message: `Scraping started for ${userSources.length} source(s). Check back in a few moments.`,
+        sourcesCount: userSources.length
+      });
+    } catch (e) {
+      logger.error(`Manual scrape error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
         return res.status(404).json({ error: 'Source not found or access denied' });
       }
       
@@ -1576,8 +1654,9 @@ function startServer() {
 
 // === START ===
 startServer();
-cron.schedule('*/5 * * * *', scrapeAllUsers);
-scrapeAllUsers();
+cron.schedule('0 */8 * * *', scrapeAllUsers); // Run every 8 hours
+scrapeAllUsers(); // Run once on startup
 
-logger.info('SHIIMAN LEADS IS LIVE – Multi-tenant scraper running every 5 minutes');
+logger.info('SHIIMAN LEADS IS LIVE – Multi-tenant scraper running every 8 hours');
 logger.info('Each user sees only their own leads!');
+logger.info('Sources are scraped immediately when added and then every 8 hours');
