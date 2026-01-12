@@ -8,6 +8,12 @@
 html {
   overflow-x: hidden;
   width: 100%;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+html::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 :root {
@@ -43,6 +49,12 @@ body {
   width: 100%;
   max-width: 100vw;
   position: relative;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 
 /* Navbar */
@@ -650,7 +662,7 @@ tr:hover {
   margin: 0 auto;
   padding: 3rem;
   border-radius: 16px;
-  overflow: visible;
+  overflow: hidden;
   background: linear-gradient(to bottom, #0b0b2b, #1b2735 70%, #090a0f);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
 }
