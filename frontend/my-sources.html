@@ -387,8 +387,9 @@
       }
     }
 
-    // Load sources on page load
+    // Load sources and user info on page load
     loadSources();
+    initializeUserInfo();
 
     async function loadSources() {
       try {
@@ -626,30 +627,39 @@
       document.getElementById('profileModal').style.display = 'none';
     }
 
-    // Load user info
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
-    const userName = user.name || user.username || 'User';
-    const userInitial = userName.charAt(0).toUpperCase();
-    
-    document.getElementById('userName').textContent = userName;
-    document.getElementById('userAvatar').textContent = userInitial;
-    document.getElementById('profileName').textContent = userName;
-    document.getElementById('profileEmail').textContent = user.email || 'user@example.com';
-    document.getElementById('profileAvatar').textContent = userInitial;
-    document.getElementById('currentPlan').textContent = user.plan || 'Starter';
-    document.getElementById('memberSince').textContent = new Date().toLocaleDateString();
-    document.getElementById('userId').textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    
-    // Update mobile menu user info
-    const userEmail = user.email || 'user@example.com';
-    if (document.getElementById('userAvatarMobile')) {
-      document.getElementById('userAvatarMobile').textContent = userInitial;
-    }
-    if (document.getElementById('userNameMobile')) {
-      document.getElementById('userNameMobile').textContent = userName;
-    }
-    if (document.getElementById('userEmailMobile')) {
-      document.getElementById('userEmailMobile').textContent = userEmail;
+    // Load user info - wait for DOM to be ready
+    function initializeUserInfo() {
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      const userName = user.name || user.username || 'User';
+      const userInitial = userName.charAt(0).toUpperCase();
+      
+      const userNameEl = document.getElementById('userName');
+      const userAvatarEl = document.getElementById('userAvatar');
+      const profileNameEl = document.getElementById('profileName');
+      const profileEmailEl = document.getElementById('profileEmail');
+      const profileAvatarEl = document.getElementById('profileAvatar');
+      const currentPlanEl = document.getElementById('currentPlan');
+      const memberSinceEl = document.getElementById('memberSince');
+      const userIdEl = document.getElementById('userId');
+      
+      if (userNameEl) userNameEl.textContent = userName;
+      if (userAvatarEl) userAvatarEl.textContent = userInitial;
+      if (profileNameEl) profileNameEl.textContent = userName;
+      if (profileEmailEl) profileEmailEl.textContent = user.email || 'user@example.com';
+      if (profileAvatarEl) profileAvatarEl.textContent = userInitial;
+      if (currentPlanEl) currentPlanEl.textContent = user.plan || 'Starter';
+      if (memberSinceEl) memberSinceEl.textContent = new Date().toLocaleDateString();
+      if (userIdEl) userIdEl.textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+      
+      // Update mobile menu user info
+      const userEmail = user.email || 'user@example.com';
+      const userAvatarMobileEl = document.getElementById('userAvatarMobile');
+      const userNameMobileEl = document.getElementById('userNameMobile');
+      const userEmailMobileEl = document.getElementById('userEmailMobile');
+      
+      if (userAvatarMobileEl) userAvatarMobileEl.textContent = userInitial;
+      if (userNameMobileEl) userNameMobileEl.textContent = userName;
+      if (userEmailMobileEl) userEmailMobileEl.textContent = userEmail;
     }
 
     function logout() {
