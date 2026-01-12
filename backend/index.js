@@ -1489,16 +1489,6 @@ function startServer() {
       res.status(500).json({ error: e.message });
     }
   });
-        return res.status(404).json({ error: 'Source not found or access denied' });
-      }
-      
-      await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
-      res.json({ success: true });
-    } catch (e) {
-      logger.error(`Delete source error: ${e.message}`);
-      res.status(500).json({ error: e.message });
-    }
-  });
 
   // === ADMIN ENDPOINTS ===
   
