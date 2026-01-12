@@ -189,9 +189,17 @@
   </nav>
 
   <!-- Mobile Menu Overlay -->
-  <div class="mobile-menu-overlay" id="mobileMenu">
+  <div class="mobile-menu-overlay" id="mobileMenuOverlay" onclick="toggleMobileMenu()"></div>
+  
+  <!-- Mobile Menu -->
+  <div class="mobile-menu" id="mobileMenu">
+    <div class="mobile-menu-header">
+      <h3 style="margin: 0; color: #000000; font-size: 1.125rem;">Menu</h3>
+      <button onclick="toggleMobileMenu()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #000000;">&times;</button>
+    </div>
+    
     <div class="mobile-menu-content">
-      <div style="padding: 1.5rem; border-bottom: 1px solid rgba(0,0,0,0.1);">
+      <div style="padding: 1rem; border-bottom: 1px solid rgba(0,0,0,0.1);">
         <div style="display: flex; align-items: center; gap: 0.75rem;">
           <div style="width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #0066cc, #8b5cf6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 1.125rem;" id="userAvatarMobile">
             U
@@ -204,11 +212,12 @@
       </div>
       
       <div class="mobile-menu-links">
-        <a href="/" style="color: #000000;"><img src="icons/home.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Home</a>
-        <a href="/client-portal.html" style="color: #000000;"><img src="icons/dashboard.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Dashboard</a>
-        <a href="/profile.html" style="color: #000000;"><img src="icons/user.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Profile</a>
-        <a href="/my-sources.html" style="color: #0066cc; font-weight: 600;"><img src="icons/sources.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Sources</a>
-        <a href="#" onclick="logout(); return false;" style="color: #dc2626;"><img src="icons/logout.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Logout</a>
+        <a href="/" class="mobile-menu-item"><span><img src="icons/home.svg" style="width:16px;height:16px;"></span><span>Home</span></a>
+        <a href="/client-portal.html" class="mobile-menu-item"><span><img src="icons/dashboard.svg" style="width:16px;height:16px;"></span><span>Dashboard</span></a>
+        <a href="/profile.html" class="mobile-menu-item"><span><img src="icons/user.svg" style="width:16px;height:16px;"></span><span>Profile</span></a>
+        <a href="/my-sources.html" class="mobile-menu-item active"><span><img src="icons/sources.svg" style="width:16px;height:16px;"></span><span>Sources</span></a>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 1rem 0;">
+        <a href="#" onclick="logout(); return false;" class="mobile-menu-item" style="color: #dc2626;"><span><img src="icons/logout.svg" style="width:16px;height:16px;"></span><span>Logout</span></a>
       </div>
     </div>
   </div>
@@ -620,9 +629,23 @@
 
     // Mobile menu toggle
     function toggleMobileMenu() {
-      const mobileMenu = document.getElementById('mobileMenu');
-      if (mobileMenu) {
-        mobileMenu.classList.toggle('active');
+      const menu = document.getElementById('mobileMenu');
+      const overlay = document.getElementById('mobileMenuOverlay');
+      const hamburger = document.querySelector('.hamburger');
+      const body = document.body;
+      
+      const isOpen = menu.classList.contains('active');
+      
+      if (isOpen) {
+        menu.classList.remove('active');
+        overlay.classList.remove('active');
+        hamburger.classList.remove('active');
+        body.style.overflow = '';
+      } else {
+        menu.classList.add('active');
+        overlay.classList.add('active');
+        hamburger.classList.add('active');
+        body.style.overflow = 'hidden';
       }
     }
 
@@ -632,6 +655,8 @@
       const hamburger = document.querySelector('.hamburger');
       if (mobileMenu && !mobileMenu.contains(event.target) && hamburger && !hamburger.contains(event.target)) {
         mobileMenu.classList.remove('active');
+        document.getElementById('mobileMenuOverlay').classList.remove('active');
+        document.body.style.overflow = '';
       }
     });
   </script>
