@@ -43,3 +43,7 @@ Things that will gbe fixed on 12.01.26
 -Better UI/UX experience.
  
 
+ 14.01.2025 
+ E-mail config.
+ Data improvement
+

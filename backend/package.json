@@ -29,7 +29,7 @@
     "groq-sdk": "^0.37.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.1",
-    "puppeteer": "^21.3.8",
+    "puppeteer": "^24.15.0",
     "sqlite3": "^5.1.7",
     "winston": "^3.14.2"
   },

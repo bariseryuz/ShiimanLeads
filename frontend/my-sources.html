@@ -177,16 +177,41 @@
           <a href="/profile.html" style="color: #000000; font-weight: 500;"><img src="icons/user.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Profile</a>
           <a href="/my-sources.html" style="color: #0066cc; font-weight: 600;"><img src="icons/sources.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Sources</a>
         </div>
-        
-        <div style="display: flex; align-items: center; gap: 1rem;">
-          
-          <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 1rem;">
-            <img src="icons/logout.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Exit
-          </button>
+
+        <!-- Hamburger Menu (Mobile) -->
+        <div class="hamburger" onclick="toggleMobileMenu()">
+          <span></span>
+          <span></span>
+          <span></span>
         </div>
       </div>
     </div>
   </nav>
+
+  <!-- Mobile Menu Overlay -->
+  <div class="mobile-menu-overlay" id="mobileMenu">
+    <div class="mobile-menu-content">
+      <div style="padding: 1.5rem; border-bottom: 1px solid rgba(0,0,0,0.1);">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div style="width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #0066cc, #8b5cf6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 1.125rem;" id="userAvatarMobile">
+            U
+          </div>
+          <div>
+            <div style="font-weight: 600; color: #000000; font-size: 1rem;" id="userNameMobile">Loading...</div>
+            <div style="color: #6b7280; font-size: 0.875rem;" id="userEmailMobile">Loading...</div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="mobile-menu-links">
+        <a href="/" style="color: #000000;"><img src="icons/home.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Home</a>
+        <a href="/client-portal.html" style="color: #000000;"><img src="icons/dashboard.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Dashboard</a>
+        <a href="/profile.html" style="color: #000000;"><img src="icons/user.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Profile</a>
+        <a href="/my-sources.html" style="color: #0066cc; font-weight: 600;"><img src="icons/sources.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Sources</a>
+        <a href="#" onclick="logout(); return false;" style="color: #dc2626;"><img src="icons/logout.svg" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;"> Logout</a>
+      </div>
+    </div>
+  </div>
 
   <div class="sources-container">
     <div class="header">
@@ -572,6 +597,18 @@
     document.getElementById('currentPlan').textContent = user.plan || 'Starter';
     document.getElementById('memberSince').textContent = new Date().toLocaleDateString();
     document.getElementById('userId').textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    
+    // Update mobile menu user info
+    const userEmail = user.email || 'user@example.com';
+    if (document.getElementById('userAvatarMobile')) {
+      document.getElementById('userAvatarMobile').textContent = userInitial;
+    }
+    if (document.getElementById('userNameMobile')) {
+      document.getElementById('userNameMobile').textContent = userName;
+    }
+    if (document.getElementById('userEmailMobile')) {
+      document.getElementById('userEmailMobile').textContent = userEmail;
+    }
 
     function logout() {
       if (confirm('Are you sure you want to logout?')) {
@@ -580,6 +617,23 @@
         window.location.href = '/login.html';
       }
     }
+
+    // Mobile menu toggle
+    function toggleMobileMenu() {
+      const mobileMenu = document.getElementById('mobileMenu');
+      if (mobileMenu) {
+        mobileMenu.classList.toggle('active');
+      }
+    }
+
+    // Close mobile menu when clicking outside
+    document.addEventListener('click', function(event) {
+      const mobileMenu = document.getElementById('mobileMenu');
+      const hamburger = document.querySelector('.hamburger');
+      if (mobileMenu && !mobileMenu.contains(event.target) && hamburger && !hamburger.contains(event.target)) {
+        mobileMenu.classList.remove('active');
+      }
+    });
   </script>
 
   <!-- Profile Modal -->
