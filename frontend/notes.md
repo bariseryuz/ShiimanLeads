@@ -36,3 +36,10 @@ RAILWAY SAYS SERVER:JS EXITED
 -updated railway.json to use node index.js instead of node start.js
 -Fixed nixpacks.toml to run index.js instead of server.js" the nixpack  was overriiding
 
+Things that will gbe fixed on 12.01.26 
+-Layout on the mobile view on deployed website.
+-Needed to be focused on the correct data adding issue.
+-Icons have been replaced.
+-Better UI/UX experience.
+ 
+

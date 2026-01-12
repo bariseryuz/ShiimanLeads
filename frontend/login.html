@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Login - Shiiman Leads</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="icons/login.svg">
   <link rel="stylesheet" href="style.css">
-  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-bold-straight/css/uicons-bold-straight.css'>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     /* Animated gradient background with waves */
@@ -147,16 +146,21 @@
   <div class="auth-container">
     <div class="auth-box" style="max-width:420px;margin:4rem auto;padding:2rem;border-radius:12px;">
       <div style="text-align: center; margin-bottom: 2rem;">
-        <svg width="48" height="48" viewBox="0 0 32 32" fill="none" style="margin: 0 auto;">
-          <rect width="32" height="32" rx="8" fill="url(#gradient1)"/>
-          <path d="M8 16L14 10L20 16L26 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M8 22L14 16L20 22L26 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg width="160" height="48" viewBox="0 0 400 100" fill="none" style="margin: 0 auto;">
           <defs>
-            <linearGradient id="gradient1" x1="0" y1="0" x2="32" y2="32">
-              <stop offset="0%" stop-color="#6366f1"/>
-              <stop offset="100%" stop-color="#8b5cf6"/>
+            <linearGradient id="shinyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#000000" stop-opacity="0.6">
+                <animate attributeName="stop-opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+              </stop>
+              <stop offset="50%" stop-color="#ffffff" stop-opacity="1">
+                <animate attributeName="offset" values="0;1;0" dur="2s" repeatCount="indefinite" />
+              </stop>
+              <stop offset="100%" stop-color="#000000" stop-opacity="0.6">
+                <animate attributeName="stop-opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+              </stop>
             </linearGradient>
           </defs>
+          <text x="200" y="75" font-family="Inter, Arial, sans-serif" font-size="60" font-weight="700" fill="url(#shinyGradient)" text-anchor="middle">Shiiman</text>
         </svg>
       </div>
 

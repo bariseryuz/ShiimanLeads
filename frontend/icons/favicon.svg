@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 100">
+  <defs>
+    <linearGradient id="shinyGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.6">
+        <animate attributeName="stop-opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+      </stop>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="1">
+        <animate attributeName="offset" values="0;1;0" dur="2s" repeatCount="indefinite" />
+      </stop>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.6">
+        <animate attributeName="stop-opacity" values="0.6;1;0.6" dur="2s" repeatCount="indefinite" />
+      </stop>
+    </linearGradient>
+  </defs>
+  <text x="200" y="75" font-family="Inter, Arial, sans-serif" font-size="60" font-weight="700" fill="url(#shinyGradient)" text-anchor="middle">Shiiman</text>
+</svg>

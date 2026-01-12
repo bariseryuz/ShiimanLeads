@@ -265,9 +265,6 @@ app.post('/login', async (req, res) => {
           return res.status(401).json({ error: 'Invalid username or password' });
         }
         
-        // Update last login
-        db.run('UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-        
         // Create session
         req.session.user = { id: user.id, username: user.username, email: user.email };
         

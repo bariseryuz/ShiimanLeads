@@ -1231,6 +1231,26 @@ function startServer() {
     });
   });
 
+  // API: Get user profile
+  app.get('/api/profile', (req, res) => {
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    try {
+      const user = db.prepare('SELECT id, username, email, company_name, phone, website, created_at FROM users WHERE id = ?').get(req.session.user.id);
+      
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      res.json(user);
+    } catch (error) {
+      logger.error(`Error fetching profile: ${error.message}`);
+      res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+  });
+
   // Simple leads API with optional filters: ?limit=200&source=...&q=...&days=7
   // Returns { data: [...] } for frontend convenience
   app.get('/api/leads', async (req, res) => {

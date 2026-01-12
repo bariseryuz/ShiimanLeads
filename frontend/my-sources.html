@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>My Sources - Shiiman Leads</title>
+  <link rel="icon" type="image/svg+xml" href="icons/sources.svg">
   <link rel="stylesheet" href="style.css">
-  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-bold-straight/css/uicons-bold-straight.css'>
   <style>
     :root {
       --primary: #0066cc;
@@ -159,29 +159,29 @@
 </head>
 <body>
   <!-- Top Navigation Bar -->
-  <nav class="navbar" style="background: white; box-shadow: var(--shadow-sm);">
+  <nav class="navbar" style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
     <div class="nav-container">
       <!-- Left side: User info -->
       <div style="display: flex; align-items: center; gap: 0.5rem;">
-        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--secondary)); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
+        <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #0066cc, #8b5cf6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
           U
         </div>
-        <span style="font-weight: 600; color: var(--gray-900);" id="userName">Loading...</span>
+        <span style="font-weight: 600; color: #000000;" id="userName">Loading...</span>
       </div>
       
       <!-- Right side: Navigation and buttons -->
       <div style="display: flex; align-items: center; gap: 2rem;">
         <div class="nav-links">
-          <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
-          <a href="/client-portal.html" style="color: var(--gray-600); font-weight: 500;">Dashboard</a>
-          <a href="/profile.html" style="color: var(--gray-600); font-weight: 500;">Profile</a>
-          <a href="/my-sources.html" style="color: var(--primary); font-weight: 600;">Sources</a>
+          <a href="/" style="color: #000000; font-weight: 500;"><img src="icons/home.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Home</a>
+          <a href="/client-portal.html" style="color: #000000; font-weight: 500;"><img src="icons/dashboard.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Dashboard</a>
+          <a href="/profile.html" style="color: #000000; font-weight: 500;"><img src="icons/user.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Profile</a>
+          <a href="/my-sources.html" style="color: #0066cc; font-weight: 600;"><img src="icons/sources.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Sources</a>
         </div>
         
         <div style="display: flex; align-items: center; gap: 1rem;">
           
           <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 1rem;">
-            🚪 Exit
+            <img src="icons/logout.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Exit
           </button>
         </div>
       </div>
@@ -191,7 +191,7 @@
   <div class="sources-container">
     <div class="header">
       <div>
-        <h1>My Data Sources</h1>
+        <h1><img src="icons/sources.svg" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;"> My Data Sources</h1>
         <p style="color: var(--gray-600);">Manage your scraping sources</p>
       </div>
       <div style="display: flex; gap: 1rem;">

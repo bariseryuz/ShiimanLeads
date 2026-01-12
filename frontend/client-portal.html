@@ -2,35 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Client Portal - Shiiman Leads</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="icons/dashboard.svg">
   <link rel="stylesheet" href="style.css">
-  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-bold-straight/css/uicons-bold-straight.css'>
-  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-bold-rounded/css/uicons-bold-rounded.css'>
-  <link rel='stylesheet' href='https://cdn-uicons.flaticon.com/2.0.0/uicons-regular-straight/css/uicons-regular-straight.css'>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <!-- Top Navigation Bar -->
-  <nav class="navbar">
+  <nav class="navbar" style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
     <div class="nav-container">
       <!-- Left side: Logo/Brand -->
       <a href="/" style="text-decoration: none;">
-        <span class="brand-name" style="font-weight: 700; color: var(--gray-900); font-size: 1.125rem;">Shiiman Leads</span>
+        <span class="brand-name" style="font-weight: 700; color: #000000; font-size: 1.125rem;">Shiiman Leads</span>
       </a>
       
       <!-- Desktop Navigation -->
       <div class="desktop-nav" style="display: flex; align-items: center; gap: 1rem;">
         <div class="nav-links">
-          <a href="/" style="color: var(--gray-600); font-weight: 500;">Home</a>
-          <a href="/client-portal.html" style="color: var(--primary); font-weight: 600;">Dashboard</a>
-          <a href="/profile.html" style="color: var(--gray-600); font-weight: 500;">Profile</a>
-          <a href="/my-sources.html" style="color: var(--gray-600); font-weight: 500;">Sources</a>
+          <a href="/" style="color: #000000; font-weight: 500;"><img src="icons/home.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Home</a>
+          <a href="/client-portal.html" style="color: #0066cc; font-weight: 600;"><img src="icons/dashboard.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Dashboard</a>
+          <a href="/profile.html" style="color: #000000; font-weight: 500;"><img src="icons/user.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Profile</a>
+          <a href="/my-sources.html" style="color: #000000; font-weight: 500;"><img src="icons/sources.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Sources</a>
         </div>
         
         <div style="display: flex; align-items: center; gap: 0.5rem;">
-          <span style="font-weight: 600; color: var(--gray-700); font-size: 0.813rem; margin-right: 0.5rem;" id="userName">Loading...</span>
+          <span style="font-weight: 600; color: #000000; font-size: 0.813rem; margin-right: 0.5rem;" id="userName">Loading...</span>
           
           <button onclick="logout()" class="btn btn-danger" style="padding: 0.5rem 0.75rem; font-size: 0.75rem;">
             Logout
@@ -57,22 +54,26 @@
       <button onclick="toggleMobileMenu()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-600);">×</button>
     </div>
     
-    <div class="mobile-menu-content">
-      <a href="/" class="mobile-menu-item">
-        <span><i class="fi fi-rs-home"></i></span>
+    <div class="mobile-menu-content" style="display: block !important; visibility: visible !important;">
+      <a href="/" class="mobile-menu-item" style="display: flex !important; visibility: visible !important; color: #000 !important;">
+        <span><img src="icons/home.svg" style="width:16px;height:16px;"></span>
         <span>Home</span>
       </a>
-      <a href="/client-portal.html" class="mobile-menu-item active">
-        <span><i class="fi fi-rs-dashboard"></i></span>
+      <a href="/client-portal.html" class="mobile-menu-item active" style="display: flex !important; visibility: visible !important; color: #6366f1 !important;">
+        <span><img src="icons/dashboard.svg" style="width:16px;height:16px;"></span>
         <span>Dashboard</span>
       </a>
-      <a href="/profile.html" class="mobile-menu-item">
-        <span><i class="fi fi-rs-user"></i></span>
-        <span>Profile & Sources</span>
+      <a href="/my-sources.html" class="mobile-menu-item" style="display: flex !important; visibility: visible !important; color: #000 !important;">
+        <span><img src="icons/sources.svg" style="width:16px;height:16px;"></span>
+        <span>My Sources</span>
+      </a>
+      <a href="/profile.html" class="mobile-menu-item" style="display: flex !important; visibility: visible !important; color: #000 !important;">
+        <span><img src="icons/user.svg" style="width:16px;height:16px;"></span>
+        <span>Profile</span>
       </a>
       <hr style="border: none; border-top: 1px solid var(--gray-200); margin: 1rem 0;">
-      <a href="#" onclick="logout(); return false;" class="mobile-menu-item" style="color: var(--danger);">
-        <span><i class="fi fi-rs-sign-out-alt"></i></span>
+      <a href="#" onclick="logout(); return false;" class="mobile-menu-item" style="display: flex !important; visibility: visible !important; color: #dc2626 !important;">
+        <span><img src="icons/logout.svg" style="width:16px;height:16px;"></span>
         <span>Logout</span>
       </a>
     </div>
@@ -171,7 +172,7 @@
 
     <!-- Filters -->
     <div class="card">
-      <h3 class="card-title"><i class="fi fi-bs-search"></i> Filter & Search Leads</h3>
+      <h3 class="card-title"><img src="icons/sources.svg" style="width:18px;height:18px;vertical-align:middle;margin-right:8px;"> Filter & Search Leads</h3>
       <div class="filters">
         <div class="filter-group">
           <label class="form-label">Data Source</label>
@@ -201,9 +202,9 @@
         </div>
       </div>
       <div style="display: flex; gap: 1rem; justify-content: flex-end;">
-        <button class="btn btn-primary" onclick="loadLeads()"><i class="fi fi-br-attention-detail"></i> Apply Filters</button>
-        <button class="btn btn-secondary" onclick="clearFilters()"><i class="fi fi-br-refresh"></i> Clear</button>
-        <button class="btn btn-secondary" onclick="exportToCSV()"><i class="fi fi-br-file-export"></i> Export CSV</button>
+        <button class="btn btn-primary" onclick="loadLeads()">Apply Filters</button>
+        <button class="btn btn-secondary" onclick="clearFilters()">Clear</button>
+        <button class="btn btn-secondary" onclick="exportToCSV()">Export CSV</button>
       </div>
     </div>
 
@@ -243,7 +244,7 @@
   <div id="profileModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
     <div class="card" style="max-width: 500px; width: 90%; margin: 2rem; max-height: 90vh; overflow-y: auto;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-        <h2 style="font-size: 1.75rem; font-weight: 700; color: var(--gray-900);">👤 My Profile</h2>
+        <h2 style="font-size: 1.75rem; font-weight: 700; color: var(--gray-900);"><img src="icons/user.svg" style="width:22px;height:22px;vertical-align:middle;margin-right:8px;"> My Profile</h2>
         <button onclick="hideProfile()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--gray-600);">✕</button>
       </div>
       
@@ -318,14 +319,22 @@
     const userName = user.name || 'User';
     const userInitial = userName.charAt(0).toUpperCase();
     
-    document.getElementById('userName').textContent = userName;
-    document.getElementById('userAvatar').textContent = userInitial;
-    document.getElementById('profileName').textContent = userName;
-    document.getElementById('profileEmail').textContent = user.email || 'user@example.com';
-    document.getElementById('profileAvatar').textContent = userInitial;
-    document.getElementById('currentPlan').textContent = user.plan || 'Starter';
-    document.getElementById('memberSince').textContent = new Date().toLocaleDateString();
-    document.getElementById('userId').textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    // Safely update elements only if they exist
+    const userNameEl = document.getElementById('userName');
+    const profileNameEl = document.getElementById('profileName');
+    const profileEmailEl = document.getElementById('profileEmail');
+    const profileAvatarEl = document.getElementById('profileAvatar');
+    const currentPlanEl = document.getElementById('currentPlan');
+    const memberSinceEl = document.getElementById('memberSince');
+    const userIdEl = document.getElementById('userId');
+    
+    if (userNameEl) userNameEl.textContent = userName;
+    if (profileNameEl) profileNameEl.textContent = userName;
+    if (profileEmailEl) profileEmailEl.textContent = user.email || 'user@example.com';
+    if (profileAvatarEl) profileAvatarEl.textContent = userInitial;
+    if (currentPlanEl) currentPlanEl.textContent = user.plan || 'Starter';
+    if (memberSinceEl) memberSinceEl.textContent = new Date().toLocaleDateString();
+    if (userIdEl) userIdEl.textContent = 'USR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     // Profile modal functions
     function showProfile() {
