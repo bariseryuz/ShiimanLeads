@@ -196,16 +196,32 @@
   <script>
     async function loadProfile() {
       try {
-        const response = await fetch('/api/profile');
+        console.log('🔄 Loading profile...');
+        const response = await fetch('/api/profile', {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        console.log('📡 Response status:', response.status);
+        
         if (!response.ok) {
           if (response.status === 401) {
+            console.log('❌ Not authenticated, redirecting to login');
             window.location.href = '/login.html';
             return;
           }
-          throw new Error('Failed to load profile');
+          
+          const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('❌ Server error:', errorData);
+          throw new Error(errorData.error || 'Failed to load profile');
         }
         
         const profile = await response.json();
+        console.log('✅ Profile loaded:', profile.username);
+        
         document.getElementById('username').value = profile.username || '';
         document.getElementById('email').value = profile.email || '';
         document.getElementById('companyName').value = profile.company_name || '';
@@ -213,7 +229,7 @@
         document.getElementById('website').value = profile.website || '';
       } catch (error) {
         console.error('Error loading profile:', error);
-        showError('Failed to load profile');
+        showError('Failed to load profile: ' + error.message);
       }
     }
 

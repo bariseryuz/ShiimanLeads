@@ -184,6 +184,11 @@ function requireAuth(req, res, next) {
   if (req.session && req.session.user) {
     return next();
   }
+  console.error('❌ Authentication failed - No session or user:', {
+    hasSession: !!req.session,
+    hasUser: !!(req.session && req.session.user),
+    sessionID: req.sessionID
+  });
   res.status(401).json({ error: 'Authentication required' });
 }
 
@@ -300,15 +305,25 @@ app.get('/api/me', requireAuth, (req, res) => {
 // GET /api/profile - Get user profile
 app.get('/api/profile', requireAuth, (req, res) => {
   if (!db) {
+    console.error('❌ Database not available for profile request');
     return res.status(503).json({ error: 'Database not available' });
   }
+  
+  console.log('📋 Loading profile for user:', req.session.user.id);
   
   db.get(
     'SELECT id, username, email, company_name, phone, website FROM users WHERE id = ?',
     [req.session.user.id],
     (err, user) => {
-      if (err) return res.status(500).json({ error: err.message });
-      if (!user) return res.status(404).json({ error: 'User not found' });
+      if (err) {
+        console.error('❌ Database error loading profile:', err.message);
+        return res.status(500).json({ error: 'Database error: ' + err.message });
+      }
+      if (!user) {
+        console.error('❌ User not found:', req.session.user.id);
+        return res.status(404).json({ error: 'User not found' });
+      }
+      console.log('✅ Profile loaded successfully for:', user.username);
       res.json(user);
     }
   );
