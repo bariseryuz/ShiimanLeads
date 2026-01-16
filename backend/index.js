@@ -151,9 +151,13 @@ ${truncatedText}`;
 async function getWithRetry(url, options = {}, retries = 3, baseDelayMs = 500) {
   let attempt = 0;
   let lastErr;
+  const method = (options.method || 'GET').toUpperCase();
+  // Build axios config for request() - honors method/data/options
+  const axiosConfig = Object.assign({}, options, { url, method });
+  
   while (attempt <= retries) {
     try {
-      return await axios.get(url, options);
+      return await axios.request(axiosConfig);
     } catch (err) {
       lastErr = err;
       attempt++;
@@ -172,7 +176,13 @@ function dbGet(sql, params = []) {
 }
 
 function dbRun(sql, params = []) {
-  return Promise.resolve(db.prepare(sql).run(...params));
+  const res = db.prepare(sql).run(...params);
+  // Normalize better-sqlite3 response for compatibility
+  return Promise.resolve({ 
+    changes: res.changes, 
+    lastInsertRowid: res.lastInsertRowid,
+    lastID: res.lastInsertRowid // Backward compat alias
+  });
 }
 
 function dbAll(sql, params = []) {
@@ -203,13 +213,20 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
       lead.date_issued
     ]
   );
-  fs.appendFileSync('output/latest_leads.jsonl', JSON.stringify({
-    hash,
-    raw_text: raw,
-    ...lead,
-    source: sourceName,
-    date_added: new Date().toISOString()
-  }) + '\n');
+  
+  // Use async append to avoid blocking event loop
+  try {
+    await fs.promises.appendFile('output/latest_leads.jsonl', JSON.stringify({
+      hash,
+      raw_text: raw,
+      ...lead,
+      source: sourceName,
+      date_added: new Date().toISOString()
+    }) + '\n');
+  } catch (e) {
+    logger.warn(`Failed to append latest_leads.jsonl: ${e.message}`);
+  }
+  
   logger.info(`NEW LEAD → ${lead.permit_number} | ${lead.address} | ${lead.value}`);
   return true;
 }
@@ -335,6 +352,7 @@ function loadSources() {
 // === MAIN SCRAPER ===
 async function scrapeForUser(userId, userSources) {
   logger.info(`Starting scrape cycle for user ${userId}...`);
+  let totalInserted = 0;
   const SOURCES = userSources;
   
   // Test Nashville API directly
@@ -369,7 +387,8 @@ async function scrapeForUser(userId, userSources) {
       let newLeads = 0; // Track new leads for this source
 
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
-      if (source.usePuppeteer === true) { 
+      if (source.usePuppeteer === true) {
+        let browser;
         try {
           const launchOptions = {
             headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
@@ -436,7 +455,6 @@ async function scrapeForUser(userId, userSources) {
               
               // Process as JSON array
               usedPuppeteer = true;
-              await browser.close();
               
               // Insert leads directly
               for (const item of data) {
@@ -469,10 +487,17 @@ async function scrapeForUser(userId, userSources) {
             try { await page.waitForSelector(source.waitSelector, { timeout: 15000 }); } catch { /* ignore */ }
           }
           data = await page.content();
-          await browser.close();
           usedPuppeteer = true;
         } catch (e) {
           logger.error(`Puppeteer failed for ${source.name}: ${e.message} – falling back to axios`);
+        } finally {
+          if (browser) {
+            try {
+              await browser.close();
+            } catch (closeErr) {
+              logger.warn(`Failed to close browser for ${source.name}: ${closeErr.message}`);
+            }
+          }
         }
       }
 
@@ -766,6 +791,7 @@ async function scrapeForUser(userId, userSources) {
             };
             if (await insertLeadIfNew({ raw: fullPageText, sourceName: source.name, lead, hashSalt: source.url, userId })) {
               newLeads++;
+              totalInserted++;
               logger.info(`✨ AI extracted lead from full page: ${source.name}`);
             }
           }
@@ -811,7 +837,10 @@ async function scrapeForUser(userId, userSources) {
           };
         }
         
-        if (await insertLeadIfNew({ raw, sourceName: source.name, lead, hashSalt: source.url, userId })) newLeads++;
+        if (await insertLeadIfNew({ raw, sourceName: source.name, lead, hashSalt: source.url, userId })) {
+          newLeads++;
+          totalInserted++;
+        }
       }
       } // Close selector-based else block
 
@@ -823,7 +852,8 @@ async function scrapeForUser(userId, userSources) {
       logger.error(`Failed ${source.name}: ${err.message}`);
     }
   }
-  logger.info(`Scrape cycle finished for user ${userId}.\n`);
+  logger.info(`Scrape cycle finished for user ${userId}. Inserted ${totalInserted} total leads.\n`);
+  return totalInserted;
 }
 
 // === SCRAPER ORCHESTRATOR (runs for all users) ===
@@ -899,6 +929,13 @@ function startServer() {
   const SqliteStore = require('better-sqlite3-session-store')(session);
   const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
   
+  // Validate SESSION_SECRET in production
+  if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+    logger.error('❌ FATAL: SESSION_SECRET must be set in production');
+    logger.error('❌ Set SESSION_SECRET environment variable immediately!');
+    process.exit(1);
+  }
+  
   app.use(session({
     store: new SqliteStore({
       client: sessionDb,
@@ -934,7 +971,7 @@ function startServer() {
         secure: process.env.SMTP_SECURE === 'true',
         auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
       });
-      logger.info(`SMTP configured host=${process.env.SMTP_HOST} port=${process.env.SMTP_PORT||'587'} secure=${process.env.SMTP_SECURE||'false'} user=${process.env.SMTP_USER} notify_to=${process.env.NOTIFY_TO}`);
+      logger.info(`SMTP configured host=${process.env.SMTP_HOST} port=${process.env.SMTP_PORT||'587'} secure=${process.env.SMTP_SECURE||'false'} notify_to=${process.env.NOTIFY_TO}`);
     } catch (e) {
       logger.warn('Failed to init mail transporter: ' + e.message);
     }

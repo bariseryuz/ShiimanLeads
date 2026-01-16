@@ -30,7 +30,13 @@ app.use(session({
       intervalMs: 900000 // 15 minutes
     }
   }),
-  secret: process.env.SESSION_SECRET || 'shiiman-leads-secret-key-change-in-production',
+  secret: (() => {
+    if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+      console.error('⚠️  WARNING: SESSION_SECRET not set in production! Using insecure default.');
+      console.error('⚠️  Set SESSION_SECRET environment variable immediately!');
+    }
+    return process.env.SESSION_SECRET || 'shiiman-leads-secret-key-change-in-production';
+  })(),
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -49,9 +55,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// Simple CORS (adjust origins as needed)
+// CORS configuration for session cookies
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  // In production, specify allowed origins explicitly
+  if (process.env.NODE_ENV === 'production') {
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',');
+    if (allowedOrigins.includes(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+  } else {
+    // Development: allow all origins with credentials
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
@@ -85,6 +103,17 @@ if (!fs.existsSync(dbPath)) {
 }
 
 function initializeTables() {
+  let tablesCreated = 0;
+  const totalTables = 4;
+  
+  const checkComplete = () => {
+    tablesCreated++;
+    if (tablesCreated === totalTables) {
+      dbReady = true;
+      console.log('✅ Database fully initialized and ready');
+    }
+  };
+  
   // Create users table if it doesn't exist
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
@@ -106,16 +135,11 @@ function initializeTables() {
       console.error('❌ Error creating users table:', err.message);
     } else {
       console.log('✅ Users table ready');
-      // Add new columns to existing users table if they don't exist
-      db.run(`ALTER TABLE users ADD COLUMN company_name TEXT`, () => {});
-      db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
-      db.run(`ALTER TABLE users ADD COLUMN website TEXT`, () => {});
-      dbReady = true;
-      console.log('✅ Database fully initialized and ready');
     }
+    checkComplete();
   });
   
-  // Create leads table
+  // Create leads table with all required columns
   db.run(`
     CREATE TABLE IF NOT EXISTS leads (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,11 +152,18 @@ function initializeTables() {
       description TEXT,
       source TEXT,
       date_added TEXT,
+      date_issued TEXT,
+      phone TEXT,
+      page_url TEXT,
       UNIQUE(hash, user_id)
     )
   `, (err) => {
-    if (err) console.error('Error creating leads table:', err.message);
-    else console.log('✅ Leads table ready');
+    if (err) {
+      console.error('❌ Error creating leads table:', err.message);
+    } else {
+      console.log('✅ Leads table ready');
+    }
+    checkComplete();
   });
   
   // Create seen table
@@ -143,8 +174,12 @@ function initializeTables() {
       PRIMARY KEY(hash, user_id)
     )
   `, (err) => {
-    if (err) console.error('Error creating seen table:', err.message);
-    else console.log('✅ Seen table ready');
+    if (err) {
+      console.error('❌ Error creating seen table:', err.message);
+    } else {
+      console.log('✅ Seen table ready');
+    }
+    checkComplete();
   });
   
   // Create user_sources table if it doesn't exist
@@ -157,8 +192,12 @@ function initializeTables() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `, (err) => {
-    if (err) console.error('Error creating user_sources table:', err.message);
-    else console.log('✅ User sources table ready');
+    if (err) {
+      console.error('❌ Error creating user_sources table:', err.message);
+    } else {
+      console.log('✅ User sources table ready');
+    }
+    checkComplete();
   });
 }
 
