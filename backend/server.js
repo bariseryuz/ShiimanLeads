@@ -60,6 +60,7 @@ app.use((req, res, next) => {
 // SQLite connection (read-only usage)
 const dbPath = path.join(__dirname, 'leads.db');
 let db = null;
+let dbReady = false;
 
 // Create database if it doesn't exist and initialize tables
 if (!fs.existsSync(dbPath)) {
@@ -75,7 +76,7 @@ if (!fs.existsSync(dbPath)) {
 } else {
   db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
-      console.error('Database connection error:', err.message);
+      console.error('❌ Database connection error:', err.message);
     } else {
       console.log('✅ Connected to leads database');
       initializeTables();
@@ -101,13 +102,16 @@ function initializeTables() {
       verification_token TEXT
     )
   `, (err) => {
-    if (err) console.error('Error creating users table:', err.message);
-    else {
+    if (err) {
+      console.error('❌ Error creating users table:', err.message);
+    } else {
       console.log('✅ Users table ready');
       // Add new columns to existing users table if they don't exist
       db.run(`ALTER TABLE users ADD COLUMN company_name TEXT`, () => {});
       db.run(`ALTER TABLE users ADD COLUMN phone TEXT`, () => {});
       db.run(`ALTER TABLE users ADD COLUMN website TEXT`, () => {});
+      dbReady = true;
+      console.log('✅ Database fully initialized and ready');
     }
   });
   
@@ -302,8 +306,13 @@ app.get('/api/me', requireAuth, (req, res) => {
   res.json({ user: req.session.user });
 });
 
-// GET /api/profile - Get user profile
-app.get('/api/profile', requireAuth, (req, res) => {
+// GET /api/profile - Get user profile - db is null');
+    return res.status(503).json({ error: 'Database not available - db is null' });
+  }
+  
+  if (!dbReady) {
+    console.error('❌ Database not ready yet for profile request');
+    return res.status(503).json({ error: 'Database is still initializing, please retry in a moment
   if (!db) {
     console.error('❌ Database not available for profile request');
     return res.status(503).json({ error: 'Database not available' });
