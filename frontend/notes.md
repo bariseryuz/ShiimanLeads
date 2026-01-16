@@ -43,7 +43,10 @@ Things that will gbe fixed on 12.01.26
 -Better UI/UX experience.
  
 
- 14.01.2025 
+ 13.01.2025 
+
+ Entered data fır redfin is not pulling data when addedc from the website:
+ -
  E-mail config.
  Data improvement
 

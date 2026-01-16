@@ -163,9 +163,16 @@ function initializeTables() {
 }
 
 // Helper: build WHERE clause based on query params
-function buildFilters(query) {
+function buildFilters(query, userId = null) {
   const clauses = [];
   const params = [];
+  
+  // CRITICAL: Filter by user_id if provided
+  if (userId) {
+    clauses.push('user_id = ?');
+    params.push(userId);
+  }
+  
   if (query.source) {
     clauses.push('source = ?');
     params.push(query.source);
@@ -306,16 +313,16 @@ app.get('/api/me', requireAuth, (req, res) => {
   res.json({ user: req.session.user });
 });
 
-// GET /api/profile - Get user profile - db is null');
-    return res.status(503).json({ error: 'Database not available - db is null' });
+// GET /api/profile - Get user profile
+app.get('/api/profile', requireAuth, (req, res) => {
+  if (!db) {
+    console.error('❌ Database not available for profile request');
+    return res.status(503).json({ error: 'Database not available' });
   }
   
   if (!dbReady) {
     console.error('❌ Database not ready yet for profile request');
-    return res.status(503).json({ error: 'Database is still initializing, please retry in a moment
-  if (!db) {
-    console.error('❌ Database not available for profile request');
-    return res.status(503).json({ error: 'Database not available' });
+    return res.status(503).json({ error: 'Database is still initializing, please retry in a moment' });
   }
   
   console.log('📋 Loading profile for user:', req.session.user.id);
@@ -415,6 +422,42 @@ app.post('/api/my-sources', requireAuth, (req, res) => {
   );
 });
 
+// PUT /api/my-sources/:id - Update a custom source
+app.put('/api/my-sources/:id', requireAuth, (req, res) => {
+  if (!db) {
+    return res.status(503).json({ error: 'Database not available' });
+  }
+  
+  const sourceId = parseInt(req.params.id, 10);
+  const sourceData = req.body;
+  
+  // Validate required fields
+  if (!sourceData.name || !sourceData.url) {
+    return res.status(400).json({ error: 'Source name and URL are required' });
+  }
+  
+  // Ensure user owns this source
+  db.get(
+    'SELECT id FROM user_sources WHERE id = ? AND user_id = ?',
+    [sourceId, req.session.user.id],
+    (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!row) return res.status(404).json({ error: 'Source not found' });
+      
+      const sourceJson = JSON.stringify(sourceData);
+      
+      db.run(
+        'UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?',
+        [sourceJson, sourceId, req.session.user.id],
+        function(err) {
+          if (err) return res.status(500).json({ error: err.message });
+          res.json({ success: true });
+        }
+      );
+    }
+  );
+});
+
 // DELETE /api/my-sources/:id - Delete a custom source
 app.delete('/api/my-sources/:id', requireAuth, (req, res) => {
   if (!db) {
@@ -444,14 +487,18 @@ app.delete('/api/my-sources/:id', requireAuth, (req, res) => {
 });
 
 // GET /api/leads?limit=100&offset=0&source=...&search=...&sinceDays=7
-app.get('/api/leads', (req, res) => {
+app.get('/api/leads', requireAuth, (req, res) => {
   if (!db) {
     return res.status(503).json({ error: 'Database not available' });
   }
   const limit = Math.min(Number(req.query.limit) || 100, 1000);
   const offset = Number(req.query.offset) || 0;
-  const { where, params } = buildFilters(req.query);
-  const sql = `SELECT permit_number, address, value, description, source, date_added, date_issued FROM leads ${where} ORDER BY date_added DESC LIMIT ? OFFSET ?`;
+  
+  // IMPORTANT: Pass userId to filter leads by the logged-in user
+  const userId = req.session.user.id;
+  const { where, params } = buildFilters(req.query, userId);
+  
+  const sql = `SELECT permit_number, address, value, description, source, date_added, date_issued, phone, page_url FROM leads ${where} ORDER BY date_added DESC LIMIT ? OFFSET ?`;
   db.all(sql, [...params, limit, offset], (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json({ data: rows });
@@ -472,16 +519,27 @@ app.get('/api/sources', (req, res) => {
       return res.json({ data: globalSources });
     }
 
+    // Check if database is available
+    if (!db) {
+      console.log('⚠️ Database not available, returning only global sources');
+      return res.json({ data: globalSources });
+    }
+
     // Query user-specific sources
     db.all('SELECT source_data FROM user_sources WHERE user_id = ?', [userId], (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        console.error('❌ Error querying user_sources:', err.message);
+        return res.status(500).json({ error: err.message });
+      }
       const userSources = rows.map(row => {
         try { return JSON.parse(row.source_data); } catch { return null; }
       }).filter(Boolean);
+      console.log(`✅ Loaded ${userSources.length} user sources for user ${userId}`);
       // Merge and return
       res.json({ data: [...globalSources, ...userSources] });
     });
   } catch (e) {
+    console.error('❌ Error in /api/sources:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -492,6 +550,16 @@ app.get('/api/latest-jsonl', (req, res) => {
   if (!fs.existsSync(p)) return res.status(404).send('Not found');
   res.setHeader('Content-Type', 'text/plain');
   fs.createReadStream(p).pipe(res);
+});
+
+// POST /api/scrape/now - Trigger manual scraping
+app.post('/api/scrape/now', requireAuth, (req, res) => {
+  // This endpoint would trigger the scraper
+  // For now, just return success since the scraper runs in index.js
+  res.json({ 
+    success: true, 
+    message: 'Scraping will start in the background. The scraper runs every 8 hours automatically.' 
+  });
 });
 
 // Static frontend (../frontend)

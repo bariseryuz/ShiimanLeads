@@ -393,7 +393,7 @@
 
     async function loadSources() {
       try {
-        const response = await fetch('/api/sources/mine');
+        const response = await fetch('/api/my-sources');
         const data = await response.json();
         
         const sourcesList = document.getElementById('sourcesList');
@@ -450,7 +450,7 @@
 
     async function editSource(id) {
       try {
-        const response = await fetch('/api/sources/mine');
+        const response = await fetch('/api/my-sources');
         const data = await response.json();
         const source = data.data.find(s => s.id === id);
         
@@ -500,7 +500,7 @@
       }
       
       try {
-        const response = await fetch(`/api/sources/${id}`, {
+        const response = await fetch(`/api/my-sources/${id}`, {
           method: 'DELETE'
         });
         
@@ -555,13 +555,13 @@
       try {
         let response;
         if (editingSourceId) {
-          response = await fetch(`/api/sources/${editingSourceId}`, {
+          response = await fetch(`/api/my-sources/${editingSourceId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(sourceData)
           });
         } else {
-          response = await fetch('/api/sources/add', {
+          response = await fetch('/api/my-sources', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(sourceData)
