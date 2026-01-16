@@ -367,14 +367,23 @@ async function scrapeForUser(userId, userSources) {
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
       if (source.usePuppeteer === true) { 
         try {
-          const browser = await puppeteer.launch({
+          const launchOptions = {
             headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
-              '--disable-blink-features=AutomationControlled'
+              '--disable-blink-features=AutomationControlled',
+              '--disable-dev-shm-usage'
             ]
-          });
+          };
+          
+          // Use custom executable path if provided (for Railway/Nixpacks)
+          if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+            launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+            logger.info(`Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+          }
+          
+          const browser = await puppeteer.launch(launchOptions);
           const page = await browser.newPage();
           
           // Anti-detection
