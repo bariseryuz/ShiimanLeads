@@ -239,6 +239,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS users (
     email TEXT UNIQUE,
     password_hash TEXT NOT NULL,
     role TEXT DEFAULT 'client',
+    company_name TEXT,
+    phone TEXT,
+    website TEXT,
     created_at TEXT,    
     email_verified INTEGER DEFAULT 0,
     verification_token TEXT
@@ -271,6 +274,26 @@ try {
   }
 } catch (err) {
   // Column already exists or other error
+}
+
+// Add profile columns to existing users table if missing
+try {
+  const userColumns = db.prepare("PRAGMA table_info(users)").all();
+  if (!userColumns.find(c => c.name === 'company_name')) {
+    logger.info('Adding company_name column to users table');
+    db.exec('ALTER TABLE users ADD COLUMN company_name TEXT');
+  }
+  if (!userColumns.find(c => c.name === 'phone')) {
+    logger.info('Adding phone column to users table');
+    db.exec('ALTER TABLE users ADD COLUMN phone TEXT');
+  }
+  if (!userColumns.find(c => c.name === 'website')) {
+    logger.info('Adding website column to users table');
+    db.exec('ALTER TABLE users ADD COLUMN website TEXT');
+  }
+  logger.info('✅ Users table migrations complete');
+} catch (err) {
+  logger.error('Error migrating users table: ' + err.message);
 }
 
 // Add columns to existing leads table if missing
