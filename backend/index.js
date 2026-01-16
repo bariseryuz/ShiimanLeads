@@ -1234,20 +1234,31 @@ function startServer() {
   // API: Get user profile
   app.get('/api/profile', (req, res) => {
     if (!req.session || !req.session.user) {
+      logger.error('❌ Profile request - No session or user');
       return res.status(401).json({ error: 'Not authenticated' });
     }
     
+    logger.info(`📋 Fetching profile for user ID: ${req.session.user.id}`);
+    
     try {
+      if (!db) {
+        logger.error('❌ Database is null');
+        return res.status(500).json({ error: 'Database not initialized' });
+      }
+      
       const user = db.prepare('SELECT id, username, email, company_name, phone, website, created_at FROM users WHERE id = ?').get(req.session.user.id);
       
       if (!user) {
+        logger.error(`❌ User not found in database: ${req.session.user.id}`);
         return res.status(404).json({ error: 'User not found' });
       }
       
+      logger.info(`✅ Profile loaded for: ${user.username}`);
       res.json(user);
     } catch (error) {
-      logger.error(`Error fetching profile: ${error.message}`);
-      res.status(500).json({ error: 'Failed to fetch profile' });
+      logger.error(`❌ Error fetching profile: ${error.message}`);
+      logger.error(`❌ Stack trace: ${error.stack}`);
+      res.status(500).json({ error: 'Failed to fetch profile: ' + error.message });
     }
   });
 
