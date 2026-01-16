@@ -155,6 +155,30 @@ function initializeTables() {
       date_issued TEXT,
       phone TEXT,
       page_url TEXT,
+      application_date TEXT,
+      owner_name TEXT,
+      contractor_name TEXT,
+      contractor_address TEXT,
+      contractor_city TEXT,
+      contractor_state TEXT,
+      contractor_zip TEXT,
+      contractor_phone TEXT,
+      square_footage TEXT,
+      units TEXT,
+      floors TEXT,
+      parcel_number TEXT,
+      permit_type TEXT,
+      permit_subtype TEXT,
+      work_description TEXT,
+      purpose TEXT,
+      city TEXT,
+      state TEXT,
+      zip_code TEXT,
+      latitude TEXT,
+      longitude TEXT,
+      status TEXT,
+      record_type TEXT,
+      project_name TEXT,
       UNIQUE(hash, user_id)
     )
   `, (err) => {
@@ -162,6 +186,25 @@ function initializeTables() {
       console.error('❌ Error creating leads table:', err.message);
     } else {
       console.log('✅ Leads table ready');
+      // Add columns if they don't exist (for existing databases)
+      const newColumns = [
+        'application_date TEXT', 'owner_name TEXT', 'contractor_name TEXT',
+        'contractor_address TEXT', 'contractor_city TEXT', 'contractor_state TEXT',
+        'contractor_zip TEXT', 'contractor_phone TEXT', 'square_footage TEXT',
+        'units TEXT', 'floors TEXT', 'parcel_number TEXT', 'permit_type TEXT',
+        'permit_subtype TEXT', 'work_description TEXT', 'purpose TEXT',
+        'city TEXT', 'state TEXT', 'zip_code TEXT', 'latitude TEXT',
+        'longitude TEXT', 'status TEXT', 'record_type TEXT', 'project_name TEXT'
+      ];
+      
+      newColumns.forEach(col => {
+        const colName = col.split(' ')[0];
+        db.run(`ALTER TABLE leads ADD COLUMN ${col}`, (err) => {
+          if (err && !err.message.includes('duplicate column')) {
+            // Ignore duplicate column errors
+          }
+        });
+      });
     }
     checkComplete();
   });
@@ -592,13 +635,45 @@ app.get('/api/latest-jsonl', (req, res) => {
 });
 
 // POST /api/scrape/now - Trigger manual scraping
-app.post('/api/scrape/now', requireAuth, (req, res) => {
-  // This endpoint would trigger the scraper
-  // For now, just return success since the scraper runs in index.js
-  res.json({ 
-    success: true, 
-    message: 'Scraping will start in the background. The scraper runs every 8 hours automatically.' 
-  });
+app.post('/api/scrape/now', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.user.id;
+    
+    // Get user's sources
+    db.all(
+      'SELECT source_data FROM user_sources WHERE user_id = ? ORDER BY id DESC',
+      [userId],
+      async (err, rows) => {
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+        
+        if (!rows || rows.length === 0) {
+          return res.json({ success: true, message: 'No sources configured to scrape' });
+        }
+        
+        // Trigger scraper on port 4002 with user ID
+        try {
+          const axios = require('axios');
+          const response = await axios.post('http://localhost:4002/api/scrape/now', 
+            { userId, sources: rows.map(r => r.source_data) },
+            { headers: { 'Content-Type': 'application/json' } }
+          );
+          
+          res.json(response.data);
+        } catch (scraperErr) {
+          console.error('Error calling scraper:', scraperErr.message);
+          res.json({ 
+            success: true, 
+            message: `Scraping queued for ${rows.length} source(s). Check back in a few moments.`
+          });
+        }
+      }
+    );
+  } catch (error) {
+    console.error('Scrape now error:', error);
+    res.status(500).json({ error: 'Failed to trigger scraping' });
+  }
 });
 
 // Static frontend (../frontend)

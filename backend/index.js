@@ -232,7 +232,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
 }
 
 // === DATABASE ===
-const db = new Database(path.join(__dirname, 'data', 'leads.db'));
+const db = new Database(path.join(__dirname, 'leads.db'));
 
 // Create tables (better-sqlite3 is synchronous)
 db.exec(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
@@ -247,8 +247,53 @@ db.exec(`CREATE TABLE IF NOT EXISTS leads (
     description TEXT,
     source TEXT,
     date_added TEXT,
+    date_issued TEXT,
+    phone TEXT,
+    page_url TEXT,
+    application_date TEXT,
+    owner_name TEXT,
+    contractor_name TEXT,
+    contractor_address TEXT,
+    contractor_city TEXT,
+    contractor_state TEXT,
+    contractor_zip TEXT,
+    contractor_phone TEXT,
+    square_footage TEXT,
+    units TEXT,
+    floors TEXT,
+    parcel_number TEXT,
+    permit_type TEXT,
+    permit_subtype TEXT,
+    work_description TEXT,
+    purpose TEXT,
+    city TEXT,
+    state TEXT,
+    zip_code TEXT,
+    latitude TEXT,
+    longitude TEXT,
+    status TEXT,
+    record_type TEXT,
+    project_name TEXT,
     UNIQUE(hash, user_id)
   )`);
+
+// Add missing columns if they don't exist (for existing databases)
+const newColumns = [
+  'date_issued', 'phone', 'page_url', 'application_date', 'owner_name', 
+  'contractor_name', 'contractor_address', 'contractor_city', 'contractor_state',
+  'contractor_zip', 'contractor_phone', 'square_footage', 'units', 'floors',
+  'parcel_number', 'permit_type', 'permit_subtype', 'work_description', 'purpose',
+  'city', 'state', 'zip_code', 'latitude', 'longitude', 'status', 'record_type', 'project_name'
+];
+
+newColumns.forEach(col => {
+  try {
+    db.exec(`ALTER TABLE leads ADD COLUMN ${col} TEXT`);
+  } catch (err) {
+    // Column already exists, ignore
+  }
+});
+
 db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
 db.exec(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -386,6 +431,13 @@ async function scrapeForUser(userId, userSources) {
       let usedPuppeteer = false;
       let newLeads = 0; // Track new leads for this source
 
+      // Auto-detect Nashville-style URLs and enable table extraction
+      if (source.url && source.url.includes('data.nashville.gov') && source.url.includes('showTable=true')) {
+        source.usePuppeteer = true;
+        source.extractTable = true;
+        logger.info(`Auto-detected Nashville table view - enabling Puppeteer + table extraction`);
+      }
+
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
       if (source.usePuppeteer === true) {
         let browser;
@@ -427,29 +479,189 @@ async function scrapeForUser(userId, userSources) {
           if (source.extractTable === true) {
             logger.info(`Extracting table data for ${source.name}...`);
             
-            const tableData = await page.evaluate(() => {
-              const rows = Array.from(document.querySelectorAll('table tbody tr'));
-              return rows.map(row => {
-                const cells = Array.from(row.querySelectorAll('td'));
-                return cells.map(cell => cell.innerText.trim());
+            // First, check if there's a "Load More" or "Show All" button
+            logger.info(`Checking for load more buttons...`);
+            try {
+              // Try to find and click "Show All" or similar buttons
+              const loadAllClicked = await page.evaluate(() => {
+                const buttons = Array.from(document.querySelectorAll('button, a, span'));
+                const loadAllButton = buttons.find(btn => 
+                  btn.innerText && (
+                    btn.innerText.toLowerCase().includes('show all') ||
+                    btn.innerText.toLowerCase().includes('load all') ||
+                    btn.innerText.toLowerCase().includes('view all')
+                  )
+                );
+                if (loadAllButton) {
+                  loadAllButton.click();
+                  return true;
+                }
+                return false;
               });
+              
+              if (loadAllClicked) {
+                logger.info(`Clicked "Show All" button - waiting for data to load...`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+              }
+            } catch (err) {
+              logger.info(`No "Show All" button found: ${err.message}`);
+            }
+            
+            // Auto-scroll to load all lazy-loaded data
+            logger.info(`Auto-scrolling to load all data...`);
+            const totalRows = await page.evaluate(async () => {
+              let previousRowCount = 0;
+              let currentRowCount = 0;
+              let noChangeCount = 0;
+              let scrollAttempts = 0;
+              const maxScrollAttempts = 300;
+              
+              // Find the actual scrollable container (ArcGIS Hub uses specific containers)
+              const findScrollContainer = () => {
+                const selectors = [
+                  '.table-container',
+                  '[class*="table"]',
+                  '[class*="scroll"]',
+                  '[class*="content"]',
+                  'div[role="main"]',
+                  'main'
+                ];
+                
+                for (const selector of selectors) {
+                  const elements = document.querySelectorAll(selector);
+                  for (const el of elements) {
+                    if (el.scrollHeight > el.clientHeight) {
+                      return el;
+                    }
+                  }
+                }
+                return null;
+              };
+              
+              const scrollContainer = findScrollContainer();
+              console.log('Scroll container found:', scrollContainer ? scrollContainer.className : 'using window');
+              
+              while (noChangeCount < 12 && scrollAttempts < maxScrollAttempts) {
+                // Try clicking "Load More" button if it exists
+                const buttons = document.querySelectorAll('button, a[role="button"]');
+                for (const btn of buttons) {
+                  const text = (btn.textContent || '').toLowerCase();
+                  if ((text.includes('load') || text.includes('show') || text.includes('more')) && btn.offsetParent !== null) {
+                    btn.click();
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    break;
+                  }
+                }
+                
+                // Scroll the container or window
+                if (scrollContainer) {
+                  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                } else {
+                  window.scrollTo(0, document.documentElement.scrollHeight);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                // Count current rows
+                currentRowCount = document.querySelectorAll('table tbody tr').length;
+                
+                if (currentRowCount === previousRowCount) {
+                  noChangeCount++;
+                } else {
+                  console.log(`Loaded ${currentRowCount} rows (was ${previousRowCount})`);
+                  noChangeCount = 0;
+                  previousRowCount = currentRowCount;
+                }
+                
+                scrollAttempts++;
+              }
+              
+              return currentRowCount;
+            });
+            logger.info(`Finished auto-scrolling - loaded ${totalRows} total rows`);
+            
+            const tableData = await page.evaluate(() => {
+              // First, get the column headers
+              const headerCells = Array.from(document.querySelectorAll('table thead tr th'));
+              const headers = headerCells.map(cell => cell.innerText.trim().toLowerCase());
+              
+              // Then get the data rows
+              const rows = Array.from(document.querySelectorAll('table tbody tr'));
+              
+              return {
+                headers: headers,
+                rows: rows.map(row => {
+                  const cells = Array.from(row.querySelectorAll('td'));
+                  return cells.map(cell => cell.innerText.trim());
+                })
+              };
             });
             
-            if (tableData && tableData.length > 0) {
-              logger.info(`Extracted ${tableData.length} rows from table`);
+            if (tableData && tableData.rows && tableData.rows.length > 0) {
+              logger.info(`Extracted ${tableData.rows.length} rows from table`);
+              logger.info(`Table headers: ${JSON.stringify(tableData.headers)}`);
+              
+              // Map headers to find the right columns
+              const headers = tableData.headers;
+              const permitIdx = headers.findIndex(h => h.includes('permit') && (h.includes('number') || h.includes('#') || h.includes('num')));
+              const addressIdx = headers.findIndex(h => h.includes('address') && !h.includes('contractor'));
+              const costIdx = headers.findIndex(h => h.includes('cost') || (h.includes('value') && !h.includes('icc')));
+              const typeIdx = headers.findIndex(h => h.includes('permit') && h.includes('type') && !h.includes('subtype'));
+              const subtypeIdx = headers.findIndex(h => h.includes('subtype') || h.includes('sub type'));
+              const dateIssuedIdx = headers.findIndex(h => h.includes('issued') || (h.includes('date') && h.includes('issue')));
+              const dateEnteredIdx = headers.findIndex(h => h.includes('entered') || (h.includes('date') && h.includes('enter')));
+              const applicationDateIdx = headers.findIndex(h => h.includes('application') && h.includes('date'));
+              const contactIdx = headers.findIndex(h => h.includes('contact') && !h.includes('contractor'));
+              const phoneIdx = headers.findIndex(h => (h.includes('phone') || h.includes('telephone')) && !h.includes('contractor'));
+              const ownerIdx = headers.findIndex(h => h.includes('owner') || h.includes('applicant'));
+              // Try "contractor name" first, then fall back to "contact" for contractor
+              const contractorNameIdx = headers.findIndex(h => h.includes('contractor') && h.includes('name'));
+              const contractorFallbackIdx = contractorNameIdx === -1 ? contactIdx : -1;
+              const contractorAddressIdx = headers.findIndex(h => h.includes('contractor') && h.includes('address'));
+              const contractorPhoneIdx = headers.findIndex(h => h.includes('contractor') && h.includes('phone'));
+              const sqFtIdx = headers.findIndex(h => h.includes('square') || h.includes('sq'));
+              const unitsIdx = headers.findIndex(h => h.includes('unit'));
+              const floorsIdx = headers.findIndex(h => h.includes('floor'));
+              const parcelIdx = headers.findIndex(h => h.includes('parcel') || h.includes('folio'));
+              const cityIdx = headers.findIndex(h => h.includes('city') && !h.includes('contractor'));
+              const stateIdx = headers.findIndex(h => h.includes('state') && !h.includes('contractor'));
+              const zipIdx = headers.findIndex(h => h.includes('zip'));
+              const latIdx = headers.findIndex(h => h.includes('latitude') || h.includes('lat'));
+              const lonIdx = headers.findIndex(h => h.includes('longitude') || h.includes('lon'));
+              const statusIdx = headers.findIndex(h => h.includes('status'));
+              const purposeIdx = headers.findIndex(h => h.includes('purpose') || h.includes('description') && !h.includes('type'));
+              
+              logger.info(`Column indices - phone:${phoneIdx}, contact:${contactIdx}, contractor:${contractorNameIdx}, contractorPhone:${contractorPhoneIdx}`);
+              logger.info(`Column mapping: permit=${permitIdx}, address=${addressIdx}, cost=${costIdx}, type=${typeIdx}, subtype=${subtypeIdx}`);
               
               // Convert table rows to JSON-like objects
-              data = tableData.map(cells => {
-                // Nashville format: Permit# | Type | Subtype | Parcel | DateEntered | DateIssued | Cost | Address
+              data = tableData.rows.map(cells => {
                 return {
-                  permit_number: cells[0] || '',
-                  permit_type: cells[1] || '',
-                  permit_subtype: cells[2] || '',
-                  parcel: cells[3] || '',
-                  date_entered: cells[4] || '',
-                  date_issued: cells[5] || '',
-                  construction_cost: cells[6] || '',
-                  address: cells[7] || ''
+                  permit_number: permitIdx >= 0 ? cells[permitIdx] : '',
+                  address: addressIdx >= 0 ? cells[addressIdx] : '',
+                  construction_cost: costIdx >= 0 ? cells[costIdx] : '',
+                  permit_type: typeIdx >= 0 ? cells[typeIdx] : '',
+                  permit_subtype: subtypeIdx >= 0 ? cells[subtypeIdx] : '',
+                  date_issued: dateIssuedIdx >= 0 ? cells[dateIssuedIdx] : '',
+                  date_entered: dateEnteredIdx >= 0 ? cells[dateEnteredIdx] : '',
+                  application_date: applicationDateIdx >= 0 ? cells[applicationDateIdx] : '',
+                  phone: phoneIdx >= 0 ? cells[phoneIdx] : '',
+                  owner_name: ownerIdx >= 0 ? cells[ownerIdx] : '',
+                  contractor_name: (contractorNameIdx >= 0 ? cells[contractorNameIdx] : (contractorFallbackIdx >= 0 ? cells[contractorFallbackIdx] : '')),
+                  contractor_address: contractorAddressIdx >= 0 ? cells[contractorAddressIdx] : '',
+                  contractor_phone: contractorPhoneIdx >= 0 ? cells[contractorPhoneIdx] : '',
+                  square_footage: sqFtIdx >= 0 ? cells[sqFtIdx] : '',
+                  units: unitsIdx >= 0 ? cells[unitsIdx] : '',
+                  floors: floorsIdx >= 0 ? cells[floorsIdx] : '',
+                  parcel_number: parcelIdx >= 0 ? cells[parcelIdx] : '',
+                  city: cityIdx >= 0 ? cells[cityIdx] : '',
+                  state: stateIdx >= 0 ? cells[stateIdx] : '',
+                  zip_code: zipIdx >= 0 ? cells[zipIdx] : '',
+                  latitude: latIdx >= 0 ? cells[latIdx] : '',
+                  longitude: lonIdx >= 0 ? cells[lonIdx] : '',
+                  status: statusIdx >= 0 ? cells[statusIdx] : '',
+                  purpose: purposeIdx >= 0 ? cells[purposeIdx] : '',
+                  all_cells: cells
                 };
               });
               
@@ -459,13 +671,48 @@ async function scrapeForUser(userId, userSources) {
               // Insert leads directly
               for (const item of data) {
                 const raw = JSON.stringify(item);
+                
+                // Build description from available fields
+                let description = '';
+                if (item.permit_type) description += item.permit_type;
+                if (item.permit_subtype) description += (description ? ' - ' : '') + item.permit_subtype;
+                if (item.purpose && !description) description = item.purpose;
+                if (!description) description = 'N/A';
+                
                 const lead = {
                   permit_number: item.permit_number || 'N/A',
                   address: item.address || 'N/A',
                   value: item.construction_cost || 'N/A',
-                  description: `${item.permit_type} - ${item.permit_subtype}`.trim(),
-                  phone: null,
-                  page_url: source.url
+                  description: description,
+                  phone: item.phone || null,
+                  page_url: (() => {
+                    if (source.viewUrlTemplate) {
+                      let url = source.viewUrlTemplate;
+                      url = url.replace('{permit_number}', encodeURIComponent(item.permit_number || ''));
+                      url = url.replace('{address}', encodeURIComponent(item.address || ''));
+                      return url;
+                    }
+                    return source.publicUrl || source.url;
+                  })(),
+                  date_issued: item.date_issued || null,
+                  application_date: item.application_date || item.date_entered || null,
+                  owner_name: item.owner_name || null,
+                  contractor_name: item.contractor_name || null,
+                  contractor_address: item.contractor_address || null,
+                  contractor_phone: item.contractor_phone || null,
+                  square_footage: item.square_footage || null,
+                  units: item.units || null,
+                  floors: item.floors || null,
+                  parcel_number: item.parcel_number || null,
+                  permit_type: item.permit_type || null,
+                  permit_subtype: item.permit_subtype || null,
+                  city: item.city || null,
+                  state: item.state || null,
+                  zip_code: item.zip_code || null,
+                  latitude: item.latitude || null,
+                  longitude: item.longitude || null,
+                  status: item.status || null,
+                  purpose: item.purpose || null
                 };
                 
                 // Apply filters if configured
@@ -647,13 +894,13 @@ async function scrapeForUser(userId, userSources) {
           
           // Fallback to auto-detection if no jsonFields or extraction failed
           const lead = {
-            permit_number: extractedData.permit_number || item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || 'N/A',
-            address: extractedData.address || item.property_address || item.address || item.location?.address || item.permit_location || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
-            value: extractedData.value || item.value || item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.total_job_cost || item.job_cost || 'N/A',
+            permit_number: extractedData.permit_number || item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || item.Permit_Number || 'N/A',
+            address: extractedData.address || item.property_address || item.address || item.location?.address || item.permit_location || item.Full_Address || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
+            value: extractedData.value || item.value || item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.total_job_cost || item.job_cost || item.Const_Cost || 'N/A',
             description: extractedData.description || item.description || item.work_class || item.permit_type || item.Details || 'N/A',
-            phone: extractedData.phone || item.Phone || item.telephone || item.phone || null,
-            page_url: source.publicUrl || source.url,
-            date_issued: item.issued_date || item.date_issued || item.issue_date || item.applicationdate || item.ApplicationDate || null
+            phone: extractedData.phone || item.Phone || item.telephone || item.phone || item.CONTACT_PHONE1 || null,
+            page_url: source.viewUrl || source.publicUrl || source.url,
+            date_issued: item.issued_date || item.date_issued || item.issue_date || item.Date_Issued || item.applicationdate || item.ApplicationDate || null
           };
           if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) inserted++;
         }
@@ -719,7 +966,15 @@ async function scrapeForUser(userId, userSources) {
             value: item.permit_value || item.estimated_cost || 'N/A',
             description: item.description || item.Details || 'N/A',
             phone: item.Phone || null,
-            page_url: source.url
+            page_url: (() => {
+              if (source.viewUrlTemplate) {
+                let url = source.viewUrlTemplate;
+                url = url.replace('{permit_number}', encodeURIComponent(item.permit_number || item.permit_num || ''));
+                url = url.replace('{address}', encodeURIComponent(item.address || ''));
+                return url;
+              }
+              return source.publicUrl || source.url;
+            })()
           };
           if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) insertedJsonLd++;
         }
@@ -751,7 +1006,15 @@ async function scrapeForUser(userId, userSources) {
                   value: item.permit_value || item.estimated_cost || 'N/A',
                   description: item.description || item.Details || 'N/A',
                   phone: item.Phone || null,
-                  page_url: source.url
+                  page_url: (() => {
+                    if (source.viewUrlTemplate) {
+                      let url = source.viewUrlTemplate;
+                      url = url.replace('{permit_number}', encodeURIComponent(item.permit_number || item.permit_num || ''));
+                      url = url.replace('{address}', encodeURIComponent(item.address || ''));
+                      return url;
+                    }
+                    return source.publicUrl || source.url;
+                  })()
                 };
                 if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) insertedAttr++;
               }
@@ -833,7 +1096,15 @@ async function scrapeForUser(userId, userSources) {
             value: raw.match(/\$[\d,]+/g)?.[0] || 'N/A',
             description: raw.substring(0, 300),
             phone: phoneMatch?.[0] || null,
-            page_url: source.url
+            page_url: (() => {
+              if (source.viewUrlTemplate) {
+                let url = source.viewUrlTemplate;
+                url = url.replace('{permit_number}', encodeURIComponent(lead.permit_number || ''));
+                url = url.replace('{address}', encodeURIComponent(lead.address || ''));
+                return url;
+              }
+              return source.publicUrl || source.url;
+            })()
           };
         }
         
@@ -1534,7 +1805,8 @@ function startServer() {
   // Manually trigger scraping for current user
   app.post('/api/scrape/now', async (req, res) => {
     try {
-      const userId = req.session?.user?.id || 1;
+      // Accept userId from request body (from server.js) or session
+      const userId = req.body.userId || req.session?.user?.id || 1;
       
       // Get user's sources
       const sourceRows = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ?', [userId]);

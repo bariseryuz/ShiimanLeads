@@ -210,24 +210,35 @@
     <div id="statusMessage" style="color: var(--gray-600); margin: 1.5rem 0;"></div>
 
     <div class="card" id="leadsDisplayDiv" style="padding: 0; overflow: hidden;">
-      <div class="table-container">
-        <table id="leadsTable">
+      <div class="table-container" style="overflow-x: auto; max-width: 100%;">
+        <table id="leadsTable" style="min-width: 1800px;">
           <thead>
             <tr>
               <th>Permit #</th>
-              <th>Issued Date</th>
+              <th>Date Issued</th>
               <th>Address</th>
+              <th>City</th>
+              <th>State</th>
+              <th>Zip</th>
               <th>Value</th>
+              <th>Owner</th>
+              <th>Contractor</th>
+              <th>Contractor Address</th>
               <th>Phone</th>
-              <th>Description</th>
+              <th>Sq Ft</th>
+              <th>Units</th>
+              <th>Type</th>
+              <th>Subtype</th>
+              <th>Status</th>
+              <th>Parcel #</th>
               <th>Source</th>
               <th>Link</th>
-              <th>Date Added</th>
+              <th>Added</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td colspan="9" style="text-align: center; padding: 4rem;">
+              <td colspan="20" style="text-align: center; padding: 4rem;">
                 <div class="loading" style="margin: 0 auto 1rem;"></div>
                 <p style="color: var(--gray-600);">Loading your leads...</p>
               </td>
@@ -400,7 +411,7 @@
       if (search) params.set('search', search);
       
       const tbody = document.querySelector('#leadsTable tbody');
-      tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</td></tr>';
       
       try {
         const response = await fetch('/api/leads?' + params.toString());
@@ -410,7 +421,7 @@
         tbody.innerHTML = '';
         
         if (leads.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</td></tr>';
           document.getElementById('statusMessage').textContent = '';
           document.getElementById('totalLeads').textContent = '0';
           return;
@@ -422,11 +433,20 @@
             <td>${escapeHtml(lead.permit_number || '-')}</td>
             <td style="white-space: nowrap;">${lead.date_issued ? formatDate(lead.date_issued) : 'N/A'}</td>
             <td>${escapeHtml(lead.address || '-')}</td>
+            <td>${escapeHtml(lead.city || '-')}</td>
+            <td>${escapeHtml(lead.state || '-')}</td>
+            <td>${escapeHtml(lead.zip_code || '-')}</td>
             <td>${escapeHtml(lead.value || '-')}</td>
-            <td>${escapeHtml(lead.phone || 'N/A')}</td>
-            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(lead.description || '')}">
-              ${escapeHtml((lead.description || '-').substring(0, 100))}
-            </td>
+            <td>${escapeHtml(lead.owner_name || '-')}</td>
+            <td>${escapeHtml(lead.contractor_name || '-')}</td>
+            <td>${escapeHtml(lead.contractor_address || '-')}</td>
+            <td>${escapeHtml(lead.phone || lead.contractor_phone || 'N/A')}</td>
+            <td>${escapeHtml(lead.square_footage || '-')}</td>
+            <td>${escapeHtml(lead.units || '-')}</td>
+            <td>${escapeHtml(lead.permit_type || '-')}</td>
+            <td>${escapeHtml(lead.permit_subtype || '-')}</td>
+            <td>${escapeHtml(lead.status || '-')}</td>
+            <td>${escapeHtml(lead.parcel_number || '-')}</td>
             <td>${escapeHtml(lead.source || '-')}</td>
             <td>
               ${lead.page_url ? `<a href="${escapeHtml(lead.page_url)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>` : '-'}
@@ -447,7 +467,7 @@
         
       } catch (error) {
         console.error('Failed to load leads:', error);
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 3rem; color: var(--danger);">Error loading leads. Please try again.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--danger);">Error loading leads. Please try again.</td></tr>';
         document.getElementById('statusMessage').textContent = '❌ Error: ' + error.message;
       }
     }

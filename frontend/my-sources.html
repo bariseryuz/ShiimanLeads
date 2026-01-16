@@ -596,7 +596,7 @@
       btn.innerHTML = '<img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;animation:spin 1s linear infinite;"> Scraping...';
       
       try {
-        const response = await fetch('/api/scrape/now', { method: 'POST' });
+        const response = await fetch('/api/scrape/now', { method: 'POST', credentials: 'include' });
         const data = await response.json();
         
         if (data.success) {

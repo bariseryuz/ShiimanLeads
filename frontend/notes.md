@@ -50,3 +50,22 @@ Things that will gbe fixed on 12.01.26
  E-mail config.
  Data improvement
 
+16.01 
+-Data is not being pılled when clickled on scrape now button. 
+-Checked scrape now button to see if it works it does work 
+-I can see the profile loaded for user 5 and it found 1 source, but I don't see the "Manual scrape triggered" log message. This means the "Scrape Now" button might not be hitting the endpoint. Let me check the frontend code:
+The "Scrape Now" button is working - it's hitting the server.js endpoint and getting a success message. But server.js doesn't actually scrape, it just says "scraping will happen automatically every 8 hours."
+
+basically scarpe was calling server.js instead of index.js
+
+
+I have been getting no soıurce configured when clicked on the button after doing the changes 
+The issue is clear now - server.js is using a different database file than index.js!
+
+changed the data route on server.js 
+copied user data from leads.db to data/leads.dbü
+
+added the data website with infinite scrolling so added the code for it 
+
+
+
