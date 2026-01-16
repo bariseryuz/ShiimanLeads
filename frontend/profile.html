@@ -222,11 +222,25 @@
         const profile = await response.json();
         console.log('✅ Profile loaded:', profile.username);
         
+        // Update form fields
         document.getElementById('username').value = profile.username || '';
         document.getElementById('email').value = profile.email || '';
         document.getElementById('companyName').value = profile.company_name || '';
         document.getElementById('phone').value = profile.phone || '';
         document.getElementById('website').value = profile.website || '';
+        
+        // Update mobile menu user info
+        const userNameMobile = document.getElementById('userNameMobile');
+        const userEmailMobile = document.getElementById('userEmailMobile');
+        const userAvatarMobile = document.getElementById('userAvatarMobile');
+        const userNameNav = document.getElementById('userNameNav');
+        
+        if (userNameMobile) userNameMobile.textContent = profile.username || 'User';
+        if (userEmailMobile) userEmailMobile.textContent = profile.email || '';
+        if (userNameNav) userNameNav.textContent = profile.username || 'User';
+        if (userAvatarMobile && profile.username) {
+          userAvatarMobile.textContent = profile.username.charAt(0).toUpperCase();
+        }
       } catch (error) {
         console.error('Error loading profile:', error);
         showError('Failed to load profile: ' + error.message);
