@@ -311,6 +311,10 @@ try {
     db.exec('ALTER TABLE leads ADD COLUMN page_url TEXT');
     logger.info('Added page_url column to leads table');
   }
+  if (!leadColumns.find(c => c.name === 'date_issued')) {
+    db.exec('ALTER TABLE leads ADD COLUMN date_issued TEXT');
+    logger.info('Added date_issued column to leads table');
+  }
 } catch (err) {
   // Columns already exist or other error
 }
