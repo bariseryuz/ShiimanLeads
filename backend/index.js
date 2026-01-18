@@ -1670,6 +1670,48 @@ function startServer() {
     }
   });
 
+  // API: Update user profile
+  app.put('/api/profile', express.json(), async (req, res) => {
+    if (!req.session || !req.session.user) {
+      logger.error('❌ Profile update - No session or user');
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const userId = req.session.user.id;
+    const { company_name, phone, website } = req.body;
+    
+    logger.info(`📝 Updating profile for user ID: ${userId}`);
+    logger.info(`📝 Data: company_name="${company_name}", phone="${phone}", website="${website}"`);
+    
+    try {
+      if (!db) {
+        logger.error('❌ Database is null');
+        return res.status(500).json({ error: 'Database not initialized' });
+      }
+      
+      // Update profile fields (username and email cannot be changed via profile update)
+      await dbRun(
+        'UPDATE users SET company_name = ?, phone = ?, website = ? WHERE id = ?',
+        [company_name || null, phone || null, website || null, userId]
+      );
+      
+      // Fetch updated user data
+      const user = db.prepare('SELECT id, username, email, company_name, phone, website, created_at FROM users WHERE id = ?').get(userId);
+      
+      if (!user) {
+        logger.error(`❌ User not found after update: ${userId}`);
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      logger.info(`✅ Profile updated successfully for: ${user.username}`);
+      res.json({ success: true, user });
+    } catch (error) {
+      logger.error(`❌ Error updating profile: ${error.message}`);
+      logger.error(`❌ Stack trace: ${error.stack}`);
+      res.status(500).json({ error: 'Failed to update profile: ' + error.message });
+    }
+  });
+
   // Simple leads API with optional filters: ?limit=200&source=...&q=...&days=7
   // Returns { data: [...] } for frontend convenience
   app.get('/api/leads', async (req, res) => {
