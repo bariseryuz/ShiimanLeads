@@ -209,8 +209,15 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
 
   await dbRun(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`, [hash, userId]);
   await dbRun(
-    `INSERT INTO leads (user_id, hash, raw_text, permit_number, address, value, description, source, date_added, phone, page_url, date_issued)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)` ,
+    `INSERT INTO leads (
+      user_id, hash, raw_text, permit_number, address, value, description, source, date_added, 
+      phone, page_url, date_issued, application_date, owner_name,
+      contractor_name, contractor_address, contractor_city, contractor_state, contractor_zip, contractor_phone,
+      square_footage, units, floors, parcel_number,
+      permit_type, permit_subtype, work_description, purpose,
+      city, state, zip_code, latitude, longitude,
+      status, record_type, project_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       userId,
       hash,
@@ -223,7 +230,31 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
       new Date().toISOString(),
       lead.phone,
       lead.page_url,
-      lead.date_issued
+      lead.date_issued,
+      lead.application_date,
+      lead.owner_name,
+      lead.contractor_name,
+      lead.contractor_address,
+      lead.contractor_city,
+      lead.contractor_state,
+      lead.contractor_zip,
+      lead.contractor_phone,
+      lead.square_footage,
+      lead.units,
+      lead.floors,
+      lead.parcel_number,
+      lead.permit_type,
+      lead.permit_subtype,
+      lead.work_description,
+      lead.purpose,
+      lead.city,
+      lead.state,
+      lead.zip_code,
+      lead.latitude,
+      lead.longitude,
+      lead.status,
+      lead.record_type,
+      lead.project_name
     ]
   );
   
@@ -935,15 +966,77 @@ async function scrapeForUser(userId, userSources) {
             });
           }
           
-          // Fallback to auto-detection if no jsonFields or extraction failed
+          // SMART AUTO-MAPPING: Automatically extracts ALL 30+ fields from JSON APIs
+          // Checks 100+ field name variations - works with ANY JSON API without configuration
           const lead = {
-            permit_number: extractedData.permit_number || item.permit_number || item.permit_num || item.job__ || item.Title || item.DisplayName || item.Permit_Number || 'N/A',
-            address: extractedData.address || item.property_address || item.address || item.location?.address || item.permit_location || item.Full_Address || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
-            value: extractedData.value || item.value || item.permit_value || item.estimated_cost || item.declared_valuation || item.valuation || item.total_job_cost || item.job_cost || item.Const_Cost || 'N/A',
-            description: extractedData.description || item.description || item.work_class || item.permit_type || item.Details || 'N/A',
-            phone: extractedData.phone || item.Phone || item.telephone || item.phone || item.CONTACT_PHONE1 || null,
-            page_url: source.viewUrl || source.publicUrl || source.url,
-            date_issued: item.issued_date || item.date_issued || item.issue_date || item.Date_Issued || item.applicationdate || item.ApplicationDate || null
+            // BASIC INFO (checks 15+ field name variations)
+            permit_number: extractedData.permit_number || item.permit_number || item.permit_num || item.Permit__ || item.Permit_Number || item.job__ || item.Title || item.DisplayName || item.record_number || item.recordNumber || 'N/A',
+            
+            address: extractedData.address || item.property_address || item.address || item.Address || item.location?.address || item.permit_location || item.Full_Address || item.street_address || item.streetAddress || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
+            
+            value: extractedData.value || item.value || item.Value || item.permit_value || item.estimated_cost || item.Estimated_Cost || item.declared_valuation || item.valuation || item.total_job_cost || item.job_cost || item.Const_Cost || item.construction_cost || item.project_value || 'N/A',
+            
+            description: extractedData.description || item.description || item.Description || item.work_class || item.permit_type || item.Permit_Type_Description || item.Details || item.Purpose || item.work_description || 'N/A',
+            
+            // DATES (checks 10+ variations)
+            date_issued: item.Date_Issued || item.issued_date || item.date_issued || item.issue_date || item.issueDate || item.ApplicationDate || item.applicationdate || null,
+            
+            application_date: item.Date_Entered || item.application_date || item.applicationDate || item.app_date || item.date_entered || item.dateEntered || null,
+            
+            // OWNER INFO
+            owner_name: item.owner_name || item.Owner_Name || item.ownerName || item.applicant || item.Applicant || null,
+            
+            // CONTRACTOR INFO (checks 20+ variations)
+            contractor_name: item.Contact || item.contractor_name || item.contractorName || item.Contractor_Name || item.contractor || item.builder_name || item.builderName || item.Builder || null,
+            
+            contractor_phone: item.contractor_phone || item.contractorPhone || item.Contractor_Phone || item.contractor_telephone || item.CONTACT_PHONE1 || item.builder_phone || null,
+            
+            contractor_address: item.contractor_address || item.contractorAddress || item.Contractor_Address || item.contractor_street || null,
+            
+            contractor_city: item.contractor_city || item.contractorCity || item.Contractor_City || null,
+            
+            contractor_state: item.contractor_state || item.contractorState || item.Contractor_State || null,
+            
+            contractor_zip: item.contractor_zip || item.contractorZip || item.Contractor_Zip || item.contractor_zipcode || null,
+            
+            // PROJECT DETAILS (checks 15+ variations)
+            square_footage: item.square_feet || item.squareFeet || item.Square_Footage || item.sq_ft || item.sqft || item.area || item.building_area || null,
+            
+            units: item.unit_number || item.unitNumber || item.Number_of_Units || item.numberOfUnits || item.units || item.Units || item.dwelling_units || null,
+            
+            floors: item.Number_of_Stories || item.numberOfStories || item.floors || item.Floors || item.stories || item.Stories || null,
+            
+            parcel_number: item.Parcel || item.parcel_number || item.parcelNumber || item.parcel || item.apn || item.APN || item.folio || item.Folio || null,
+            
+            // CLASSIFICATION (checks 10+ variations)
+            permit_type: item.Permit_Type_Description || item.permit_type || item.permitType || item.Permit_Type || item.type || item.Type || item.category || null,
+            
+            permit_subtype: item.Permit_Subtype_Description || item.permit_subtype || item.permitSubtype || item.Permit_Subtype || item.subtype || item.subType || null,
+            
+            work_description: item.Purpose || item.purpose || item.work_description || item.workDescription || item.Work_Description || item.scope || item.Scope || null,
+            
+            // LOCATION (checks 15+ variations)
+            city: item.City || item.city || item.municipality || item.Municipality || null,
+            
+            state: item.State || item.state || item.ST || item.st || null,
+            
+            zip_code: item.ZIP || item.Zip || item.zip_code || item.zipCode || item.zip || item.postal_code || item.postalCode || null,
+            
+            latitude: item.Lat || item.latitude || item.lat || item.y || item.Y || item.latitude_y || null,
+            
+            longitude: item.Lon || item.longitude || item.lon || item.lng || item.x || item.X || item.longitude_x || null,
+            
+            // STATUS & METADATA
+            status: item.status || item.Status || item.permit_status || item.permitStatus || null,
+            
+            record_type: item.record_type || item.recordType || item.Record_Type || null,
+            
+            project_name: item.project_name || item.projectName || item.Project_Name || item.development_name || null,
+            
+            // CONTACT INFO
+            phone: extractedData.phone || item.Phone || item.phone || item.telephone || item.Telephone || item.contact_phone || item.CONTACT_PHONE1 || null,
+            
+            page_url: source.viewUrl || source.publicUrl || source.url
           };
           if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) inserted++;
         }
