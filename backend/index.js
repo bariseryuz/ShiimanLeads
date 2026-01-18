@@ -1681,6 +1681,31 @@ function startServer() {
     }
   });
 
+  // Debug endpoint to check database state
+  app.get('/api/debug/my-data', async (req, res) => {
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const userId = req.session.user.id;
+    
+    const user = db.prepare('SELECT id, username, email FROM users WHERE id = ?').get(userId);
+    const sources = db.prepare('SELECT id, source_data FROM user_sources WHERE user_id = ?').all(userId);
+    const leadCount = db.prepare('SELECT COUNT(*) as count FROM leads WHERE user_id = ?').get(userId);
+    const seenCount = db.prepare('SELECT COUNT(*) as count FROM seen WHERE user_id = ?').get(userId);
+    
+    res.json({
+      user: user,
+      sources: sources.map(s => ({
+        id: s.id,
+        config: JSON.parse(s.source_data)
+      })),
+      stats: {
+        leads: leadCount.count,
+        seen_hashes: seenCount.count
+      }
+    });
+  });
+
   // --- Client Dashboard Route ---
   app.get('/dashboard', (req, res) => {
     // Debug logging
