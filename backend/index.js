@@ -276,7 +276,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
 }
 
 // === DATABASE ===
-const db = new Database(path.join(__dirname, 'leads.db'));
+const db = new Database(path.join(__dirname, 'data', 'leads.db'));
 
 // Create tables (better-sqlite3 is synchronous)
 db.exec(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
