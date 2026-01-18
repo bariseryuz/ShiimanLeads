@@ -189,6 +189,19 @@ function dbAll(sql, params = []) {
   return Promise.resolve(db.prepare(sql).all(...params));
 }
 
+// Create a notification for a user
+async function createNotification(userId, type, message) {
+  try {
+    await dbRun(
+      'INSERT INTO notifications (user_id, type, message, created_at, is_read) VALUES (?, ?, ?, ?, 0)',
+      [userId, type, message, new Date().toISOString()]
+    );
+    logger.info(`📬 Notification created for user ${userId}: ${message}`);
+  } catch (e) {
+    logger.error(`Failed to create notification: ${e.message}`);
+  }
+}
+
 async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId }) {
   const hash = crypto.createHash('md5').update(raw + hashSalt).digest('hex');
   const row = await dbGet(`SELECT hash FROM seen WHERE hash = ? AND user_id = ?`, [hash, userId]);
@@ -327,6 +340,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiries (
     message TEXT,
     created_at TEXT
   )`);
+
+// Notifications table for user activity tracking
+db.exec(`CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    is_read INTEGER DEFAULT 0,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
+db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)`);
 
 // Attempt to add columns if missing (safe migrations with better-sqlite3)
 try {
@@ -754,13 +780,24 @@ async function scrapeForUser(userId, userSources) {
         if (source.type === 'json' && source.method && source.params) {
           const method = (source.method || 'GET').toUpperCase();
           if (method === 'POST') {
+            // Support both form-urlencoded and JSON POST
+            // Default to form-urlencoded (most common for form submissions)
+            // Use contentType: 'json' in source config to send JSON instead
+            const contentType = source.contentType === 'json' 
+              ? 'application/json' 
+              : 'application/x-www-form-urlencoded';
+            
+            const postData = contentType === 'application/json'
+              ? source.params  // Send as JSON object
+              : new URLSearchParams(source.params).toString();  // Convert to form encoding
+            
             axiosResponse = await getWithRetry(source.url, {
               method: 'POST',
-              data: source.params,
+              data: postData,
               timeout: 30000,
               headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-                'Content-Type': 'application/json'
+                'Content-Type': contentType
               }
             });
           } else {
@@ -769,12 +806,12 @@ async function scrapeForUser(userId, userSources) {
             logger.info(`Params: ${JSON.stringify(source.params, null, 2)}`);
             
             try {
-              // Build query string manually - ArcGIS doesn't like encoded = signs
+              // Build query string manually - preserve special chars in keys (like $ for Socrata)
               const queryString = Object.keys(source.params)
-                .map(key => `${key}=${source.params[key]}`)
+                .map(key => `${key}=${encodeURIComponent(source.params[key])}`)
                 .join('&');
               const fullUrl = `${source.url}?${queryString}`;
-              logger.info(`Full URL: ${fullUrl}`);
+              logger.info(`Full URL (keys preserved): ${fullUrl}`);
               
               // Use axios directly instead of getWithRetry
               axiosResponse = await axios.get(fullUrl, {
@@ -809,15 +846,21 @@ async function scrapeForUser(userId, userSources) {
       let jsonData = data;
       if (source.type === 'json' && source.jsonPath && typeof data === 'object') {
         try {
-          // Simple JSONPath implementation (supports basic paths like "features[*].attributes" or "data.records")
+          // Simple JSONPath implementation (supports paths like "features[*].attributes" or "data.records")
           const parts = source.jsonPath.split(/[\.\[\]]/).filter(Boolean);
           let current = data;
+          let sawArrayWildcard = false;
+          
           for (const part of parts) {
             if (part === '*') {
-              // Already at array level
+              sawArrayWildcard = true;
               continue;
             }
-            if (current && typeof current === 'object') {
+            if (sawArrayWildcard && Array.isArray(current)) {
+              // Extract property from each array element
+              current = current.map(item => item[part]).filter(Boolean);
+              sawArrayWildcard = false;
+            } else if (current && typeof current === 'object') {
               current = current[part];
             }
           }
@@ -1028,16 +1071,17 @@ async function scrapeForUser(userId, userSources) {
         }
       }
 
-      // Auto-enable AI if no selector provided (for simple user experience)
-      if (!source.selector && !source.useAI && geminiModel) {
-        source.useAI = true;
-        logger.info(`Auto-enabled AI extraction for ${source.name} (no selector provided)`);
-      }
+      // AI extraction disabled by default - must explicitly set useAI: true in source config
+      // if (!source.selector && !source.useAI && geminiModel) {
+      //   source.useAI = true;
+      //   logger.info(`Auto-enabled AI extraction for ${source.name} (no selector provided)`);
+      // }
 
       const matches = source.selector ? $(source.selector) : [];
       
-      // If no selector, try full-page AI extraction
-      if (!source.selector && source.useAI && geminiModel) {
+      // Full-page AI extraction - only if explicitly enabled with useAI: true
+      if (!source.selector && source.useAI === true && geminiModel) {
+        logger.warn(`⚠️ AI extraction enabled for ${source.name} - this may be slow for large datasets`);
         logger.info(`Using full-page AI extraction for ${source.name}`);
         const fullPageText = $('body').text().replace(/\s+/g, ' ').trim();
         
@@ -1071,8 +1115,9 @@ async function scrapeForUser(userId, userSources) {
 
         let lead;
         
-        // Try AI extraction if enabled for this source
-        if (source.useAI && geminiModel) {
+        // Try AI extraction if enabled for this source (WARNING: slow for many elements)
+        if (source.useAI === true && geminiModel) {
+          logger.warn(`⚠️ AI processing element (may be slow) - ${source.name}`);
           const aiLead = await extractLeadWithAI(raw, source.name);
           if (aiLead) {
             lead = {
@@ -1124,6 +1169,25 @@ async function scrapeForUser(userId, userSources) {
     }
   }
   logger.info(`Scrape cycle finished for user ${userId}. Inserted ${totalInserted} total leads.\n`);
+  
+  // Create notification for scrape results
+  if (SOURCES.length > 0) {
+    const sourceNames = SOURCES.map(s => s.name).join(', ');
+    if (totalInserted > 0) {
+      await createNotification(
+        userId,
+        'scrape_success',
+        `🎉 Scraped ${SOURCES.length} source(s) and found ${totalInserted} new lead(s): ${sourceNames}`
+      );
+    } else {
+      await createNotification(
+        userId,
+        'scrape_no_new',
+        `✅ Scraped ${SOURCES.length} source(s) - no new leads (all duplicates): ${sourceNames}`
+      );
+    }
+  }
+  
   return totalInserted;
 }
 
@@ -1610,13 +1674,20 @@ function startServer() {
   // Returns { data: [...] } for frontend convenience
   app.get('/api/leads', async (req, res) => {
     try {
+      // CRITICAL: Filter by user_id from session
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
       const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
       const source = req.query.source ? String(req.query.source) : null;
       const q = req.query.q ? String(req.query.q) : null;
       const days = req.query.days ? parseInt(req.query.days, 10) : null;
 
-      const where = [];
-      const params = [];
+      const where = ['user_id = ?'];
+      const params = [userId];
+      
       if (source) { where.push('source = ?'); params.push(source); }
       if (q) {
         where.push('(permit_number LIKE ? OR address LIKE ? OR description LIKE ? OR raw_text LIKE ?)');
@@ -1629,7 +1700,7 @@ function startServer() {
         params.push(cutoff);
       }
       const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added, phone, page_url
-                   FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                   FROM leads WHERE ${where.join(' AND ')}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
       const rows = await dbAll(sql, params);
@@ -1642,12 +1713,20 @@ function startServer() {
   // Legacy raw array response if needed
   app.get('/api/leads.raw', async (req, res) => {
     try {
+      // CRITICAL: Filter by user_id from session
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
       const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
       const source = req.query.source ? String(req.query.source) : null;
       const q = req.query.q ? String(req.query.q) : null;
       const days = req.query.days ? parseInt(req.query.days, 10) : null;
-      const where = [];
-      const params = [];
+      
+      const where = ['user_id = ?'];
+      const params = [userId];
+      
       if (source) { where.push('source = ?'); params.push(source); }
       if (q) {
         where.push('(permit_number LIKE ? OR address LIKE ? OR description LIKE ? OR raw_text LIKE ?)');
@@ -1660,7 +1739,7 @@ function startServer() {
         params.push(cutoff);
       }
       const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added, phone, page_url
-                   FROM leads ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+                   FROM leads WHERE ${where.join(' AND ')}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
       const rows = await dbAll(sql, params);
@@ -1720,6 +1799,216 @@ function startServer() {
     }
   });
 
+  // Alias for backward compatibility
+  app.get('/api/my-sources', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
+      const sources = rows.map(row => {
+        try {
+          return {
+            id: row.id,
+            data: JSON.parse(row.source_data),
+            created_at: row.created_at
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      res.json({ data: sources });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Update a source
+  app.put('/api/my-sources/:id', express.json(), async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceId = parseInt(req.params.id, 10);
+      const sourceData = req.body;
+      
+      if (!sourceData || !sourceData.name || !sourceData.url) {
+        return res.status(400).json({ error: 'Missing required fields: name, url' });
+      }
+      
+      await dbRun('UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?', 
+        [JSON.stringify(sourceData), sourceId, userId]);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Delete a source
+  app.delete('/api/my-sources/:id', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceId = parseInt(req.params.id, 10);
+      
+      // Get source name before deleting for notification
+      const existing = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      let sourceName = 'Unknown';
+      if (existing) {
+        try {
+          const data = JSON.parse(existing.source_data);
+          sourceName = data.name || 'Unknown';
+        } catch (e) {}
+      }
+      
+      await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      
+      // Create notification for source deletion
+      await createNotification(
+        userId,
+        'source_deleted',
+        `🗑️ Removed source: ${sourceName}`
+      );
+      
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get dashboard statistics for current user
+  app.get('/api/stats', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      // Total leads for this user
+      const totalLeadsRow = await dbGet('SELECT COUNT(*) as count FROM leads WHERE user_id = ?', [userId]);
+      const totalLeads = totalLeadsRow?.count || 0;
+
+      // Active sources (configured sources)
+      const sourcesRow = await dbGet('SELECT COUNT(*) as count FROM user_sources WHERE user_id = ?', [userId]);
+      const activeSources = sourcesRow?.count || 0;
+
+      // Leads by source
+      const leadsBySource = await dbAll(
+        'SELECT source, COUNT(*) as count FROM leads WHERE user_id = ? GROUP BY source ORDER BY count DESC',
+        [userId]
+      );
+
+      // Recent activity (last 7 days)
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const recentLeadsRow = await dbGet(
+        'SELECT COUNT(*) as count FROM leads WHERE user_id = ? AND date_added >= ?',
+        [userId, sevenDaysAgo]
+      );
+      const recentLeads = recentLeadsRow?.count || 0;
+
+      res.json({
+        totalLeads,
+        activeSources,
+        recentLeads,
+        leadsBySource
+      });
+    } catch (e) {
+      logger.error(`Stats API error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get notifications for current user
+  app.get('/api/notifications', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const limit = parseInt(req.query.limit || '50', 10);
+      const notifications = await dbAll(
+        'SELECT id, type, message, created_at, is_read FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+        [userId, limit]
+      );
+
+      res.json({ data: notifications || [] });
+    } catch (e) {
+      logger.error(`Notifications API error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Mark notification as read
+  app.post('/api/notifications/:id/read', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const notificationId = parseInt(req.params.id, 10);
+      await dbRun(
+        'UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?',
+        [notificationId, userId]
+      );
+
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Mark all notifications as read
+  app.post('/api/notifications/mark-all-read', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      await dbRun('UPDATE notifications SET is_read = 1 WHERE user_id = ?', [userId]);
+      res.json({ success: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Create a new source (alias for /api/sources/add)
+  app.post('/api/my-sources', express.json(), async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceData = req.body;
+      
+      // Validate required fields
+      if (!sourceData.name || !sourceData.url) {
+        return res.status(400).json({ error: 'Source name and URL are required' });
+      }
+      
+      // Store as JSON string
+      const sourceJson = JSON.stringify(sourceData);
+      const result = await dbRun(
+        'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
+        [userId, sourceJson, new Date().toISOString()]
+      );
+      
+      // Create notification for source addition
+      await createNotification(
+        userId,
+        'source_added',
+        `✅ Added new source: ${sourceData.name}`
+      );
+      
+      // Immediately scrape the newly added source
+      logger.info(`New source added by user ${userId}, triggering immediate scrape`);
+      scrapeForUser(userId, [sourceData]).then((newLeads) => {
+        logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
+      }).catch((err) => {
+        logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
+      });
+      
+      res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
+    } catch (e) {
+      logger.error(`Add source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Add a new source for current user
   app.post('/api/sources/add', express.json(), async (req, res) => {
     try {
@@ -1737,6 +2026,13 @@ function startServer() {
       const result = await dbRun(
         'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
         [userId, sourceJson, new Date().toISOString()]
+      );
+      
+      // Create notification for source addition
+      await createNotification(
+        userId,
+        'source_added',
+        `✅ Added new source: ${sourceData.name}`
       );
       
       // Immediately scrape the newly added source
@@ -1995,7 +2291,7 @@ function startServer() {
         .listen(p);
     })(preferredPort);
   }
-  startListening(parseInt(process.env.PORT || '4000', 10));
+  startListening(parseInt(process.env.PORT || '3000', 10));
 }
 
 // === START ===
@@ -2003,6 +2299,7 @@ startServer();
 cron.schedule('0 */8 * * *', scrapeAllUsers); // Run every 8 hours
 scrapeAllUsers(); // Run once on startup
 
-logger.info('SHIIMAN LEADS IS LIVE – Multi-tenant scraper running every 8 hours');
+logger.info('🚀 SHIIMAN LEADS IS LIVE - Unified server with web UI + scraper');
+logger.info('Multi-tenant scraper running every 8 hours');
 logger.info('Each user sees only their own leads!');
 logger.info('Sources are scraped immediately when added and then every 8 hours');

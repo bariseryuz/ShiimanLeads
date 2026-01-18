@@ -1,45 +1,42 @@
-// Combined starter for Railway deployment
-// Starts both the web server (server.js) and scraper (index.js)
+// Unified starter - Single server for everything
+// Runs index.js which includes web UI + scraper + cron jobs
 
 const { spawn } = require('child_process');
 const path = require('path');
 
-console.log('🚀 Starting Shiiman Leads (Web Server + Scraper)');
+console.log('🚀 Starting Shiiman Leads (Unified Server on Port 3000)');
+console.log('   ✅ Web UI + API');
+console.log('   ✅ Background scraping every 8 hours');
+console.log('   ✅ Multi-user authentication');
 
-// Start index.js (scraper + cron)
-const scraper = spawn('node', ['index.js'], {
+// Start index.js (single unified server)
+const server = spawn('node', ['index.js'], {
   cwd: __dirname,
   stdio: 'inherit',
   env: { ...process.env }
 });
 
-// Start server.js (web UI)
-const server = spawn('node', ['server.js'], {
-  cwd: __dirname,
-  stdio: 'inherit',
-  env: { ...process.env }
-});
-
-// Handle exits
-scraper.on('exit', (code) => {
-  console.error(`❌ Scraper (index.js) exited with code ${code}`);
-  process.exit(code || 1);
+server.on('error', (err) => {
+  console.error('❌ Failed to start server:', err);
+  process.exit(1);
 });
 
 server.on('exit', (code) => {
-  console.error(`❌ Server (server.js) exited with code ${code}`);
-  process.exit(code || 1);
+  if (code !== 0) {
+    console.error(`❌ Server exited with code ${code}`);
+    process.exit(code);
+  }
 });
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('Shutting down gracefully...');
-  scraper.kill();
   server.kill();
+  process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('Shutting down gracefully...');
-  scraper.kill();
+  console.log('\nShutting down...');
   server.kill();
+  process.exit(0);
 });
