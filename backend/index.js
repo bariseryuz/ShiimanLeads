@@ -1363,6 +1363,13 @@ function startServer() {
         await dbRun('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)', [username, hash, 'admin']);
         logger.info(`Seeded admin user '${username}'. Change password via ADMIN_PASSWORD in .env`);
       }
+      
+      // Auto-verify all users on startup (for Railway production)
+      const unverified = await dbGet('SELECT COUNT(*) as c FROM users WHERE email_verified = 0');
+      if (unverified && unverified.c > 0) {
+        await dbRun('UPDATE users SET email_verified = 1 WHERE email_verified = 0');
+        logger.info(`✅ Auto-verified ${unverified.c} unverified user(s)`);
+      }
     } catch (e) {
       logger.error(`Admin seed error: ${e.message}`);
     }
