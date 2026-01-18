@@ -948,12 +948,15 @@ async function scrapeForUser(userId, userSources) {
             return path.split('.').reduce((acc, part) => acc?.[part], obj);
           };
           
+          // ArcGIS/ESRI APIs nest data inside "attributes" - flatten it for easier access
+          const flatItem = item.attributes ? { ...item, ...item.attributes } : item;
+          
           // Extract fields using jsonFields config if provided
           let extractedData = {};
           if (Array.isArray(source.jsonFields) && source.jsonFields.length > 0) {
             // Use configured field mappings
             source.jsonFields.forEach((fieldPath, idx) => {
-              const value = getNestedProp(item, fieldPath);
+              const value = getNestedProp(flatItem, fieldPath);
               if (value !== undefined && value !== null) {
                 // Map to standard fields by position: [0]=permit, [1]=address, [2]=value, [3]=description, etc.
                 if (idx === 0) extractedData.permit_number = value;
@@ -970,71 +973,71 @@ async function scrapeForUser(userId, userSources) {
           // Checks 100+ field name variations - works with ANY JSON API without configuration
           const lead = {
             // BASIC INFO (checks 15+ field name variations)
-            permit_number: extractedData.permit_number || item.permit_number || item.permit_num || item.Permit__ || item.Permit_Number || item.job__ || item.Title || item.DisplayName || item.record_number || item.recordNumber || 'N/A',
+            permit_number: extractedData.permit_number || flatItem.permit_number || flatItem.permit_num || flatItem.Permit__ || flatItem.Permit_Number || flatItem.job__ || flatItem.Title || flatItem.DisplayName || flatItem.record_number || flatItem.recordNumber || 'N/A',
             
-            address: extractedData.address || item.property_address || item.address || item.Address || item.location?.address || item.permit_location || item.Full_Address || item.street_address || item.streetAddress || [item.Street, item.City, item.State, item.Zip].filter(Boolean).join(', ') || 'N/A',
+            address: extractedData.address || flatItem.property_address || flatItem.address || flatItem.Address || flatItem.location?.address || flatItem.permit_location || flatItem.Full_Address || flatItem.street_address || flatItem.streetAddress || [flatItem.Street, flatItem.City, flatItem.State, flatItem.Zip].filter(Boolean).join(', ') || 'N/A',
             
-            value: extractedData.value || item.value || item.Value || item.permit_value || item.estimated_cost || item.Estimated_Cost || item.declared_valuation || item.valuation || item.total_job_cost || item.job_cost || item.Const_Cost || item.construction_cost || item.project_value || 'N/A',
+            value: extractedData.value || flatItem.value || flatItem.Value || flatItem.permit_value || flatItem.estimated_cost || flatItem.Estimated_Cost || flatItem.declared_valuation || flatItem.valuation || flatItem.total_job_cost || flatItem.job_cost || flatItem.Const_Cost || flatItem.construction_cost || flatItem.project_value || 'N/A',
             
-            description: extractedData.description || item.description || item.Description || item.work_class || item.permit_type || item.Permit_Type_Description || item.Details || item.Purpose || item.work_description || 'N/A',
+            description: extractedData.description || flatItem.description || flatItem.Description || flatItem.work_class || flatItem.permit_type || flatItem.Permit_Type_Description || flatItem.Details || flatItem.Purpose || flatItem.work_description || 'N/A',
             
             // DATES (checks 10+ variations)
-            date_issued: item.Date_Issued || item.issued_date || item.date_issued || item.issue_date || item.issueDate || item.ApplicationDate || item.applicationdate || null,
+            date_issued: flatItem.Date_Issued || flatItem.issued_date || flatItem.date_issued || flatItem.issue_date || flatItem.issueDate || flatItem.ApplicationDate || flatItem.applicationdate || null,
             
-            application_date: item.Date_Entered || item.application_date || item.applicationDate || item.app_date || item.date_entered || item.dateEntered || null,
+            application_date: flatItem.Date_Entered || flatItem.application_date || flatItem.applicationDate || flatItem.app_date || flatItem.date_entered || flatItem.dateEntered || null,
             
             // OWNER INFO
-            owner_name: item.owner_name || item.Owner_Name || item.ownerName || item.applicant || item.Applicant || null,
+            owner_name: flatItem.owner_name || flatItem.Owner_Name || flatItem.ownerName || flatItem.applicant || flatItem.Applicant || null,
             
             // CONTRACTOR INFO (checks 20+ variations)
-            contractor_name: item.Contact || item.contractor_name || item.contractorName || item.Contractor_Name || item.contractor || item.builder_name || item.builderName || item.Builder || null,
+            contractor_name: flatItem.Contact || flatItem.contractor_name || flatItem.contractorName || flatItem.Contractor_Name || flatItem.contractor || flatItem.builder_name || flatItem.builderName || flatItem.Builder || null,
             
-            contractor_phone: item.contractor_phone || item.contractorPhone || item.Contractor_Phone || item.contractor_telephone || item.CONTACT_PHONE1 || item.builder_phone || null,
+            contractor_phone: flatItem.contractor_phone || flatItem.contractorPhone || flatItem.Contractor_Phone || flatItem.contractor_telephone || flatItem.CONTACT_PHONE1 || flatItem.builder_phone || null,
             
-            contractor_address: item.contractor_address || item.contractorAddress || item.Contractor_Address || item.contractor_street || null,
+            contractor_address: flatItem.contractor_address || flatItem.contractorAddress || flatItem.Contractor_Address || flatItem.contractor_street || null,
             
-            contractor_city: item.contractor_city || item.contractorCity || item.Contractor_City || null,
+            contractor_city: flatItem.contractor_city || flatItem.contractorCity || flatItem.Contractor_City || null,
             
-            contractor_state: item.contractor_state || item.contractorState || item.Contractor_State || null,
+            contractor_state: flatItem.contractor_state || flatItem.contractorState || flatItem.Contractor_State || null,
             
-            contractor_zip: item.contractor_zip || item.contractorZip || item.Contractor_Zip || item.contractor_zipcode || null,
+            contractor_zip: flatItem.contractor_zip || flatItem.contractorZip || flatItem.Contractor_Zip || flatItem.contractor_zipcode || null,
             
             // PROJECT DETAILS (checks 15+ variations)
-            square_footage: item.square_feet || item.squareFeet || item.Square_Footage || item.sq_ft || item.sqft || item.area || item.building_area || null,
+            square_footage: flatItem.square_feet || flatItem.squareFeet || flatItem.Square_Footage || flatItem.sq_ft || flatItem.sqft || flatItem.area || flatItem.building_area || null,
             
-            units: item.unit_number || item.unitNumber || item.Number_of_Units || item.numberOfUnits || item.units || item.Units || item.dwelling_units || null,
+            units: flatItem.unit_number || flatItem.unitNumber || flatItem.Number_of_Units || flatItem.numberOfUnits || flatItem.units || flatItem.Units || flatItem.dwelling_units || null,
             
-            floors: item.Number_of_Stories || item.numberOfStories || item.floors || item.Floors || item.stories || item.Stories || null,
+            floors: flatItem.Number_of_Stories || flatItem.numberOfStories || flatItem.floors || flatItem.Floors || flatItem.stories || flatItem.Stories || null,
             
-            parcel_number: item.Parcel || item.parcel_number || item.parcelNumber || item.parcel || item.apn || item.APN || item.folio || item.Folio || null,
+            parcel_number: flatItem.Parcel || flatItem.parcel_number || flatItem.parcelNumber || flatItem.parcel || flatItem.apn || flatItem.APN || flatItem.folio || flatItem.Folio || null,
             
             // CLASSIFICATION (checks 10+ variations)
-            permit_type: item.Permit_Type_Description || item.permit_type || item.permitType || item.Permit_Type || item.type || item.Type || item.category || null,
+            permit_type: flatItem.Permit_Type_Description || flatItem.permit_type || flatItem.permitType || flatItem.Permit_Type || flatItem.type || flatItem.Type || flatItem.category || null,
             
-            permit_subtype: item.Permit_Subtype_Description || item.permit_subtype || item.permitSubtype || item.Permit_Subtype || item.subtype || item.subType || null,
+            permit_subtype: flatItem.Permit_Subtype_Description || flatItem.permit_subtype || flatItem.permitSubtype || flatItem.Permit_Subtype || flatItem.subtype || flatItem.subType || null,
             
-            work_description: item.Purpose || item.purpose || item.work_description || item.workDescription || item.Work_Description || item.scope || item.Scope || null,
+            work_description: flatItem.Purpose || flatItem.purpose || flatItem.work_description || flatItem.workDescription || flatItem.Work_Description || flatItem.scope || flatItem.Scope || null,
             
             // LOCATION (checks 15+ variations)
-            city: item.City || item.city || item.municipality || item.Municipality || null,
+            city: flatItem.City || flatItem.city || flatItem.municipality || flatItem.Municipality || null,
             
-            state: item.State || item.state || item.ST || item.st || null,
+            state: flatItem.State || flatItem.state || flatItem.ST || flatItem.st || null,
             
-            zip_code: item.ZIP || item.Zip || item.zip_code || item.zipCode || item.zip || item.postal_code || item.postalCode || null,
+            zip_code: flatItem.ZIP || flatItem.Zip || flatItem.zip_code || flatItem.zipCode || flatItem.zip || flatItem.postal_code || flatItem.postalCode || null,
             
-            latitude: item.Lat || item.latitude || item.lat || item.y || item.Y || item.latitude_y || null,
+            latitude: flatItem.Lat || flatItem.latitude || flatItem.lat || flatItem.y || flatItem.Y || flatItem.latitude_y || null,
             
-            longitude: item.Lon || item.longitude || item.lon || item.lng || item.x || item.X || item.longitude_x || null,
+            longitude: flatItem.Lon || flatItem.longitude || flatItem.lon || flatItem.lng || flatItem.x || flatItem.X || flatItem.longitude_x || null,
             
             // STATUS & METADATA
-            status: item.status || item.Status || item.permit_status || item.permitStatus || null,
+            status: flatItem.status || flatItem.Status || flatItem.permit_status || flatItem.permitStatus || null,
             
-            record_type: item.record_type || item.recordType || item.Record_Type || null,
+            record_type: flatItem.record_type || flatItem.recordType || flatItem.Record_Type || null,
             
-            project_name: item.project_name || item.projectName || item.Project_Name || item.development_name || null,
+            project_name: flatItem.project_name || flatItem.projectName || flatItem.Project_Name || flatItem.development_name || null,
             
             // CONTACT INFO
-            phone: extractedData.phone || item.Phone || item.phone || item.telephone || item.Telephone || item.contact_phone || item.CONTACT_PHONE1 || null,
+            phone: extractedData.phone || flatItem.Phone || flatItem.phone || flatItem.telephone || flatItem.Telephone || flatItem.contact_phone || flatItem.CONTACT_PHONE1 || null,
             
             page_url: source.viewUrl || source.publicUrl || source.url
           };
