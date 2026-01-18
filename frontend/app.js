@@ -15,12 +15,19 @@ async function checkAuth() {
       localStorage.setItem('user', JSON.stringify(data.user));
       return true;
     } else {
-      // Not authenticated, redirect to login
-      window.location.href = '/login.html';
+      // Not authenticated, redirect to login (401 is expected behavior)
+      if (response.status === 401) {
+        // Silent redirect - this is normal when not logged in
+        window.location.href = '/login.html';
+      } else {
+        console.warn('Auth check returned unexpected status:', response.status);
+        window.location.href = '/login.html';
+      }
       return false;
     }
   } catch (error) {
-    console.error('Auth check failed:', error);
+    // Only log if it's a real network error, not a 401
+    console.error('Auth check network error:', error);
     window.location.href = '/login.html';
     return false;
   }

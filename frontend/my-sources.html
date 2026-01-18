@@ -15,8 +15,13 @@
       --shadow-lg: 0 4px 20px rgba(0,0,0,0.15);
     }
     
+    .sources-container {
+      margin-top: 80px;
+    }
+    
     .header {
       margin-bottom: 2rem;
+      padding-top: 1rem;
     }
     
     .header h1 {
@@ -226,7 +231,6 @@
     <div class="header">
       <div>
         <h1><img src="icons/sources.svg" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;"> My Data Sources</h1>
-        <p style="color: var(--gray-600);">Manage your scraping sources</p>
       </div>
       <div style="display: flex; gap: 1rem;">
         <button class="btn btn-secondary" onclick="scrapeNow()" id="scrapeBtn">
@@ -314,7 +318,7 @@
         
         <div class="form-group">
           <label class="form-label">
-            <input type="checkbox" id="useAI" checked> Use AI Extraction
+            <input type="checkbox" id="useAI"> Use AI Extraction
           </label>
         </div>
         
@@ -472,7 +476,7 @@
         
         // HTML scraping fields
         document.getElementById('sourceSelector').value = source.data.selector || '';
-        document.getElementById('useAI').checked = source.data.useAI !== false;
+        document.getElementById('useAI').checked = source.data.useAI === true;
         document.getElementById('usePuppeteer').checked = source.data.usePuppeteer === true;
         document.getElementById('extractTable').checked = source.data.extractTable === true;
         
