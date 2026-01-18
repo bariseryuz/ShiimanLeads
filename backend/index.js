@@ -2268,6 +2268,35 @@ function startServer() {
     }
   });
 
+  // Clear all leads for current user (keeps sources intact)
+  app.delete('/api/leads/clear', async (req, res) => {
+    try {
+      if (!req.session || !req.session.user) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+      const userId = req.session.user.id;
+      
+      const leadCount = await dbGet('SELECT COUNT(*) as count FROM leads WHERE user_id = ?', [userId]);
+      const seenCount = await dbGet('SELECT COUNT(*) as count FROM seen WHERE user_id = ?', [userId]);
+      
+      await dbRun('DELETE FROM leads WHERE user_id = ?', [userId]);
+      await dbRun('DELETE FROM seen WHERE user_id = ?', [userId]);
+      
+      logger.info(`🗑️ User ${userId} cleared ${leadCount.count} leads and ${seenCount.count} seen hashes`);
+      
+      res.json({ 
+        success: true, 
+        deleted: {
+          leads: leadCount.count,
+          seen: seenCount.count
+        }
+      });
+    } catch (e) {
+      logger.error(`Clear leads error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Manually trigger scraping for current user
   app.post('/api/scrape/now', async (req, res) => {
     try {
