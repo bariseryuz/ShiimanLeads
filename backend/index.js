@@ -973,15 +973,53 @@ async function scrapeForUser(userId, userSources) {
           // FIELD MAPPING: Use user-configured mappings or fall back to smart auto-mapping
           const lead = {};
           
+          // Helper function to parse various date formats
+          const parseDate = (value) => {
+            if (!value) return null;
+            
+            // If it's already a valid date string in YYYY-MM-DD format, return it
+            if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+              return value.split('T')[0]; // Remove time component if present
+            }
+            
+            // Handle Unix timestamps (milliseconds)
+            if (typeof value === 'number' || (typeof value === 'string' && /^\d+$/.test(value))) {
+              const timestamp = parseInt(value);
+              // Check if it's in milliseconds (13 digits) or seconds (10 digits)
+              const date = new Date(timestamp > 9999999999 ? timestamp : timestamp * 1000);
+              if (!isNaN(date.getTime())) {
+                return date.toISOString().split('T')[0];
+              }
+            }
+            
+            // Try to parse as a date string
+            const date = new Date(value);
+            if (!isNaN(date.getTime())) {
+              return date.toISOString().split('T')[0];
+            }
+            
+            return null;
+          };
+          
           if (source.fieldMappings && Object.keys(source.fieldMappings).length > 0) {
             // Use explicit field mappings configured by user
+            logger.info(`Using field mappings for ${source.name}: ${JSON.stringify(source.fieldMappings)}`);
             for (const [dbColumn, sourceField] of Object.entries(source.fieldMappings)) {
               if (sourceField && sourceField !== 'none' && flatItem[sourceField] !== undefined) {
                 lead[dbColumn] = flatItem[sourceField];
+                logger.info(`Mapped ${dbColumn} = flatItem[${sourceField}] = ${flatItem[sourceField]}`);
               } else {
                 lead[dbColumn] = null;
               }
             }
+            
+            // Parse date fields to ensure proper format
+            if (lead.date_issued) {
+              const parsed = parseDate(lead.date_issued);
+              logger.info(`Parsing date_issued: ${lead.date_issued} -> ${parsed}`);
+              lead.date_issued = parsed;
+            }
+            
             // Always include page_url
             lead.page_url = source.viewUrl || source.publicUrl || source.url;
           } else {
@@ -1846,7 +1884,13 @@ function startServer() {
         where.push('date_added >= ?');
         params.push(cutoff);
       }
-      const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added, phone, page_url
+      const sql = `SELECT id, user_id, hash, raw_text, permit_number, address, value, description, 
+                   source, date_added, date_issued, phone, page_url, application_date,
+                   owner_name, contractor_name, contractor_address, contractor_city, 
+                   contractor_state, contractor_zip, contractor_phone,
+                   square_footage, units, floors, parcel_number, permit_type, permit_subtype,
+                   work_description, purpose, city, state, zip_code, latitude, longitude,
+                   status, record_type, project_name
                    FROM leads WHERE ${where.join(' AND ')}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
@@ -1885,7 +1929,10 @@ function startServer() {
         where.push('date_added >= ?');
         params.push(cutoff);
       }
-      const sql = `SELECT id, hash, permit_number, address, value, description, source, date_added, phone, page_url
+      const sql = `SELECT id, hash, permit_number, address, city, state, zip_code, value, description,
+                   contractor_name, contractor_address, owner_name, phone, contractor_phone,
+                   square_footage, units, permit_type, permit_subtype, status, parcel_number,
+                   source, date_issued, date_added, page_url, raw_text
                    FROM leads WHERE ${where.join(' AND ')}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
@@ -2293,18 +2340,18 @@ function startServer() {
           }
         }
         
-        // Get first 3 records
+        // Get first 10 records for better sampling
         if (Array.isArray(jsonData)) {
-          sampleData = jsonData.slice(0, 3);
+          sampleData = jsonData.slice(0, 10);
         } else if (jsonData.features && Array.isArray(jsonData.features)) {
           // ArcGIS format - flatten attributes like we do in scraper
-          sampleData = jsonData.features.slice(0, 3).map(f => {
+          sampleData = jsonData.features.slice(0, 10).map(f => {
             const item = f.attributes || f;
             // Flatten: merge attributes into top level
             return item.attributes ? {...item, ...item.attributes} : item;
           });
         } else if (jsonData.Data && Array.isArray(jsonData.Data)) {
-          sampleData = jsonData.Data.slice(0, 3);
+          sampleData = jsonData.Data.slice(0, 10);
         }
         
       } else if (sourceConfig.type === 'html') {
@@ -2319,8 +2366,8 @@ function startServer() {
         const selector = sourceConfig.selector || 'table tr, .result, .item';
         const elements = await page.$$(selector);
         
-        // Extract text from first 3 elements
-        for (let i = 0; i < Math.min(3, elements.length); i++) {
+        // Extract text from first 10 elements
+        for (let i = 0; i < Math.min(10, elements.length); i++) {
           const text = await page.evaluate(el => el.textContent, elements[i]);
           sampleData.push({ _text: text.trim() });
         }
@@ -2447,6 +2494,39 @@ function startServer() {
       });
     } catch (e) {
       logger.error(`Manual scrape error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Scrape a single source by ID
+  app.post('/api/scrape/:id', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceId = parseInt(req.params.id, 10);
+      
+      // Get the specific source
+      const sourceRow = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      if (!sourceRow) {
+        return res.status(404).json({ error: 'Source not found or access denied' });
+      }
+      
+      const sourceConfig = JSON.parse(sourceRow.source_data);
+      logger.info(`Manual scrape triggered for source "${sourceConfig.name}" (ID: ${sourceId}) by user ${userId}`);
+      
+      // Scrape in background and respond immediately
+      scrapeForUser(userId, [sourceConfig]).then((newLeads) => {
+        logger.info(`Manual scrape completed for source "${sourceConfig.name}": ${newLeads} new leads`);
+      }).catch((err) => {
+        logger.error(`Manual scrape error for source "${sourceConfig.name}": ${err.message}`);
+      });
+      
+      res.json({ 
+        success: true, 
+        message: `Scraping started for "${sourceConfig.name}". Check back in a few moments.`,
+        sourceName: sourceConfig.name
+      });
+    } catch (e) {
+      logger.error(`Single source scrape error: ${e.message}`);
       res.status(500).json({ error: e.message });
     }
   });
