@@ -353,8 +353,88 @@
     </div>
   </div>
 
+  <!-- Field Mappings Modal -->
+  <div id="mappingsModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h2>Configure Field Mappings</h2>
+        <button type="button" class="close-modal" onclick="closeMappingsModal()">×</button>
+      </div>
+      
+      <div id="mappingsContent">
+        <p style="color: var(--gray-600); margin-bottom: 1.5rem;">
+          Map the fields from your data source to the standard columns in your leads database.
+        </p>
+        
+        <div id="sampleDataSection" style="margin-bottom: 2rem; display: none;">
+          <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--gray-900);">Sample Data Preview</h3>
+          <div id="sampleDataPreview" style="background: var(--gray-100); padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.875rem; max-height: 200px; overflow-y: auto;"></div>
+        </div>
+        
+        <div id="mappingsForm" style="display: none;">
+          <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--gray-900);">Field Mappings</h3>
+          <div style="display: grid; gap: 1rem;">
+            <div class="mapping-row">
+              <label><strong>Permit Number:</strong></label>
+              <select id="map_permit_number" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Contractor Name:</strong></label>
+              <select id="map_contractor_name" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Owner Name:</strong></label>
+              <select id="map_owner_name" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Address:</strong></label>
+              <select id="map_address" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>City:</strong></label>
+              <select id="map_city" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>State:</strong></label>
+              <select id="map_state" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Zip Code:</strong></label>
+              <select id="map_zip_code" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Phone:</strong></label>
+              <select id="map_phone" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Value/Budget:</strong></label>
+              <select id="map_value" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+            <div class="mapping-row">
+              <label><strong>Description:</strong></label>
+              <select id="map_description" class="form-input"><option value="none">-- Not Available --</option></select>
+            </div>
+          </div>
+        </div>
+        
+        <div id="loadingMappings" style="text-align: center; padding: 2rem;">
+          <img src="icons/loading.svg" style="width: 48px; height: 48px;">
+          <p style="color: var(--gray-600); margin-top: 1rem;">Fetching sample data...</p>
+        </div>
+        
+        <div id="mappingsError" style="display: none; background: #fee; color: #c00; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;"></div>
+        
+        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+          <button type="button" class="btn btn-primary" onclick="saveMappings()" style="flex: 1;">Save Mappings</button>
+          <button type="button" class="btn btn-secondary" onclick="closeMappingsModal()" style="flex: 1;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     let editingSourceId = null;
+    let currentMappingSourceId = null;
 
     // Check authentication on page load
     async function checkAuth() {
@@ -417,9 +497,10 @@
                 <div class="source-name">${escapeHtml(source.data.name)}</div>
                 <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
               </div>
-              <div class="source-actions">
-                <button class="btn-small btn-edit" onclick="editSource(${source.id})">Edit</button>
-                <button class="btn-small btn-delete" onclick="deleteSource(${source.id}, '${escapeHtml(source.data.name)}')">Delete</button>
+              <div class="source-actions" style="display: flex; gap: 0.5rem;">
+                <button class="btn-small" onclick="openMappingsModal(${source.id})" style="background: #3b82f6;">✏️ Edit Mappings</button>
+                <button class="btn-small" onclick="scrapeSource(${source.id}, '${escapeHtml(source.data.name)}')" style="background: #10b981;">🔄 Scrape Now</button>
+                <button class="btn-small btn-delete" onclick="deleteSource(${source.id}, '${escapeHtml(source.data.name)}')" style="background: #ef4444;">🗑️ Delete</button>
               </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
@@ -432,6 +513,7 @@
               ${source.data.usePuppeteer ? '<div><strong>Dynamic:</strong> ✓ Enabled</div>' : ''}
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
+              ${source.data.fieldMappings ? '<div><strong>Mappings:</strong> ✓ Configured</div>' : '<div style="color: #f59e0b;"><strong>Mappings:</strong> ⚠️ Not configured</div>'}
             </div>
           </div>
         `).join('');
@@ -499,25 +581,165 @@
     }
 
     async function deleteSource(id, name) {
-      if (!confirm(`Are you sure you want to delete "${name}"?`)) {
+      if (!confirm(`Are you sure you want to delete "${name}"?\n\nThis will permanently remove the source configuration. Your scraped leads will remain.`)) {
         return;
       }
       
       try {
-        const response = await fetch(`/api/my-sources/${id}`, {
+        const response = await fetch(`/api/sources/${id}`, {
           method: 'DELETE'
         });
         
         if (response.ok) {
-          alert('Source deleted successfully');
+          alert('✅ Source deleted successfully');
           loadSources();
         } else {
-          alert('Failed to delete source');
+          alert('❌ Failed to delete source');
         }
       } catch (error) {
         console.error('Error deleting source:', error);
-        alert('Failed to delete source');
+        alert('❌ Failed to delete source');
       }
+    }
+
+    async function scrapeSource(id, name) {
+      if (!confirm(`Start scraping "${name}" now?`)) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/api/scrape/${id}`, {
+          method: 'POST'
+        });
+        
+        if (response.ok) {
+          alert(`✅ Scraping started for "${name}"`);
+        } else {
+          alert('❌ Failed to start scraping');
+        }
+      } catch (error) {
+        console.error('Error scraping source:', error);
+        alert('❌ Failed to start scraping');
+      }
+    }
+
+    async function openMappingsModal(sourceId) {
+      currentMappingSourceId = sourceId;
+      
+      // Show modal and loading state
+      document.getElementById('mappingsModal').classList.add('show');
+      document.getElementById('loadingMappings').style.display = 'block';
+      document.getElementById('mappingsForm').style.display = 'none';
+      document.getElementById('sampleDataSection').style.display = 'none';
+      document.getElementById('mappingsError').style.display = 'none';
+      
+      try {
+        // Fetch sample data from source
+        const response = await fetch(`/api/sources/${sourceId}/sample`);
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to fetch sample data');
+        }
+        
+        // Hide loading, show form
+        document.getElementById('loadingMappings').style.display = 'none';
+        document.getElementById('mappingsForm').style.display = 'block';
+        document.getElementById('sampleDataSection').style.display = 'block';
+        
+        // Display sample data
+        const samplePreview = document.getElementById('sampleDataPreview');
+        samplePreview.innerHTML = `<strong>${escapeHtml(data.sourceName)}</strong><br><br>` +
+          data.sampleData.slice(0, 1).map(record => 
+            Object.entries(record).map(([key, val]) => 
+              `<strong>${escapeHtml(key)}:</strong> ${escapeHtml(String(val || '(empty)').substring(0, 100))}`
+            ).join('<br>')
+          ).join('<br><br>');
+        
+        // Populate dropdowns with available fields
+        const fieldSelects = [
+          'map_permit_number', 'map_contractor_name', 'map_owner_name', 'map_address',
+          'map_city', 'map_state', 'map_zip_code', 'map_phone', 'map_value', 'map_description'
+        ];
+        
+        fieldSelects.forEach(selectId => {
+          const select = document.getElementById(selectId);
+          select.innerHTML = '<option value="none">-- Not Available --</option>';
+          data.availableFields.forEach(field => {
+            const option = document.createElement('option');
+            option.value = field;
+            option.textContent = field;
+            select.appendChild(option);
+          });
+        });
+        
+        // Load existing mappings if they exist
+        const sourcesResponse = await fetch('/api/my-sources');
+        const sourcesData = await sourcesResponse.json();
+        const source = sourcesData.data.find(s => s.id === sourceId);
+        
+        if (source && source.data.fieldMappings) {
+          Object.entries(source.data.fieldMappings).forEach(([dbColumn, sourceField]) => {
+            const select = document.getElementById(`map_${dbColumn}`);
+            if (select && sourceField) {
+              select.value = sourceField;
+            }
+          });
+        }
+        
+      } catch (error) {
+        console.error('Error loading mappings:', error);
+        document.getElementById('loadingMappings').style.display = 'none';
+        document.getElementById('mappingsError').style.display = 'block';
+        document.getElementById('mappingsError').textContent = `Error: ${error.message}`;
+      }
+    }
+
+    async function saveMappings() {
+      const mappings = {
+        permit_number: document.getElementById('map_permit_number').value,
+        contractor_name: document.getElementById('map_contractor_name').value,
+        owner_name: document.getElementById('map_owner_name').value,
+        address: document.getElementById('map_address').value,
+        city: document.getElementById('map_city').value,
+        state: document.getElementById('map_state').value,
+        zip_code: document.getElementById('map_zip_code').value,
+        phone: document.getElementById('map_phone').value,
+        value: document.getElementById('map_value').value,
+        description: document.getElementById('map_description').value
+      };
+      
+      // Remove "none" values
+      Object.keys(mappings).forEach(key => {
+        if (mappings[key] === 'none') {
+          mappings[key] = null;
+        }
+      });
+      
+      try {
+        const response = await fetch(`/api/sources/${currentMappingSourceId}/mappings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fieldMappings: mappings })
+        });
+        
+        if (response.ok) {
+          alert('✅ Field mappings saved successfully!');
+          closeMappingsModal();
+          loadSources(); // Reload to show mapping status
+        } else {
+          const data = await response.json();
+          alert(`❌ Failed to save mappings: ${data.error}`);
+        }
+      } catch (error) {
+        console.error('Error saving mappings:', error);
+        alert('❌ Failed to save mappings');
+      }
+    }
+
+    function closeMappingsModal() {
+      document.getElementById('mappingsModal').classList.remove('show');
+      currentMappingSourceId = null;
     }
 
     function closeModal() {

@@ -969,78 +969,54 @@ async function scrapeForUser(userId, userSources) {
             });
           }
           
-          // SMART AUTO-MAPPING: Automatically extracts ALL 30+ fields from JSON APIs
-          // Checks 100+ field name variations - works with ANY JSON API without configuration
-          const lead = {
-            // BASIC INFO (checks 15+ field name variations)
-            permit_number: extractedData.permit_number || flatItem.permit_number || flatItem.permit_num || flatItem.Permit__ || flatItem.Permit_Number || flatItem.job__ || flatItem.Title || flatItem.DisplayName || flatItem.record_number || flatItem.recordNumber || 'N/A',
-            
-            address: extractedData.address || flatItem.property_address || flatItem.address || flatItem.Address || flatItem.location?.address || flatItem.permit_location || flatItem.Full_Address || flatItem.street_address || flatItem.streetAddress || [flatItem.Street, flatItem.City, flatItem.State, flatItem.Zip].filter(Boolean).join(', ') || 'N/A',
-            
-            value: extractedData.value || flatItem.value || flatItem.Value || flatItem.permit_value || flatItem.estimated_cost || flatItem.Estimated_Cost || flatItem.declared_valuation || flatItem.valuation || flatItem.total_job_cost || flatItem.job_cost || flatItem.Const_Cost || flatItem.construction_cost || flatItem.project_value || 'N/A',
-            
-            description: extractedData.description || flatItem.description || flatItem.Description || flatItem.work_class || flatItem.permit_type || flatItem.Permit_Type_Description || flatItem.Details || flatItem.Purpose || flatItem.work_description || 'N/A',
-            
-            // DATES (checks 10+ variations)
-            date_issued: flatItem.Date_Issued || flatItem.issued_date || flatItem.date_issued || flatItem.issue_date || flatItem.issueDate || flatItem.ApplicationDate || flatItem.applicationdate || null,
-            
-            application_date: flatItem.Date_Entered || flatItem.application_date || flatItem.applicationDate || flatItem.app_date || flatItem.date_entered || flatItem.dateEntered || null,
-            
-            // OWNER INFO
-            owner_name: flatItem.owner_name || flatItem.Owner_Name || flatItem.ownerName || flatItem.applicant || flatItem.Applicant || null,
-            
-            // CONTRACTOR INFO (checks 20+ variations)
-            contractor_name: flatItem.Contact || flatItem.contractor_name || flatItem.contractorName || flatItem.Contractor_Name || flatItem.contractor || flatItem.builder_name || flatItem.builderName || flatItem.Builder || null,
-            
-            contractor_phone: flatItem.contractor_phone || flatItem.contractorPhone || flatItem.Contractor_Phone || flatItem.contractor_telephone || flatItem.CONTACT_PHONE1 || flatItem.builder_phone || null,
-            
-            contractor_address: flatItem.contractor_address || flatItem.contractorAddress || flatItem.Contractor_Address || flatItem.contractor_street || null,
-            
-            contractor_city: flatItem.contractor_city || flatItem.contractorCity || flatItem.Contractor_City || null,
-            
-            contractor_state: flatItem.contractor_state || flatItem.contractorState || flatItem.Contractor_State || null,
-            
-            contractor_zip: flatItem.contractor_zip || flatItem.contractorZip || flatItem.Contractor_Zip || flatItem.contractor_zipcode || null,
-            
-            // PROJECT DETAILS (checks 15+ variations)
-            square_footage: flatItem.square_feet || flatItem.squareFeet || flatItem.Square_Footage || flatItem.sq_ft || flatItem.sqft || flatItem.area || flatItem.building_area || null,
-            
-            units: flatItem.unit_number || flatItem.unitNumber || flatItem.Number_of_Units || flatItem.numberOfUnits || flatItem.units || flatItem.Units || flatItem.dwelling_units || null,
-            
-            floors: flatItem.Number_of_Stories || flatItem.numberOfStories || flatItem.floors || flatItem.Floors || flatItem.stories || flatItem.Stories || null,
-            
-            parcel_number: flatItem.Parcel || flatItem.parcel_number || flatItem.parcelNumber || flatItem.parcel || flatItem.apn || flatItem.APN || flatItem.folio || flatItem.Folio || null,
-            
-            // CLASSIFICATION (checks 10+ variations)
-            permit_type: flatItem.Permit_Type_Description || flatItem.permit_type || flatItem.permitType || flatItem.Permit_Type || flatItem.type || flatItem.Type || flatItem.category || null,
-            
-            permit_subtype: flatItem.Permit_Subtype_Description || flatItem.permit_subtype || flatItem.permitSubtype || flatItem.Permit_Subtype || flatItem.subtype || flatItem.subType || null,
-            
-            work_description: flatItem.Purpose || flatItem.purpose || flatItem.work_description || flatItem.workDescription || flatItem.Work_Description || flatItem.scope || flatItem.Scope || null,
-            
-            // LOCATION (checks 15+ variations)
-            city: flatItem.City || flatItem.city || flatItem.municipality || flatItem.Municipality || null,
-            
-            state: flatItem.State || flatItem.state || flatItem.ST || flatItem.st || null,
-            
-            zip_code: flatItem.ZIP || flatItem.Zip || flatItem.zip_code || flatItem.zipCode || flatItem.zip || flatItem.postal_code || flatItem.postalCode || null,
-            
-            latitude: flatItem.Lat || flatItem.latitude || flatItem.lat || flatItem.y || flatItem.Y || flatItem.latitude_y || null,
-            
-            longitude: flatItem.Lon || flatItem.longitude || flatItem.lon || flatItem.lng || flatItem.x || flatItem.X || flatItem.longitude_x || null,
-            
-            // STATUS & METADATA
-            status: flatItem.status || flatItem.Status || flatItem.permit_status || flatItem.permitStatus || null,
-            
-            record_type: flatItem.record_type || flatItem.recordType || flatItem.Record_Type || null,
-            
-            project_name: flatItem.project_name || flatItem.projectName || flatItem.Project_Name || flatItem.development_name || null,
-            
-            // CONTACT INFO
-            phone: extractedData.phone || flatItem.Phone || flatItem.phone || flatItem.telephone || flatItem.Telephone || flatItem.contact_phone || flatItem.CONTACT_PHONE1 || null,
-            
-            page_url: source.viewUrl || source.publicUrl || source.url
-          };
+          // FIELD MAPPING: Use user-configured mappings or fall back to smart auto-mapping
+          const lead = {};
+          
+          if (source.fieldMappings && Object.keys(source.fieldMappings).length > 0) {
+            // Use explicit field mappings configured by user
+            for (const [dbColumn, sourceField] of Object.entries(source.fieldMappings)) {
+              if (sourceField && sourceField !== 'none' && flatItem[sourceField] !== undefined) {
+                lead[dbColumn] = flatItem[sourceField];
+              } else {
+                lead[dbColumn] = null;
+              }
+            }
+            // Always include page_url
+            lead.page_url = source.viewUrl || source.publicUrl || source.url;
+          } else {
+            // Fall back to SMART AUTO-MAPPING for sources without configured mappings
+            lead.permit_number = extractedData.permit_number || flatItem.permit_number || flatItem.permit_num || flatItem.Permit__ || flatItem.Permit_Number || flatItem.job__ || flatItem.Title || flatItem.DisplayName || flatItem.record_number || flatItem.recordNumber || 'N/A';
+            lead.address = extractedData.address || flatItem.property_address || flatItem.address || flatItem.Address || flatItem.location?.address || flatItem.permit_location || flatItem.Full_Address || flatItem.street_address || flatItem.streetAddress || [flatItem.Street, flatItem.City, flatItem.State, flatItem.Zip].filter(Boolean).join(', ') || 'N/A';
+            lead.value = extractedData.value || flatItem.value || flatItem.Value || flatItem.permit_value || flatItem.estimated_cost || flatItem.Estimated_Cost || flatItem.declared_valuation || flatItem.valuation || flatItem.total_job_cost || flatItem.job_cost || flatItem.Const_Cost || flatItem.construction_cost || flatItem.project_value || 'N/A';
+            lead.description = extractedData.description || flatItem.description || flatItem.Description || flatItem.work_class || flatItem.permit_type || flatItem.Permit_Type_Description || flatItem.Details || flatItem.Purpose || flatItem.work_description || 'N/A';
+            lead.date_issued = flatItem.Date_Issued || flatItem.issued_date || flatItem.date_issued || flatItem.issue_date || flatItem.issueDate || flatItem.ApplicationDate || flatItem.applicationdate || null;
+            lead.application_date = flatItem.Date_Entered || flatItem.application_date || flatItem.applicationDate || flatItem.app_date || flatItem.date_entered || flatItem.dateEntered || null;
+            lead.owner_name = flatItem.owner_name || flatItem.Owner_Name || flatItem.ownerName || flatItem.applicant || flatItem.Applicant || null;
+            lead.contractor_name = flatItem.Contact || flatItem.contractor_name || flatItem.contractorName || flatItem.Contractor_Name || flatItem.contractor || flatItem.builder_name || flatItem.builderName || flatItem.Builder || null;
+            lead.contractor_phone = flatItem.contractor_phone || flatItem.contractorPhone || flatItem.Contractor_Phone || flatItem.contractor_telephone || flatItem.CONTACT_PHONE1 || flatItem.builder_phone || null;
+            lead.contractor_address = flatItem.contractor_address || flatItem.contractorAddress || flatItem.Contractor_Address || flatItem.contractor_street || null;
+            lead.contractor_city = flatItem.contractor_city || flatItem.contractorCity || flatItem.Contractor_City || null;
+            lead.contractor_state = flatItem.contractor_state || flatItem.contractorState || flatItem.Contractor_State || null;
+            lead.contractor_zip = flatItem.contractor_zip || flatItem.contractorZip || flatItem.Contractor_Zip || flatItem.contractor_zipcode || null;
+            lead.square_footage = flatItem.square_feet || flatItem.squareFeet || flatItem.Square_Footage || flatItem.sq_ft || flatItem.sqft || flatItem.area || flatItem.building_area || null;
+            lead.units = flatItem.unit_number || flatItem.unitNumber || flatItem.Number_of_Units || flatItem.numberOfUnits || flatItem.units || flatItem.Units || flatItem.dwelling_units || null;
+            lead.floors = flatItem.Number_of_Stories || flatItem.numberOfStories || flatItem.floors || flatItem.Floors || flatItem.stories || flatItem.Stories || null;
+            lead.parcel_number = flatItem.Parcel || flatItem.parcel_number || flatItem.parcelNumber || flatItem.parcel || flatItem.apn || flatItem.APN || flatItem.folio || flatItem.Folio || null;
+            lead.permit_type = flatItem.Permit_Type_Description || flatItem.permit_type || flatItem.permitType || flatItem.Permit_Type || flatItem.type || flatItem.Type || flatItem.category || null;
+            lead.permit_subtype = flatItem.Permit_Subtype_Description || flatItem.permit_subtype || flatItem.permitSubtype || flatItem.Permit_Subtype || flatItem.subtype || flatItem.subType || null;
+            lead.work_description = flatItem.Purpose || flatItem.purpose || flatItem.work_description || flatItem.workDescription || flatItem.Work_Description || flatItem.scope || flatItem.Scope || null;
+            lead.city = flatItem.City || flatItem.city || flatItem.municipality || flatItem.Municipality || null;
+            lead.state = flatItem.State || flatItem.state || flatItem.ST || flatItem.st || null;
+            lead.zip_code = flatItem.ZIP || flatItem.Zip || flatItem.zip_code || flatItem.zipCode || flatItem.zip || flatItem.postal_code || flatItem.postalCode || null;
+            lead.latitude = flatItem.Lat || flatItem.latitude || flatItem.lat || flatItem.y || flatItem.Y || flatItem.latitude_y || null;
+            lead.longitude = flatItem.Lon || flatItem.longitude || flatItem.lon || flatItem.lng || flatItem.x || flatItem.X || flatItem.longitude_x || null;
+            lead.status = flatItem.status || flatItem.Status || flatItem.permit_status || flatItem.permitStatus || null;
+            lead.record_type = flatItem.record_type || flatItem.recordType || flatItem.Record_Type || null;
+            lead.project_name = flatItem.project_name || flatItem.projectName || flatItem.Project_Name || flatItem.development_name || null;
+            lead.phone = extractedData.phone || flatItem.Phone || flatItem.phone || flatItem.telephone || flatItem.Telephone || flatItem.contact_phone || flatItem.CONTACT_PHONE1 || null;
+            lead.page_url = source.viewUrl || source.publicUrl || source.url;
+          }
+          
           if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) inserted++;
         }
         logger.info(`Found ${jsonItems.length} records from ${source.name} (JSON API)`);
@@ -2264,6 +2240,134 @@ function startServer() {
       res.json({ success: true });
     } catch (e) {
       logger.error(`Delete source error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get sample data from a source for field mapping
+  app.get('/api/sources/:id/sample', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceId = parseInt(req.params.id, 10);
+      
+      // Get source config
+      const sourceRow = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      if (!sourceRow) {
+        return res.status(404).json({ error: 'Source not found or access denied' });
+      }
+      
+      const sourceConfig = JSON.parse(sourceRow.source_data);
+      logger.info(`Fetching sample data for source: ${sourceConfig.name}`);
+      
+      // Fetch sample data based on source type
+      let sampleData = [];
+      
+      if (sourceConfig.type === 'json') {
+        const fetchOptions = {
+          method: sourceConfig.method || 'GET',
+          headers: sourceConfig.headers || {}
+        };
+        
+        let url = sourceConfig.url;
+        
+        if (sourceConfig.method === 'POST' && sourceConfig.params) {
+          fetchOptions.body = JSON.stringify(sourceConfig.params);
+          fetchOptions.headers['Content-Type'] = 'application/json';
+        } else if (sourceConfig.params) {
+          const params = new URLSearchParams(sourceConfig.params);
+          // Limit to 3 records for sample
+          params.set('resultRecordCount', '3');
+          params.set('resultOffset', '0');
+          url = `${url}?${params.toString()}`;
+        }
+        
+        const response = await axios.get(url, fetchOptions);
+        let jsonData = response.data;
+        
+        // Apply JSONPath if specified
+        if (sourceConfig.jsonPath) {
+          const result = jp.query(jsonData, sourceConfig.jsonPath);
+          if (Array.isArray(result) && result.length > 0) {
+            jsonData = result;
+          }
+        }
+        
+        // Get first 3 records
+        if (Array.isArray(jsonData)) {
+          sampleData = jsonData.slice(0, 3);
+        } else if (jsonData.features && Array.isArray(jsonData.features)) {
+          sampleData = jsonData.features.slice(0, 3).map(f => f.attributes || f);
+        } else if (jsonData.Data && Array.isArray(jsonData.Data)) {
+          sampleData = jsonData.Data.slice(0, 3);
+        }
+        
+      } else if (sourceConfig.type === 'html') {
+        // For HTML sources, use Puppeteer to get sample
+        const browser = await puppeteer.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        });
+        const page = await browser.newPage();
+        await page.goto(sourceConfig.url, { waitUntil: 'networkidle2', timeout: 30000 });
+        
+        const selector = sourceConfig.selector || 'table tr, .result, .item';
+        const elements = await page.$$(selector);
+        
+        // Extract text from first 3 elements
+        for (let i = 0; i < Math.min(3, elements.length); i++) {
+          const text = await page.evaluate(el => el.textContent, elements[i]);
+          sampleData.push({ _text: text.trim() });
+        }
+        
+        await browser.close();
+      }
+      
+      // Get available field names from first record
+      const availableFields = sampleData.length > 0 ? Object.keys(sampleData[0]) : [];
+      
+      res.json({ 
+        success: true, 
+        sampleData,
+        availableFields,
+        sourceName: sourceConfig.name
+      });
+      
+    } catch (e) {
+      logger.error(`Fetch sample data error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Save field mappings for a source
+  app.post('/api/sources/:id/mappings', express.json(), async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceId = parseInt(req.params.id, 10);
+      const { fieldMappings } = req.body;
+      
+      if (!fieldMappings || typeof fieldMappings !== 'object') {
+        return res.status(400).json({ error: 'Field mappings are required' });
+      }
+      
+      // Get existing source config
+      const sourceRow = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      if (!sourceRow) {
+        return res.status(404).json({ error: 'Source not found or access denied' });
+      }
+      
+      const sourceConfig = JSON.parse(sourceRow.source_data);
+      sourceConfig.fieldMappings = fieldMappings;
+      
+      // Update source with new mappings
+      await dbRun('UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?', 
+        [JSON.stringify(sourceConfig), sourceId, userId]);
+      
+      logger.info(`Saved field mappings for source ${sourceConfig.name} (user ${userId})`);
+      
+      res.json({ success: true, message: 'Field mappings saved successfully' });
+      
+    } catch (e) {
+      logger.error(`Save field mappings error: ${e.message}`);
       res.status(500).json({ error: e.message });
     }
   });
