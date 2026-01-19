@@ -2297,7 +2297,12 @@ function startServer() {
         if (Array.isArray(jsonData)) {
           sampleData = jsonData.slice(0, 3);
         } else if (jsonData.features && Array.isArray(jsonData.features)) {
-          sampleData = jsonData.features.slice(0, 3).map(f => f.attributes || f);
+          // ArcGIS format - flatten attributes like we do in scraper
+          sampleData = jsonData.features.slice(0, 3).map(f => {
+            const item = f.attributes || f;
+            // Flatten: merge attributes into top level
+            return item.attributes ? {...item, ...item.attributes} : item;
+          });
         } else if (jsonData.Data && Array.isArray(jsonData.Data)) {
           sampleData = jsonData.Data.slice(0, 3);
         }
