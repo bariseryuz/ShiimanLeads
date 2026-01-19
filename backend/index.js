@@ -11,6 +11,7 @@ const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const crypto = require('crypto');
+const jp = require('jsonpath');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 // Initialize Google Gemini client

@@ -28,6 +28,7 @@
     "express-ejs-layouts": "^2.5.1",
     "express-session": "^1.17.3",
     "groq-sdk": "^0.37.0",
+    "jsonpath": "^1.1.1",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.1",
     "puppeteer": "^24.15.0",
