@@ -382,6 +382,15 @@
     if (document.getElementById('dropdownUserEmail')) {
       document.getElementById('dropdownUserEmail').textContent = userEmail;
     }
+
+    // Logout function
+    function logout() {
+      if (confirm('Are you sure you want to logout?')) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+        window.location.href = '/login.html';
+      }
+    }
   </script>
 </body>
 </html>
