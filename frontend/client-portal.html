@@ -7,6 +7,16 @@
   <link rel="icon" type="image/svg+xml" href="icons/dashboard.svg">
   <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Highlight new leads with transparent red background */
+    tr.new-lead {
+      background-color: rgba(255, 0, 0, 0.1) !important;
+      transition: background-color 0.3s ease;
+    }
+    tr.new-lead:hover {
+      background-color: rgba(255, 0, 0, 0.15) !important;
+    }
+  </style>
 </head>
 <body>
   <!-- Top Navigation Bar -->
@@ -246,7 +256,19 @@
     </div>
 
     <!-- Leads Display Div -->
-    <div id="statusMessage" style="color: var(--gray-600); margin: 1.5rem 0;"></div>
+    <div style="display: flex; align-items: center; justify-content: space-between; margin: 1.5rem 0;">
+      <div id="statusMessage" style="color: var(--gray-600);"></div>
+      <div style="display: flex; align-items: center; gap: 1.5rem; font-size: 0.875rem;">
+        <div id="newLeadFilter" onclick="filterByNewLeads('new')" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 4px; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(0,0,0,0.05)'" onmouseout="if(!this.classList.contains('active')) this.style.backgroundColor='transparent'">
+          <div style="width: 20px; height: 20px; background-color: rgba(255, 0, 0, 0.1); border: 1px solid rgba(255, 0, 0, 0.3); border-radius: 3px;"></div>
+          <span style="color: var(--gray-700); font-weight: 500;">New Leads</span>
+        </div>
+        <div id="allLeadsFilter" onclick="filterByNewLeads('all')" style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; padding: 0.25rem 0.5rem; border-radius: 4px; transition: background-color 0.2s;" onmouseover="this.style.backgroundColor='rgba(0,0,0,0.05)'" onmouseout="if(!this.classList.contains('active')) this.style.backgroundColor='transparent'">
+          <div style="width: 20px; height: 20px; background-color: white; border: 1px solid var(--gray-300); border-radius: 3px;"></div>
+          <span style="color: var(--gray-700); font-weight: 500;">All Leads</span>
+        </div>
+      </div>
+    </div>
 
     <div class="card" id="leadsDisplayDiv" style="padding: 0; overflow: hidden;">
       <div class="table-container" style="overflow-x: auto; max-width: 100%;">
@@ -486,6 +508,33 @@
       }
     }
 
+    // Track filter state
+    let currentNewLeadFilter = 'all'; // 'all' or 'new'
+
+    // Filter by new leads
+    function filterByNewLeads(filter) {
+      currentNewLeadFilter = filter;
+      
+      // Update visual state
+      const newLeadFilterEl = document.getElementById('newLeadFilter');
+      const allLeadsFilterEl = document.getElementById('allLeadsFilter');
+      
+      if (filter === 'new') {
+        newLeadFilterEl.classList.add('active');
+        newLeadFilterEl.style.backgroundColor = 'rgba(0,0,0,0.1)';
+        allLeadsFilterEl.classList.remove('active');
+        allLeadsFilterEl.style.backgroundColor = 'transparent';
+      } else {
+        allLeadsFilterEl.classList.add('active');
+        allLeadsFilterEl.style.backgroundColor = 'rgba(0,0,0,0.1)';
+        newLeadFilterEl.classList.remove('active');
+        newLeadFilterEl.style.backgroundColor = 'transparent';
+      }
+      
+      // Reload leads with filter
+      loadLeads();
+    }
+
     // Load leads
     async function loadLeads() {
       const source = document.getElementById('sourceFilter').value;
@@ -515,8 +564,23 @@
           return;
         }
         
-        leads.forEach(lead => {
+        // Apply filter
+        const filteredLeads = currentNewLeadFilter === 'new' 
+          ? leads.filter(lead => lead.is_new === 1)
+          : leads;
+        
+        if (filteredLeads.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--gray-600);">No ' + (currentNewLeadFilter === 'new' ? 'new ' : '') + 'leads found.</td></tr>';
+          document.getElementById('statusMessage').textContent = '';
+          return;
+        }
+        
+        filteredLeads.forEach(lead => {
           const tr = document.createElement('tr');
+          // Add 'new-lead' class if this lead is marked as new
+          if (lead.is_new === 1) {
+            tr.classList.add('new-lead');
+          }
           tr.innerHTML = `
             <td>${escapeHtml(lead.permit_number || '-')}</td>
             <td style="white-space: nowrap;">${lead.date_issued ? formatDate(lead.date_issued) : 'N/A'}</td>
@@ -544,7 +608,8 @@
           tbody.appendChild(tr);
         });
         
-        document.getElementById('statusMessage').textContent = `✓ Showing ${leads.length} lead(s) from current filter`;
+        const filterText = currentNewLeadFilter === 'new' ? ' new' : '';
+        document.getElementById('statusMessage').textContent = `✓ Showing ${filteredLeads.length}${filterText} lead(s)`;
         
         // Don't update total stats here - those come from /api/stats which shows real totals
         
@@ -684,11 +749,15 @@
     }
     
     // Update dropdown user info
+    const dropdownUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const dropdownUserName = dropdownUser.name || dropdownUser.email?.split('@')[0] || 'User';
+    const dropdownUserEmail = dropdownUser.email || 'email@example.com';
+    
     if (document.getElementById('dropdownUserName')) {
-      document.getElementById('dropdownUserName').textContent = userName;
+      document.getElementById('dropdownUserName').textContent = dropdownUserName;
     }
     if (document.getElementById('dropdownUserEmail')) {
-      document.getElementById('dropdownUserEmail').textContent = userEmail;
+      document.getElementById('dropdownUserEmail').textContent = dropdownUserEmail;
     }
     
     // Profile dropdown toggle

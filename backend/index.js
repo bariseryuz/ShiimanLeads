@@ -217,8 +217,8 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
       square_footage, units, floors, parcel_number,
       permit_type, permit_subtype, work_description, purpose,
       city, state, zip_code, latitude, longitude,
-      status, record_type, project_name
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      status, record_type, project_name, is_new
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       userId,
       hash,
@@ -255,7 +255,8 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId })
       lead.longitude,
       lead.status,
       lead.record_type,
-      lead.project_name
+      lead.project_name,
+      1 // is_new = true for newly inserted leads
     ]
   );
   
@@ -319,6 +320,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS leads (
     status TEXT,
     record_type TEXT,
     project_name TEXT,
+    is_new INTEGER DEFAULT 1,
     UNIQUE(hash, user_id)
   )`);
 
@@ -328,12 +330,13 @@ const newColumns = [
   'contractor_name', 'contractor_address', 'contractor_city', 'contractor_state',
   'contractor_zip', 'contractor_phone', 'square_footage', 'units', 'floors',
   'parcel_number', 'permit_type', 'permit_subtype', 'work_description', 'purpose',
-  'city', 'state', 'zip_code', 'latitude', 'longitude', 'status', 'record_type', 'project_name'
+  'city', 'state', 'zip_code', 'latitude', 'longitude', 'status', 'record_type', 'project_name', 'is_new'
 ];
 
 newColumns.forEach(col => {
   try {
-    db.exec(`ALTER TABLE leads ADD COLUMN ${col} TEXT`);
+    const columnType = col === 'is_new' ? 'INTEGER DEFAULT 1' : 'TEXT';
+    db.exec(`ALTER TABLE leads ADD COLUMN ${col} ${columnType}`);
   } catch (err) {
     // Column already exists, ignore
   }
@@ -455,6 +458,15 @@ function loadSources() {
 // === MAIN SCRAPER ===
 async function scrapeForUser(userId, userSources) {
   logger.info(`Starting scrape cycle for user ${userId}...`);
+  
+  // Mark all existing "new" leads as old before scraping new ones
+  try {
+    const result = await dbRun('UPDATE leads SET is_new = 0 WHERE user_id = ? AND is_new = 1', [userId]);
+    logger.info(`Marked ${result.changes} existing leads as old for user ${userId}`);
+  } catch (err) {
+    logger.error(`Failed to mark old leads: ${err.message}`);
+  }
+  
   let totalInserted = 0;
   const SOURCES = userSources;
   
@@ -1005,9 +1017,15 @@ async function scrapeForUser(userId, userSources) {
             // Use explicit field mappings configured by user
             logger.info(`Using field mappings for ${source.name}: ${JSON.stringify(source.fieldMappings)}`);
             for (const [dbColumn, sourceField] of Object.entries(source.fieldMappings)) {
-              if (sourceField && sourceField !== 'none' && flatItem[sourceField] !== undefined) {
-                lead[dbColumn] = flatItem[sourceField];
-                logger.info(`Mapped ${dbColumn} = flatItem[${sourceField}] = ${flatItem[sourceField]}`);
+              if (sourceField && sourceField !== 'none') {
+                const value = flatItem[sourceField];
+                if (value !== undefined && value !== null && value !== '') {
+                  lead[dbColumn] = value;
+                  logger.info(`Mapped ${dbColumn} = flatItem[${sourceField}] = ${value}`);
+                } else {
+                  lead[dbColumn] = null;
+                  logger.info(`Mapped ${dbColumn} = null (source field "${sourceField}" not found or empty)`);
+                }
               } else {
                 lead[dbColumn] = null;
               }
@@ -1019,9 +1037,14 @@ async function scrapeForUser(userId, userSources) {
               logger.info(`Parsing date_issued: ${lead.date_issued} -> ${parsed}`);
               lead.date_issued = parsed;
             }
+            if (lead.application_date) {
+              const parsed = parseDate(lead.application_date);
+              lead.application_date = parsed;
+            }
             
-            // Always include page_url
+            // Always include page_url and source
             lead.page_url = source.viewUrl || source.publicUrl || source.url;
+            lead.source = source.name;
           } else {
             // Fall back to SMART AUTO-MAPPING for sources without configured mappings
             lead.permit_number = extractedData.permit_number || flatItem.permit_number || flatItem.permit_num || flatItem.Permit__ || flatItem.Permit_Number || flatItem.job__ || flatItem.Title || flatItem.DisplayName || flatItem.record_number || flatItem.recordNumber || 'N/A';
@@ -1890,7 +1913,7 @@ function startServer() {
                    contractor_state, contractor_zip, contractor_phone,
                    square_footage, units, floors, parcel_number, permit_type, permit_subtype,
                    work_description, purpose, city, state, zip_code, latitude, longitude,
-                   status, record_type, project_name
+                   status, record_type, project_name, is_new
                    FROM leads WHERE ${where.join(' AND ')}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
@@ -1932,7 +1955,7 @@ function startServer() {
       const sql = `SELECT id, hash, permit_number, address, city, state, zip_code, value, description,
                    contractor_name, contractor_address, owner_name, phone, contractor_phone,
                    square_footage, units, permit_type, permit_subtype, status, parcel_number,
-                   source, date_issued, date_added, page_url, raw_text
+                   source, date_issued, date_added, page_url, raw_text, is_new
                    FROM leads WHERE ${where.join(' AND ')}
                    ORDER BY id DESC LIMIT ?`;
       params.push(limit);
@@ -2311,25 +2334,53 @@ function startServer() {
       let sampleData = [];
       
       if (sourceConfig.type === 'json') {
-        const fetchOptions = {
-          method: sourceConfig.method || 'GET',
-          headers: sourceConfig.headers || {}
-        };
-        
         let url = sourceConfig.url;
+        let response;
         
         if (sourceConfig.method === 'POST' && sourceConfig.params) {
-          fetchOptions.body = JSON.stringify(sourceConfig.params);
-          fetchOptions.headers['Content-Type'] = 'application/json';
+          // For POST requests, send params in body
+          const sampleParams = { ...sourceConfig.params };
+          // Try to limit records for sample
+          if (sampleParams.pageSize) sampleParams.pageSize = '10';
+          if (sampleParams.resultRecordCount) sampleParams.resultRecordCount = 10;
+          
+          response = await axios.post(url, sampleParams, {
+            headers: {
+              'Content-Type': 'application/json',
+              ...(sourceConfig.headers || {})
+            }
+          });
         } else if (sourceConfig.params) {
-          const params = new URLSearchParams(sourceConfig.params);
-          // Limit to 3 records for sample
-          params.set('resultRecordCount', '3');
-          params.set('resultOffset', '0');
+          // For GET requests, add params to URL
+          const sampleParams = { ...sourceConfig.params };
+          
+          // Try to limit records for sample (different APIs use different params)
+          if (sampleParams['$limit']) {
+            // Socrata API
+            sampleParams['$limit'] = '10';
+          } else if (sampleParams.resultRecordCount) {
+            // ArcGIS API
+            sampleParams.resultRecordCount = 10;
+          } else if (sampleParams.limit) {
+            // Generic limit
+            sampleParams.limit = '10';
+          }
+          
+          const params = new URLSearchParams();
+          Object.entries(sampleParams).forEach(([key, value]) => {
+            params.append(key, String(value));
+          });
           url = `${url}?${params.toString()}`;
+          
+          response = await axios.get(url, {
+            headers: sourceConfig.headers || {}
+          });
+        } else {
+          response = await axios.get(url, {
+            headers: sourceConfig.headers || {}
+          });
         }
         
-        const response = await axios.get(url, fetchOptions);
         let jsonData = response.data;
         
         // Apply JSONPath if specified
