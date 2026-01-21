@@ -385,9 +385,14 @@
       </div>
       
       <div id="mappingsContent">
-        <p style="color: var(--gray-600); margin-bottom: 1.5rem;">
-          Map the fields from your data source to the standard columns in your leads database.
-        </p>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <p style="color: var(--gray-600); margin: 0;">
+            Map the fields from your data source to the standard columns in your leads database.
+          </p>
+          <button type="button" class="btn" onclick="editSourceFromMapping()" style="background: var(--primary); color: white; padding: 0.5rem 1rem; font-size: 0.875rem;">
+            ✏️ Edit Source
+          </button>
+        </div>
         
         <div id="sampleDataSection" style="margin-bottom: 2rem; display: none;">
           <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--gray-900);">Sample Data Preview</h3>
@@ -526,6 +531,7 @@
                 <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
               </div>
               <div class="source-actions" style="display: flex; gap: 0.5rem;">
+                <button class="btn-small" onclick="editSource(${source.id})" style="background: #8b5cf6;">✏️ Edit Source</button>
                 <button class="btn-small" onclick="openMappingsModal(${source.id})" style="background: #3b82f6;">✏️ Edit Mappings</button>
                 <button class="btn-small" onclick="scrapeSource(${source.id}, '${escapeHtml(source.data.name)}')" style="background: #10b981;">🔄 Scrape Now</button>
                 <button class="btn-small btn-delete" onclick="deleteSource(${source.id}, '${escapeHtml(source.data.name)}')" style="background: #ef4444;">🗑️ Delete</button>
@@ -805,6 +811,19 @@
     function closeMappingsModal() {
       document.getElementById('mappingsModal').classList.remove('show');
       currentMappingSourceId = null;
+    }
+
+    async function editSourceFromMapping() {
+      if (!currentMappingSourceId) {
+        alert('No source selected');
+        return;
+      }
+      
+      // Close mappings modal
+      closeMappingsModal();
+      
+      // Open edit source modal with the current source
+      await editSource(currentMappingSourceId);
     }
 
     function closeModal() {

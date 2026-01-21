@@ -27,37 +27,37 @@
     "url": "https://apps-secure.phoenix.gov/PDD/Search/IssuedPermit",
     "method": "puppeteer",
     "puppeteerConfig": {
-      "waitForSelector": "select[name='PermitType']",
+      "waitForSelector": "select[name='ddlStructureClass']",
       "actions": [
         {
           "type": "select",
-          "selector": "select[name='PermitType']",
-          "value": "ALL"
+          "selector": "select[name='ddlPermitType']",
+          "value": "-ALL-"
         },
         {
           "type": "select",
-          "selector": "select[name='StructureClass']",
-          "value": "10 or More Family Units"
+          "selector": "select[name='ddlStructureClass']",
+          "value": "007"
         },
         {
-          "type": "date",
-          "selector": "input[name='StartDate']",
-          "value": "365_days_ago"
+          "type": "fill",
+          "selector": "input[name='txtStartDate']",
+          "value": "01/01/2024"
         },
         {
           "type": "click",
-          "selector": "button[type='submit'], input[type='submit']"
+          "selector": "input[name='btnSearch']"
         },
         {
           "type": "wait",
-          "duration": 5000
+          "duration": 8000
         }
       ],
-      "dataSelector": "table tbody tr, .results-table tr"
+      "dataSelector": ".k-grid tbody tr, table.k-grid-table tbody tr"
     },
     "useAI": true,
     "enabled": true,
-    "notes": "Phoenix AZ - Requires form submission with 10+ family units filter"
+    "notes": "Phoenix AZ - Multifamily 10+ units (code 007). Uses ddlStructureClass='007' and btnSearch button."
   },
   {
     "name": "Scottsdale Building Permits",

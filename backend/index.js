@@ -494,7 +494,9 @@ async function scrapeForUser(userId, userSources) {
   
   for (const source of SOURCES) {
     try {
-      logger.info(`Checking → ${source.name} for user ${userId}`);
+      logger.info(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      logger.info(`🔍 Starting source: ${source.name} (User ${userId})`);
+      logger.info(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       logger.info(`Source type: ${source.type}, method: ${source.method}, has params: ${!!source.params}`);
       let data; // can be JSON array or HTML string
       let axiosResponse;
@@ -506,6 +508,12 @@ async function scrapeForUser(userId, userSources) {
         source.usePuppeteer = true;
         source.extractTable = true;
         logger.info(`Auto-detected Nashville table view - enabling Puppeteer + table extraction`);
+      }
+
+      // Convert method: "puppeteer" to usePuppeteer flag
+      if (source.method === 'puppeteer') {
+        source.usePuppeteer = true;
+        logger.info(`Source ${source.name} configured with method: puppeteer`);
       }
 
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
@@ -538,12 +546,82 @@ async function scrapeForUser(userId, userSources) {
           
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
           
-          const navOpts = { waitUntil: 'domcontentloaded', timeout: 60000 };
+          const navOpts = { waitUntil: 'domcontentloaded', timeout: 90000 };
           await page.goto(source.url, navOpts);
           logger.info(`Puppeteer loaded page: ${source.url}`);
           
+          // Handle puppeteerConfig actions (for Phoenix, Scottsdale, etc.)
+          if (source.puppeteerConfig && source.puppeteerConfig.actions) {
+            logger.info(`Executing ${source.puppeteerConfig.actions.length} puppeteer actions for ${source.name}`);
+            
+            // Wait for initial selector if specified
+            if (source.puppeteerConfig.waitForSelector) {
+              await page.waitForSelector(source.puppeteerConfig.waitForSelector, { timeout: 15000 });
+            }
+            
+            for (const action of source.puppeteerConfig.actions) {
+              try {
+                if (action.type === 'select') {
+                  await page.select(action.selector, action.value);
+                  logger.info(`Selected "${action.value}" in ${action.selector}`);
+                } else if (action.type === 'fill') {
+                  // Handle dynamic date values
+                  let value = action.value;
+                  if (value.includes('days_ago')) {
+                    const days = parseInt(value);
+                    const date = new Date();
+                    date.setDate(date.getDate() - days);
+                    value = `${(date.getMonth() + 1).toString().padStart(2, '0')}/${date.getDate().toString().padStart(2, '0')}/${date.getFullYear()}`;
+                  }
+                  await page.evaluate((sel, val) => {
+                    document.querySelector(sel).value = val;
+                  }, action.selector, value);
+                  logger.info(`Filled "${value}" into ${action.selector}`);
+                } else if (action.type === 'click') {
+                  await page.click(action.selector);
+                  logger.info(`Clicked ${action.selector}`);
+                } else if (action.type === 'wait') {
+                  await new Promise(resolve => setTimeout(resolve, action.duration));
+                  logger.info(`Waited ${action.duration}ms`);
+                }
+              } catch (actionError) {
+                logger.error(`Failed action ${action.type} on ${action.selector}: ${actionError.message}`);
+              }
+            }
+            
+            logger.info(`Completed puppeteer actions for ${source.name}`);
+          }
+          
           // Wait for page to render
           await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          // Extract data using puppeteerConfig.dataSelector if provided
+          if (source.puppeteerConfig && source.puppeteerConfig.dataSelector) {
+            logger.info(`Extracting data using selector: ${source.puppeteerConfig.dataSelector}`);
+            
+            const tableData = await page.evaluate((selector) => {
+              // First, get the column headers
+              const headerCells = Array.from(document.querySelectorAll('table thead tr th, table tr:first-child th'));
+              const headers = headerCells.map(cell => cell.innerText.trim().toLowerCase());
+              
+              // Then get the data rows using the provided selector
+              const rows = Array.from(document.querySelectorAll(selector));
+              
+              return {
+                headers: headers,
+                rows: rows.map(row => {
+                  const cells = Array.from(row.querySelectorAll('td'));
+                  return cells.map(cell => cell.innerText.trim());
+                })
+              };
+            }, source.puppeteerConfig.dataSelector);
+            
+            if (tableData && tableData.rows && tableData.rows.length > 0) {
+              logger.info(`Extracted ${tableData.rows.length} rows from ${source.name}`);
+              source.extractTable = true; // Enable table processing
+              source.tableData = tableData;
+            }
+          }
           
           // Check if we need to extract table data (for Nashville-style sites)
           if (source.extractTable === true) {
@@ -650,22 +728,26 @@ async function scrapeForUser(userId, userSources) {
             });
             logger.info(`Finished auto-scrolling - loaded ${totalRows} total rows`);
             
-            const tableData = await page.evaluate(() => {
-              // First, get the column headers
-              const headerCells = Array.from(document.querySelectorAll('table thead tr th'));
-              const headers = headerCells.map(cell => cell.innerText.trim().toLowerCase());
-              
-              // Then get the data rows
-              const rows = Array.from(document.querySelectorAll('table tbody tr'));
-              
-              return {
-                headers: headers,
-                rows: rows.map(row => {
-                  const cells = Array.from(row.querySelectorAll('td'));
-                  return cells.map(cell => cell.innerText.trim());
-                })
-              };
-            });
+            // Use pre-extracted tableData if available, otherwise extract now
+            let tableData = source.tableData;
+            if (!tableData) {
+              tableData = await page.evaluate(() => {
+                // First, get the column headers
+                const headerCells = Array.from(document.querySelectorAll('table thead tr th'));
+                const headers = headerCells.map(cell => cell.innerText.trim().toLowerCase());
+                
+                // Then get the data rows
+                const rows = Array.from(document.querySelectorAll('table tbody tr'));
+                
+                return {
+                  headers: headers,
+                  rows: rows.map(row => {
+                    const cells = Array.from(row.querySelectorAll('td'));
+                    return cells.map(cell => cell.innerText.trim());
+                  })
+                };
+              });
+            }
             
             if (tableData && tableData.rows && tableData.rows.length > 0) {
               logger.info(`Extracted ${tableData.rows.length} rows from table`);
@@ -1298,8 +1380,16 @@ async function scrapeForUser(userId, userSources) {
       if (source.usePuppeteer) {
         logger.info(`Dynamic mode (Puppeteer) used for ${source.name}`);
       }
+      
+      // Small delay between sources to ensure cleanup
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
     } catch (err) {
       logger.error(`Failed ${source.name}: ${err.message}`);
+      logger.error(`Stack trace: ${err.stack}`);
+      
+      // Ensure cleanup even on error
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
   }
   logger.info(`Scrape cycle finished for user ${userId}. Inserted ${totalInserted} total leads.\n`);
