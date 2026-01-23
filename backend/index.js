@@ -2271,6 +2271,8 @@ async function scrapeAllUsers() {
 // === SERVER ===
 function startServer() {
   const app = express();
+  // Trust proxy for correct secure cookie handling behind Railway/NGINX
+  app.set('trust proxy', 1);
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json()); // Parse JSON request bodies
   
@@ -2299,8 +2301,8 @@ function startServer() {
     cookie: { 
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: false,
-      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
       path: '/'
     },
     name: 'shiiman.sid',
