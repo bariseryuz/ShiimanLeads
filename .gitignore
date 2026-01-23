@@ -15,6 +15,12 @@ logs/
 *.log
 npm-debug.log*
 
+# Backend logs and outputs
+backend/logs/
+backend/output/
+backend/_RUNTIME_ARCHIVE/
+backend/output/*.jsonl
+
 # OS files
 .DS_Store
 Thumbs.db

@@ -69,3 +69,10 @@ added the data website with infinite scrolling so added the code for it
 
 
 
+Node version is v24.11.0 
+changing the paths for storage it is inconsistent
+
+created db-patch and set them all to this 
+
+fixed mismatch on website types
+

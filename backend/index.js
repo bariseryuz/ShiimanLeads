@@ -95,53 +95,297 @@ function textPassesFilters(text, source) {
   return true;
 }
 
-// === AI EXTRACTION WITH GOOGLE GEMINI ===
-async function extractLeadWithAI(htmlText, sourceName) {
+// === GET DEFAULT COLUMNS FOR SOURCE TYPE ===
+function getDefaultColumnsForSource(source) {
+  const sourceName = (source.name || '').toLowerCase();
+  const url = (source.url || '').toLowerCase();
+  
+  // Real Estate Agents (Zillow, Realtor, etc.)
+  if (sourceName.includes('zillow') || sourceName.includes('realtor') || sourceName.includes('agent')) {
+    return [
+      'agent_name',
+      'company_name',
+      'phone',
+      'email',
+      'address',
+      'city',
+      'state',
+      'source',
+      'page_url',
+      'date_added'
+    ];
+  }
+  
+  // Construction/Building Permits
+  if (sourceName.includes('permit') || sourceName.includes('building') || url.includes('permit')) {
+    return [
+      'permit_number',
+      'date_issued',
+      'address',
+      'city',
+      'state',
+      'value',
+      'contractor_name',
+      'contractor_phone',
+      'owner_name',
+      'square_footage',
+      'permit_type',
+      'permit_subtype',
+      'parcel_number',
+      'source',
+      'page_url',
+      'date_added'
+    ];
+  }
+  
+  // Default: show most common fields
+  return [
+    'permit_number',
+    'address',
+    'value',
+    'contractor_name',
+    'phone',
+    'description',
+    'source',
+    'page_url',
+    'date_added'
+  ];
+}
+
+// === FIELD VALIDATION ===
+function validateExtractedFields(data, sourceName) {
+  // If data is an array, validate the first item as a sample
+  const sampleData = Array.isArray(data) ? (data[0] || {}) : data;
+  
+  // If it's an object with numeric keys (array-like), validate first entry
+  if (!Array.isArray(data) && typeof data === 'object') {
+    const keys = Object.keys(data).filter(k => !k.startsWith('_'));
+    if (keys.some(k => !isNaN(k))) {
+      const firstKey = keys.find(k => !isNaN(k));
+      if (firstKey && data[firstKey]) {
+        return validateExtractedFields(data[firstKey], sourceName);
+      }
+    }
+  }
+  
+  const validations = {
+    hasRequiredFields: false,
+    validPhone: true,
+    validValue: true,
+    validAddress: true,
+    confidence: 0,
+    issues: []
+  };
+
+  // Check if at least one key field exists
+  if (sampleData.permit_number || sampleData.address || sampleData.company_name || sampleData.phone) {
+    validations.hasRequiredFields = true;
+    validations.confidence += 30;
+  } else {
+    validations.issues.push('Missing all key fields (permit_number, address, company_name, phone)');
+  }
+
+  // Validate phone format (if present)
+  if (sampleData.phone && sampleData.phone !== null && sampleData.phone !== 'null') {
+    const phoneRegex = /\d{3}[-.]?\d{3}[-.]?\d{4}/;
+    if (phoneRegex.test(sampleData.phone)) {
+      validations.confidence += 20;
+    } else {
+      validations.validPhone = false;
+      validations.issues.push(`Invalid phone format: ${sampleData.phone}`);
+    }
+  }
+
+  // Validate value field (should be dollar amount, not phone)
+  if (sampleData.value && sampleData.value !== null && sampleData.value !== 'null') {
+    const isDollar = /\$|\d+[,.]?\d*/.test(sampleData.value);
+    const isPhone = /\d{3}[-.]?\d{3}[-.]?\d{4}/.test(sampleData.value);
+    
+    if (isDollar && !isPhone) {
+      validations.confidence += 20;
+    } else if (isPhone) {
+      validations.validValue = false;
+      validations.issues.push(`Value field contains phone number: ${sampleData.value}`);
+      validations.confidence -= 30;
+    }
+  }
+
+  // Validate address (should have numbers and street words)
+  if (sampleData.address && sampleData.address !== null && sampleData.address !== 'null') {
+    const hasNumber = /\d+/.test(sampleData.address);
+    const hasStreetWord = /(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|way|lane|ln|ct|court)/i.test(sampleData.address);
+    
+    if (hasNumber && hasStreetWord) {
+      validations.confidence += 30;
+    } else if (hasNumber || sampleData.address.length > 10) {
+      validations.confidence += 15;
+    } else {
+      validations.validAddress = false;
+      validations.issues.push(`Suspicious address format: ${sampleData.address}`);
+    }
+  }
+
+  const isValid = validations.hasRequiredFields && 
+                 validations.validPhone && 
+                 validations.validValue && 
+                 validations.confidence >= 40;
+
+  if (!isValid) {
+    logger.warn(`⚠️ Validation failed for ${sourceName}: ${validations.issues.join(', ')} (confidence: ${validations.confidence}%)`);
+  }
+
+  return { isValid, confidence: validations.confidence, issues: validations.issues };
+}
+
+// === AI EXTRACTION WITH GOOGLE GEMINI VISION ===
+async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry = false) {
   if (!geminiModel) {
     logger.warn('Google Gemini not configured, skipping AI extraction');
     return null;
   }
 
   try {
-    // Limit text to avoid token limits (6000 chars)
-    const truncatedText = htmlText.substring(0, 6000);
-    
-    const prompt = `Extract construction/building project lead information from the following text and return ONLY a valid JSON object with these exact fields:
+    const isScreenshot = Buffer.isBuffer(input) || (typeof input === 'object' && input.inlineData);
+    let prompt = '';
+    let content = [];
 
-- permit_number: Building permit number or project ID (string or null)
-- address: Full street address of the construction/project site (string or null)
-- phone: Phone number for contact (format: XXX-XXX-XXXX, do NOT put phone numbers in the value field)
-- email: Email address for contact (string or null)
-- company_name: Company or organization name (string or null)
-- value: Project budget/cost/value as a dollar amount like "$1,500,000" (NOT phone numbers, only dollar amounts)
-- description: Brief description of the project type, purpose, or scope (string or null)
-- page_url: Any specific project URL found in the text (string or null)
+    // Build field schema prompt if provided
+    const schemaFields = fieldSchema || {
+      permit_number: 'Building permit number or project ID',
+      address: 'Full street address of the construction/project site',
+      phone: 'Phone number for contact (format: XXX-XXX-XXXX)',
+      email: 'Email address for contact',
+      company_name: 'Company or organization name',
+      contractor_name: 'Contractor or builder name',
+      value: 'Project budget/cost/value as dollar amount (e.g., "$1,500,000")',
+      description: 'Brief description of the project type, purpose, or scope',
+      page_url: 'Any specific project URL found'
+    };
+
+    const fieldDescriptions = Object.entries(schemaFields)
+      .map(([key, desc]) => `- ${key}: ${desc} (string or null)`)
+      .join('\n');
+
+    if (isScreenshot) {
+      // Vision-based extraction
+      prompt = `You are analyzing a screenshot of a construction/building permit webpage or listing. 
+
+CRITICAL INSTRUCTIONS:
+1. Extract EVERY SINGLE permit/record visible on this page
+2. Look carefully at tables, lists, cards, or any structured data
+3. Read column headers to understand what each field represents
+4. Each row in a table = one complete permit record
+
+Extract each permit with these fields:
+${fieldDescriptions}
+
+EXTRACTION RULES:
+- Multiple permits → Return as array: [{"permit_number": "ABC123", "address": "123 Main St", ...}, {"permit_number": "DEF456", ...}]
+- Single permit → Return as object: {"permit_number": "ABC123", "address": "123 Main St", ...}
+- Read table cells carefully - match data to correct column headers
+- For addresses: Include street number, street name, city, state, zip if visible
+- For permit_number: Look for record ID, permit #, job #, or similar identifier
+- For company_name/contractor_name: Look for business names, contractor fields
+- For phone: Format as XXX-XXX-XXXX or as shown (NEVER put phone in value field)
+- For construction_cost/value: Look for dollar amounts like "$500,000" (NEVER put phone here)
+- For date_issued: Look for issue date, filed date, or similar
+- For permit_type: Look for type, description, or work description
+- Use null for truly missing fields (don't guess)
+
+CRITICAL OUTPUT REQUIREMENT:
+⚠️ YOUR ENTIRE RESPONSE MUST BE VALID JSON ONLY - NO TEXT BEFORE OR AFTER
+⚠️ DO NOT write "Based on the screenshot" or any explanations
+⚠️ DO NOT use markdown code blocks
+⚠️ START your response with { or [ and END with } or ]
+⚠️ NOTHING ELSE - ONLY THE JSON DATA
+
+${isRetry ? '⚠️ RETRY: Previous attempt had errors. Be MORE CAREFUL with field matching. Double-check each column header and data cell.' : ''}`;
+
+      // Prepare image data
+      let imageData;
+      if (Buffer.isBuffer(input)) {
+        imageData = {
+          inlineData: {
+            data: input.toString('base64'),
+            mimeType: 'image/png'
+          }
+        };
+      } else {
+        imageData = input;
+      }
+
+      content = [prompt, imageData];
+    } else {
+      // Text-based extraction (fallback)
+      const truncatedText = typeof input === 'string' ? input.substring(0, 6000) : String(input).substring(0, 6000);
+      
+      prompt = `Extract construction/building project lead information from the following text:
+
+${fieldDescriptions}
 
 IMPORTANT:
-- "value" field should contain ONLY project budget/cost/estimated value (like "$500,000"), never phone numbers
+- "value" field should contain ONLY project budget/cost/value (like "$500,000"), never phone numbers
 - "phone" field should contain phone numbers (like "602-322-6100")
-- "description" should explain what the project is about (office building, renovation, etc.)
 - Use null for any missing fields
-- Return ONLY the JSON object, no explanations or markdown formatting
+- Return ONLY a valid JSON object, no explanations
+
+${isRetry ? 'RETRY ATTEMPT: Previous extraction had validation errors. Please double-check your field assignments.' : ''}
 
 Text to extract from:
 ${truncatedText}`;
 
-    const result = await geminiModel.generateContent(prompt);
+      content = [prompt];
+    }
+
+    const result = await geminiModel.generateContent(content);
     const response = await result.response;
     const text = response.text();
     
-    // Clean up response (remove markdown if present)
+    // Clean up response (remove markdown and extract JSON)
     let cleanedText = text.trim();
+    
+    // Remove markdown code blocks
     if (cleanedText.startsWith('```json')) {
       cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?/g, '');
     } else if (cleanedText.startsWith('```')) {
       cleanedText = cleanedText.replace(/```\n?/g, '');
     }
     
+    // If AI added explanatory text, extract only the JSON part
+    // Look for first { or [ and last } or ]
+    const jsonStart = Math.min(
+      cleanedText.indexOf('{') >= 0 ? cleanedText.indexOf('{') : Infinity,
+      cleanedText.indexOf('[') >= 0 ? cleanedText.indexOf('[') : Infinity
+    );
+    const jsonEnd = Math.max(
+      cleanedText.lastIndexOf('}'),
+      cleanedText.lastIndexOf(']')
+    );
+    
+    if (jsonStart < Infinity && jsonEnd > jsonStart) {
+      cleanedText = cleanedText.substring(jsonStart, jsonEnd + 1);
+    }
+    
+    // Final cleanup - remove any remaining non-JSON text
+    cleanedText = cleanedText.trim();
+    
     const extracted = JSON.parse(cleanedText);
-    logger.info(`✨ AI extracted lead from ${sourceName}`);
-    return extracted;
+    
+    // Validate extracted data
+    const validation = validateExtractedFields(extracted, sourceName);
+    
+    if (validation.isValid) {
+      logger.info(`✨ AI extracted lead from ${sourceName} (confidence: ${validation.confidence}%) ${isScreenshot ? '[VISION]' : '[TEXT]'}`);
+      return { ...extracted, _aiConfidence: validation.confidence };
+    } else if (!isRetry) {
+      // Try one more time with validation feedback
+      logger.warn(`⚠️ First extraction had issues, retrying... ${validation.issues.join(', ')}`);
+      return await extractLeadWithAI(input, sourceName, fieldSchema, true);
+    } else {
+      logger.warn(`⚠️ AI extraction validation failed after retry for ${sourceName}`);
+      return { ...extracted, _aiConfidence: validation.confidence, _validationIssues: validation.issues };
+    }
+    
   } catch (error) {
     logger.error(`AI extraction failed for ${sourceName}: ${error.message}`);
     return null;
@@ -203,82 +447,296 @@ async function createNotification(userId, type, message) {
   }
 }
 
-async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId }) {
-  const hash = crypto.createHash('md5').update(raw + hashSalt).digest('hex');
-  const row = await dbGet(`SELECT hash FROM seen WHERE hash = ? AND user_id = ?`, [hash, userId]);
-  if (row) return false;
+async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, extractedData = null, sourceId = null }) {
+  if (!sourceId) {
+    logger.warn(`No sourceId provided - skipping lead insertion`);
+    return false;
+  }
 
-  await dbRun(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`, [hash, userId]);
-  await dbRun(
-    `INSERT INTO leads (
-      user_id, hash, raw_text, permit_number, address, value, description, source, date_added, 
-      phone, page_url, date_issued, application_date, owner_name,
-      contractor_name, contractor_address, contractor_city, contractor_state, contractor_zip, contractor_phone,
-      square_footage, units, floors, parcel_number,
-      permit_type, permit_subtype, work_description, purpose,
-      city, state, zip_code, latitude, longitude,
-      status, record_type, project_name, is_new
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      userId,
-      hash,
-      raw,
-      lead.permit_number,
-      lead.address,
-      lead.value,
-      lead.description,
-      sourceName,
-      new Date().toISOString(),
-      lead.phone,
-      lead.page_url,
-      lead.date_issued,
-      lead.application_date,
-      lead.owner_name,
-      lead.contractor_name,
-      lead.contractor_address,
-      lead.contractor_city,
-      lead.contractor_state,
-      lead.contractor_zip,
-      lead.contractor_phone,
-      lead.square_footage,
-      lead.units,
-      lead.floors,
-      lead.parcel_number,
-      lead.permit_type,
-      lead.permit_subtype,
-      lead.work_description,
-      lead.purpose,
-      lead.city,
-      lead.state,
-      lead.zip_code,
-      lead.latitude,
-      lead.longitude,
-      lead.status,
-      lead.record_type,
-      lead.project_name,
-      1 // is_new = true for newly inserted leads
-    ]
-  );
-  
-  // Use async append to avoid blocking event loop
+  // Compute short md5 hash for seen table and canonical SHA256 for canonical dedupe
+  const hashInput = `${raw}${hashSalt}${sourceId || sourceName}`;
+  const hash = crypto.createHash('md5').update(hashInput).digest('hex');
+
+  const normalize = (v) => (v === null || v === undefined) ? '' : String(v).trim().toLowerCase().replace(/\s+/g, ' ');
+  const canonicalParts = [normalize(lead?.permit_number), normalize(lead?.address), normalize(lead?.value)];
+  const canonicalInput = canonicalParts.join('|');
+  const canonical_hash = crypto.createHash('sha256').update(canonicalInput).digest('hex');
+
   try {
-    await fs.promises.appendFile('output/latest_leads.jsonl', JSON.stringify({
-      hash,
-      raw_text: raw,
-      ...lead,
-      source: sourceName,
-      date_added: new Date().toISOString()
-    }) + '\n');
-  } catch (e) {
-    logger.warn(`Failed to append latest_leads.jsonl: ${e.message}`);
+    const tx = db.transaction(() => {
+      // Check seen first to avoid re-processing
+      const seenRow = db.prepare(`SELECT hash FROM seen WHERE hash = ? AND user_id = ?`).get(hash, userId);
+      if (seenRow) return { inserted: false, reason: 'seen' };
+
+      // Insert into seen table
+      db.prepare(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`).run(hash, userId);
+
+      // Insert into canonical leads table (use INSERT OR IGNORE to handle races)
+      const leadValues = {
+        user_id: userId,
+        source_id: sourceId,
+        hash: hash,
+        canonical_hash: canonical_hash,
+        raw_text: raw,
+        permit_number: lead?.permit_number || null,
+        address: lead?.address || null,
+        value: lead?.value || null,
+        description: lead?.description || null,
+        source: sourceName || null,
+        date_issued: lead?.date_issued || null,
+        phone: lead?.phone || null,
+        page_url: lead?.page_url || null,
+        application_date: lead?.application_date || null,
+        owner_name: lead?.owner_name || null,
+        contractor_name: lead?.contractor_name || null,
+        contractor_address: lead?.contractor_address || null,
+        contractor_city: lead?.contractor_city || null,
+        contractor_state: lead?.contractor_state || null,
+        contractor_zip: lead?.contractor_zip || null,
+        contractor_phone: lead?.contractor_phone || null,
+        square_footage: lead?.square_footage || null,
+        units: lead?.units || null,
+        floors: lead?.floors || null,
+        parcel_number: lead?.parcel_number || null,
+        permit_type: lead?.permit_type || null,
+        permit_subtype: lead?.permit_subtype || null,
+        work_description: lead?.work_description || null,
+        purpose: lead?.purpose || null,
+        city: lead?.city || null,
+        state: lead?.state || null,
+        zip_code: lead?.zip_code || null,
+        latitude: lead?.latitude || null,
+        longitude: lead?.longitude || null,
+        status: lead?.status || null,
+        record_type: lead?.record_type || null,
+        project_name: lead?.project_name || null,
+        extracted_data: extractedData ? JSON.stringify(extractedData) : null,
+        ai_confidence: (extractedData && extractedData._aiConfidence) ? extractedData._aiConfidence : (lead && lead._aiConfidence) ? lead._aiConfidence : null,
+        ai_validation_issues: (extractedData && extractedData._validationIssues) ? JSON.stringify(extractedData._validationIssues) : (lead && lead._validationIssues) ? JSON.stringify(lead._validationIssues) : null,
+        ai_validated: ((extractedData && !extractedData._validationIssues) || (lead && !lead._validationIssues)) ? 1 : 0
+      };
+
+      const cols = Object.keys(leadValues).join(', ');
+      const placeholders = Object.keys(leadValues).map(() => '?').join(', ');
+      const insertSQL = `INSERT OR IGNORE INTO leads (${cols}) VALUES (${placeholders})`;
+      const res = db.prepare(insertSQL).run(...Object.values(leadValues));
+
+      // If no row inserted (duplicate canonical), bail
+      if (res.changes === 0) {
+        return { inserted: false, reason: 'duplicate' };
+      }
+
+      const leadId = res.lastInsertRowid;
+
+      // Insert into source-specific table
+      const insertedSource = insertIntoSourceTableSync(sourceId, userId, raw, lead, extractedData);
+
+      // Create outbox row for JSONL persistence
+      const jobId = crypto.randomBytes(8).toString('hex');
+      const payload = JSON.stringify({ canonical_hash, sourceName, userId, data: extractedData || lead, job_id: jobId, ts: new Date().toISOString() });
+      db.prepare(`INSERT INTO outbox (source_id, job_id, event_type, payload_json) VALUES (?, ?, ?, ?)`)
+        .run(sourceId, jobId, 'append-jsonl', payload);
+
+      return { inserted: true, leadId };
+    });
+
+    const result = tx();
+    if (result.inserted) {
+      logger.info(`NEW LEAD → ${lead?.permit_number || 'N/A'} | ${lead?.address || 'N/A'} | ${lead?.value || 'N/A'}`);
+      return true;
+    }
+
+    return false;
+  } catch (err) {
+    logger.error(`Failed to insert lead: ${err.message}`);
+    return false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Function: Insert into Source-Specific Table (Sync for transaction)
+// ═══════════════════════════════════════════════════════════════════
+function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedData) {
+  // Validate table name to prevent SQL injection
+  const tableName = `source_${sourceId}`;
+  if (!/^source_\d+$/.test(tableName)) {
+    throw new Error(`Invalid table name: ${tableName}`);
   }
   
-  logger.info(`NEW LEAD → ${lead.permit_number} | ${lead.address} | ${lead.value}`);
-  return true;
+  try {
+    // Get table columns to determine available fields
+    const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all();
+    const columns = tableInfo.map(col => col.name);
+    
+    // Build dynamic insert based on available columns
+    const values = {};
+    values.user_id = userId;
+    values.raw_text = rawText;
+    values.page_url = lead.page_url || '';
+    values.source_name = lead.source_name || '';
+    
+    // Map extractedData to available columns
+    if (extractedData) {
+      for (const [key, value] of Object.entries(extractedData)) {
+        if (columns.includes(key) && key !== '_aiConfidence' && key !== '_validationIssues') {
+          values[key] = value;
+        }
+      }
+    }
+    
+    // Generate hash for this source-specific table
+    const hash = crypto.createHash('md5').update(`${rawText}${sourceId}`).digest('hex');
+    values.hash = hash;
+    
+    // Build INSERT statement
+    const columnNames = Object.keys(values).join(', ');
+    const placeholders = Object.keys(values).map(() => '?').join(', ');
+    const insertSQL = `INSERT INTO ${tableName} (${columnNames}) VALUES (${placeholders})`;
+    
+    const result = db.prepare(insertSQL).run(...Object.values(values));
+    
+    if (result.changes > 0) {
+      logger.info(`✅ Inserted into ${tableName} (row ${result.lastInsertRowid})`);
+      return true;
+    } else {
+      logger.warn(`⚠️ No rows inserted into ${tableName} - possible duplicate or constraint violation`);
+      return false;
+    }
+  } catch (err) {
+    logger.error(`Failed to insert into ${tableName}: ${err.message}`);
+    return false;
+  }
+}
+
+// Async wrapper for backwards compatibility
+async function insertIntoSourceTable(sourceId, userId, rawText, lead, extractedData) {
+  return insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedData);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DEPRECATED: Old insertIntoSourceTable (replaced above)
+// ═══════════════════════════════════════════════════════════════════
+async function insertIntoSourceTable_OLD(sourceId, userId, rawText, lead, extractedData) {
+  const tableName = `source_${sourceId}`;
+  
+  // Validate table name to prevent SQL injection
+  if (!/^source_\d+$/.test(tableName)) {
+    throw new Error(`Invalid table name: ${tableName}`);
+  }
+  
+  // Check if table exists
+  const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(tableName);
+  if (!tableExists) {
+    logger.warn(`Table ${tableName} does not exist, skipping source-specific insert`);
+    return;
+  }
+  
+  // Get all columns from the table
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const columnNames = columns.map(col => col.name).filter(name => 
+    name !== 'id' && name !== 'created_at' // Auto-generated columns
+  );
+  
+  // Build data object with all available fields
+  const data = {
+    user_id: userId,
+    raw_text: rawText,
+    page_url: lead.page_url || null,
+    hash: crypto.createHash('md5').update(rawText + sourceId).digest('hex'),
+    source_name: lead.source || 'Unknown',
+    ...extractedData // Spread all extracted fields
+  };
+  
+  // Build INSERT query dynamically
+  const validColumns = columnNames.filter(col => data[col] !== undefined);
+  const placeholders = validColumns.map(() => '?').join(', ');
+  const values = validColumns.map(col => data[col]);
+  
+  const insertSQL = `INSERT OR IGNORE INTO ${tableName} (${validColumns.join(', ')}) VALUES (${placeholders})`;
+  
+  db.prepare(insertSQL).run(...values);
+  logger.info(`✅ Saved to source table: ${tableName}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Function: Create Source-Specific Table
+// ═══════════════════════════════════════════════════════════════════
+function createSourceTable(sourceId, fieldSchema) {
+  const tableName = `source_${sourceId}`;
+  
+  // Base columns that every source table has
+  const baseColumns = [
+    'id INTEGER PRIMARY KEY AUTOINCREMENT',
+    'user_id INTEGER DEFAULT 1',
+    'raw_text TEXT',
+    'page_url TEXT',
+    'hash TEXT UNIQUE',
+    'source_name TEXT',
+    'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'
+  ];
+  
+  // Add custom fields from fieldSchema
+  const customColumns = [];
+  if (fieldSchema && typeof fieldSchema === 'object') {
+    Object.keys(fieldSchema).forEach(fieldName => {
+      customColumns.push(`${fieldName} TEXT`);
+    });
+  }
+  
+  // Combine all columns
+  const allColumns = [...baseColumns, ...customColumns];
+  const createSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (${allColumns.join(', ')})`;
+  
+  logger.info(`📊 Creating source table: ${tableName} with ${customColumns.length} custom fields`);
+  db.exec(createSQL);
+  
+  return tableName;
 }
 
 // === DATABASE ===
-const db = new Database(path.join(__dirname, 'data', 'leads.db'));
+const { DB_PATH, SESSIONS_DB_PATH } = require('./db-path');
+const db = new Database(DB_PATH);
+
+// FIX SOURCE 7 - Add fieldSchema and recreate table
+try {
+  const source7 = db.prepare('SELECT source_data FROM user_sources WHERE id = 7').get();
+  if (source7) {
+    const sourceData = JSON.parse(source7.source_data);
+    if (!sourceData.fieldSchema) {
+      logger.info('🔧 Fixing source 7 - Adding fieldSchema...');
+      sourceData.fieldSchema = {
+        "permit_number": "Permit number",
+        "address": "Full address",
+        "company_name": "Company name",
+        "contractor_name": "Contractor name",
+        "phone": "Phone number",
+        "permit_type": "Permit type",
+        "date_issued": "Date issued",
+        "construction_cost": "Construction cost",
+        "description": "Description"
+      };
+      db.prepare('UPDATE user_sources SET source_data = ? WHERE id = 7').run(JSON.stringify(sourceData));
+      
+      // Recreate table with custom columns
+      db.exec('DROP TABLE IF EXISTS source_7');
+      const baseColumns = [
+        'id INTEGER PRIMARY KEY AUTOINCREMENT',
+        'user_id INTEGER DEFAULT 1',
+        'raw_text TEXT',
+        'page_url TEXT',
+        'hash TEXT UNIQUE',
+        'source_name TEXT',
+        'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'
+      ];
+      const customColumns = Object.keys(sourceData.fieldSchema).map(field => `${field} TEXT`);
+      const allColumns = [...baseColumns, ...customColumns];
+      db.exec(`CREATE TABLE source_7 (${allColumns.join(', ')})`);
+      logger.info('✅ Source 7 table recreated with custom columns');
+    }
+  }
+} catch (fixErr) {
+  logger.warn('Could not fix source 7:', fixErr.message);
+}
 
 // Create tables (better-sqlite3 is synchronous)
 db.exec(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
@@ -330,7 +788,7 @@ const newColumns = [
   'contractor_name', 'contractor_address', 'contractor_city', 'contractor_state',
   'contractor_zip', 'contractor_phone', 'square_footage', 'units', 'floors',
   'parcel_number', 'permit_type', 'permit_subtype', 'work_description', 'purpose',
-  'city', 'state', 'zip_code', 'latitude', 'longitude', 'status', 'record_type', 'project_name', 'is_new'
+  'city', 'state', 'zip_code', 'latitude', 'longitude', 'status', 'record_type', 'project_name', 'is_new', 'extracted_data'
 ];
 
 newColumns.forEach(col => {
@@ -426,6 +884,50 @@ try {
     db.exec('ALTER TABLE leads ADD COLUMN user_id INTEGER DEFAULT 1');
     logger.info('Added user_id column to leads table');
   }
+  if (!leadColumns.find(c => c.name === 'source_id')) {
+    db.exec('ALTER TABLE leads ADD COLUMN source_id INTEGER DEFAULT 0');
+    logger.info('Added source_id column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'canonical_hash')) {
+    db.exec('ALTER TABLE leads ADD COLUMN canonical_hash TEXT');
+    logger.info('Added canonical_hash column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'ai_confidence')) {
+    db.exec("ALTER TABLE leads ADD COLUMN ai_confidence REAL");
+    logger.info('Added ai_confidence column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'ai_validated')) {
+    db.exec("ALTER TABLE leads ADD COLUMN ai_validated INTEGER DEFAULT 0");
+    logger.info('Added ai_validated column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'ai_validation_issues')) {
+    db.exec("ALTER TABLE leads ADD COLUMN ai_validation_issues TEXT");
+    logger.info('Added ai_validation_issues column to leads table');
+  }
+  // Ensure unique index on (source_id, canonical_hash)
+  try {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_leads_source_canonical ON leads(source_id, canonical_hash)');
+  } catch (ixErr) {
+    logger.warn('Could not create unique index ux_leads_source_canonical: ' + ixErr.message);
+  }
+  // Create outbox table for reliable JSONL persistence
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS outbox (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_id INTEGER NOT NULL,
+      job_id TEXT,
+      event_type TEXT,
+      payload_json TEXT NOT NULL,
+      attempts INTEGER DEFAULT 0,
+      status TEXT DEFAULT 'pending',
+      last_error TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )`);
+    db.exec('CREATE INDEX IF NOT EXISTS idx_outbox_status ON outbox(status, created_at)');
+  } catch (outErr) {
+    logger.warn('Could not create outbox table: ' + outErr.message);
+  }
   if (!leadColumns.find(c => c.name === 'phone')) {
     db.exec('ALTER TABLE leads ADD COLUMN phone TEXT');
     logger.info('Added phone column to leads table');
@@ -497,10 +999,16 @@ async function scrapeForUser(userId, userSources) {
       logger.info(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       logger.info(`🔍 Starting source: ${source.name} (User ${userId})`);
       logger.info(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      logger.info(`Source type: ${source.type}, method: ${source.method}, has params: ${!!source.params}`);
+      const configDetails = [
+        `Method: ${source.method || (source.usePuppeteer ? 'puppeteer' : 'axios')}`,
+        `AI: ${source.useAI ? 'enabled' : 'disabled'}`
+      ];
+      if (source.params) configDetails.push(`API Params: configured`);
+      logger.info(configDetails.join(', '));
       let data; // can be JSON array or HTML string
       let axiosResponse;
       let usedPuppeteer = false;
+      let screenshotBuffer = null; // Store screenshot for AI vision
       let newLeads = 0; // Track new leads for this source
 
       // Auto-detect Nashville-style URLs and enable table extraction
@@ -519,6 +1027,7 @@ async function scrapeForUser(userId, userSources) {
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
       if (source.usePuppeteer === true) {
         let browser;
+        let page;
         try {
           const launchOptions = {
             headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
@@ -536,8 +1045,8 @@ async function scrapeForUser(userId, userSources) {
             logger.info(`Using Chromium at: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
           }
           
-          const browser = await puppeteer.launch(launchOptions);
-          const page = await browser.newPage();
+          browser = await puppeteer.launch(launchOptions);
+          page = await browser.newPage();
           
           // Anti-detection
           await page.evaluateOnNewDocument(() => {
@@ -870,7 +1379,7 @@ async function scrapeForUser(userId, userSources) {
                 // Apply filters if configured
                 const text = `${lead.permit_number} ${lead.address} ${lead.description} ${lead.value}`;
                 if (textPassesFilters(text, source)) {
-                  if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) {
+                  if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId, sourceId: source._sourceId })) {
                     newLeads++;
                   }
                 }
@@ -885,11 +1394,194 @@ async function scrapeForUser(userId, userSources) {
           if (source.waitSelector) {
             try { await page.waitForSelector(source.waitSelector, { timeout: 15000 }); } catch { /* ignore */ }
           }
+          
+          // Capture screenshot for AI vision extraction (if useAI enabled)
+          if (source.useAI === true && geminiModel) {
+            try {
+              let pageNumber = 1;
+              let hasNextPage = true;
+              const allScreenshots = [];
+              const maxPages = 20; // Increased from 10 to capture more results
+              
+              while (hasNextPage && pageNumber <= maxPages) {
+                logger.info(`📄 Processing page ${pageNumber}/${maxPages}...`);
+                
+                // Wait for page content to load
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Scroll page to load all content
+                logger.info(`📜 Scrolling page ${pageNumber} to load all visible content...`);
+                await page.evaluate(async () => {
+                  await new Promise((resolve) => {
+                    let totalHeight = 0;
+                    const distance = 100;
+                    const timer = setInterval(() => {
+                      const scrollHeight = document.body.scrollHeight;
+                      window.scrollBy(0, distance);
+                      totalHeight += distance;
+
+                      if(totalHeight >= scrollHeight){
+                        clearInterval(timer);
+                        resolve();
+                      }
+                    }, 100);
+                  });
+                });
+                
+                // Wait for any lazy-loaded content
+                await new Promise(resolve => setTimeout(resolve, 2500));
+                
+                // Scroll back to top for complete screenshot
+                await page.evaluate(() => window.scrollTo(0, 0));
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                logger.info(`📸 Capturing high-quality screenshot for page ${pageNumber}...`);
+                const screenshot = await page.screenshot({ 
+                  fullPage: true,
+                  type: 'png',
+                  captureBeyondViewport: true
+                });
+                logger.info(`✅ Screenshot ${pageNumber} captured (${(screenshot.length / 1024).toFixed(0)} KB)`);
+                
+                allScreenshots.push({ pageNumber, screenshot });
+                
+                // Check for next page button with comprehensive detection
+                const nextButtonInfo = await page.evaluate(() => {
+                  // Try various selectors
+                  const selectors = [
+                    'a[title*="Next" i]',
+                    'button[title*="Next" i]',
+                    'a[aria-label*="Next" i]',
+                    'button[aria-label*="Next" i]',
+                    'a[title*="next page" i]',
+                    '.pagination a:not(.disabled):not([aria-disabled="true"])',
+                    '.pagination button:not(.disabled):not([aria-disabled="true"])',
+                    'a.next:not(.disabled)',
+                    'button.next:not(:disabled)',
+                    'a.aca_pagination_PrevNext:not(.aca_pagination_PrevNext_Disabled)',
+                    'img[alt="Next"]',
+                    'img[alt="Next Page"]'
+                  ];
+                  
+                  // Try each selector
+                  for (const sel of selectors) {
+                    try {
+                      const elem = document.querySelector(sel);
+                      if (elem && elem.offsetParent !== null) {
+                        // Check if it's enabled
+                        const isDisabled = elem.disabled || 
+                                         elem.classList.contains('disabled') || 
+                                         elem.getAttribute('aria-disabled') === 'true' ||
+                                         elem.classList.contains('aca_pagination_PrevNext_Disabled');
+                        
+                        if (!isDisabled) {
+                          // If it's an image, check parent link
+                          if (elem.tagName === 'IMG' && elem.parentElement.tagName === 'A') {
+                            return { selector: sel, isImage: true, found: true };
+                          }
+                          return { selector: sel, found: true };
+                        }
+                      }
+                    } catch(e) {}
+                  }
+                  
+                  // Text-based search as fallback
+                  const links = Array.from(document.querySelectorAll('a, button'));
+                  const next = links.find(e => {
+                    const text = e.textContent.trim().toLowerCase();
+                    const title = (e.title || '').toLowerCase();
+                    const ariaLabel = (e.getAttribute('aria-label') || '').toLowerCase();
+                    
+                    return (text === 'next' || text === '›' || text === '>' || text === '→' ||
+                           title.includes('next') || ariaLabel.includes('next')) &&
+                           e.offsetParent !== null && 
+                           !e.disabled && 
+                           !e.classList.contains('disabled') &&
+                           e.getAttribute('aria-disabled') !== 'true';
+                  });
+                  
+                  return next ? { selector: 'text-based', found: true } : { found: false };
+                });
+                
+                if (nextButtonInfo.found) {
+                  logger.info(`🔄 Found Next button (${nextButtonInfo.selector}), navigating to page ${pageNumber + 1}...`);
+                  try {
+                    // Store current URL to verify navigation
+                    const currentUrl = page.url();
+                    
+                    if (nextButtonInfo.isImage) {
+                      // Click parent link of image
+                      await page.evaluate((sel) => {
+                        const img = document.querySelector(sel);
+                        if (img && img.parentElement.tagName === 'A') {
+                          img.parentElement.click();
+                        }
+                      }, nextButtonInfo.selector);
+                    } else if (nextButtonInfo.selector === 'text-based') {
+                      await page.evaluate(() => {
+                        const links = Array.from(document.querySelectorAll('a, button'));
+                        const next = links.find(e => {
+                          const text = e.textContent.trim().toLowerCase();
+                          const title = (e.title || '').toLowerCase();
+                          const ariaLabel = (e.getAttribute('aria-label') || '').toLowerCase();
+                          
+                          return (text === 'next' || text === '›' || text === '>' || text === '→' ||
+                                 title.includes('next') || ariaLabel.includes('next')) &&
+                                 e.offsetParent !== null;
+                        });
+                        if (next) next.click();
+                      });
+                    } else {
+                      await page.click(nextButtonInfo.selector);
+                    }
+                    
+                    // Wait for navigation or content change
+                    await Promise.race([
+                      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => null),
+                      new Promise(resolve => setTimeout(resolve, 4000))
+                    ]);
+                    
+                    const newUrl = page.url();
+                    if (newUrl !== currentUrl) {
+                      logger.info(`✅ Navigated to new URL: ${newUrl}`);
+                    } else {
+                      logger.info(`✅ Page content updated (same URL)`);
+                    }
+                    
+                    pageNumber++;
+                  } catch (navErr) {
+                    logger.warn(`⚠️ Navigation to next page failed: ${navErr.message}`);
+                    hasNextPage = false;
+                  }
+                } else {
+                  logger.info(`✓ No more Next button found (completed ${pageNumber} page(s))`);
+                  hasNextPage = false;
+                }
+              }
+              
+              if (pageNumber > maxPages) {
+                logger.warn(`⚠️ Reached maximum page limit (${maxPages}). Stopping pagination.`);
+              }
+              
+              screenshotBuffer = allScreenshots;
+              logger.info(`✅ Captured ${allScreenshots.length} page(s) total for AI extraction`);
+            } catch (screenshotErr) {
+              logger.warn(`Screenshot capture failed: ${screenshotErr.message}`);
+            }
+          }
+          
           data = await page.content();
           usedPuppeteer = true;
         } catch (e) {
           logger.error(`Puppeteer failed for ${source.name}: ${e.message} – falling back to axios`);
         } finally {
+          if (page) {
+            try {
+              await page.close();
+            } catch (closeErr) {
+              logger.warn(`Failed to close page for ${source.name}: ${closeErr.message}`);
+            }
+          }
           if (browser) {
             try {
               await browser.close();
@@ -1161,7 +1853,7 @@ async function scrapeForUser(userId, userSources) {
             lead.page_url = source.viewUrl || source.publicUrl || source.url;
           }
           
-          if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) inserted++;
+          if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId, sourceId: source._sourceId })) inserted++;
         }
         logger.info(`Found ${jsonItems.length} records from ${source.name} (JSON API)`);
         logger.info(`Inserted ${inserted} new leads from ${source.name}`);
@@ -1235,7 +1927,7 @@ async function scrapeForUser(userId, userSources) {
               return source.publicUrl || source.url;
             })()
           };
-          if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) insertedJsonLd++;
+          if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId, sourceId: source._sourceId })) insertedJsonLd++;
         }
         logger.info(`Found ${jsonItems.length} records from ${source.name} (schema.org JSON-LD)`);
         logger.info(`Inserted ${insertedJsonLd} new leads from ${source.name}`);
@@ -1275,7 +1967,7 @@ async function scrapeForUser(userId, userSources) {
                     return source.publicUrl || source.url;
                   })()
                 };
-                if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId })) insertedAttr++;
+                if (await insertLeadIfNew({ raw, sourceName: source.name, lead, userId, sourceId: source._sourceId })) insertedAttr++;
               }
               logger.info(`Found ${jsonItems.length} records from ${source.name} (HTML attribute JSON)`);
               logger.info(`Inserted ${insertedAttr} new leads from ${source.name}`);
@@ -1295,27 +1987,123 @@ async function scrapeForUser(userId, userSources) {
 
       const matches = source.selector ? $(source.selector) : [];
       
-      // Full-page AI extraction - only if explicitly enabled with useAI: true
+      // Full-page AI extraction with vision - if enabled and using Puppeteer
       if (!source.selector && source.useAI === true && geminiModel) {
-        logger.warn(`⚠️ AI extraction enabled for ${source.name} - this may be slow for large datasets`);
-        logger.info(`Using full-page AI extraction for ${source.name}`);
-        const fullPageText = $('body').text().replace(/\s+/g, ' ').trim();
+        logger.info(`🤖 Using AI extraction for ${source.name} ${usedPuppeteer && screenshotBuffer ? '[VISION MODE]' : '[TEXT MODE]'}`);
         
-        if (textPassesFilters(fullPageText, source)) {
-          const aiLead = await extractLeadWithAI(fullPageText, source.name);
-          if (aiLead) {
-            const lead = {
-              permit_number: aiLead.permit_number || 'N/A',
-              address: aiLead.address || 'N/A',
-              value: aiLead.value || 'N/A',
-              description: aiLead.description || fullPageText.substring(0, 300),
-              phone: aiLead.phone || null,
-              page_url: aiLead.page_url || source.url
-            };
-            if (await insertLeadIfNew({ raw: fullPageText, sourceName: source.name, lead, hashSalt: source.url, userId })) {
-              newLeads++;
-              totalInserted++;
-              logger.info(`✨ AI extracted lead from full page: ${source.name}`);
+        // Use screenshot(s) if available from Puppeteer
+        if (usedPuppeteer && screenshotBuffer) {
+          try {
+            // Check if screenshotBuffer is array of pages or single screenshot
+            const screenshots = Array.isArray(screenshotBuffer) ? screenshotBuffer : [{ pageNumber: 1, screenshot: screenshotBuffer }];
+            logger.info(`🔍 Processing ${screenshots.length} page(s) with AI vision...`);
+            
+            let allLeadsToProcess = [];
+            
+            // Process each page's screenshot
+            for (const { pageNumber, screenshot } of screenshots) {
+              logger.info(`🔍 Analyzing page ${pageNumber} screenshot with AI vision...`);
+              const aiResult = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
+              
+              // Check if AI returned multiple leads (object with numeric keys) or single lead
+              let leadsFromThisPage = [];
+              if (aiResult && typeof aiResult === 'object') {
+                // Check if it's an array-like object with numeric keys
+                const keys = Object.keys(aiResult).filter(k => !k.startsWith('_'));
+                if (keys.some(k => !isNaN(k))) {
+                  // It's an array-like object - extract each lead
+                  leadsFromThisPage = keys.filter(k => !isNaN(k)).map(k => aiResult[k]);
+                  logger.info(`🎯 AI extracted ${leadsFromThisPage.length} permit(s) from page ${pageNumber}`);
+                } else {
+                  // Single lead
+                  leadsFromThisPage = [aiResult];
+                }
+              }
+              
+              allLeadsToProcess.push(...leadsFromThisPage);
+            }
+            
+            logger.info(`📦 Total permits extracted from all pages: ${allLeadsToProcess.length}`);
+            
+            // Insert each extracted lead
+            for (const aiLead of allLeadsToProcess) {
+              if (!aiLead) continue;
+              
+              const lead = {
+                permit_number: aiLead.permit_number || 'N/A',
+                address: aiLead.address || 'N/A',
+                value: aiLead.value || aiLead.construction_cost || 'N/A',
+                description: aiLead.description || aiLead.permit_type || 'AI extracted lead',
+                phone: aiLead.phone || null,
+                email: aiLead.email || null,
+                company_name: aiLead.company_name || aiLead.contractor_name || null,
+                page_url: aiLead.page_url || source.url
+              };
+              
+              // Store the full AI-extracted data (individual permit)
+              const extractedData = { ...aiLead };
+              delete extractedData._aiConfidence;
+              
+              const rawHash = `AI_VISION:${source.name}:${aiLead.permit_number || aiLead.address || JSON.stringify(aiLead).substring(0, 50)}`;
+              
+              if (await insertLeadIfNew({ raw: rawHash, sourceName: source.name, lead, hashSalt: source.url, userId, extractedData, sourceId: source._sourceId })) {
+                newLeads++;
+                totalInserted++;
+              }
+            }
+            
+            if (allLeadsToProcess.length > 0) {
+              logger.info(`✨ Vision AI extracted ${allLeadsToProcess.length} lead(s) total from ${screenshots.length} page(s)`);
+            }
+          } catch (screenshotErr) {
+            logger.error(`Screenshot capture failed: ${screenshotErr.message} - falling back to text extraction`);
+            // Fallback to text-based extraction
+            const fullPageText = $('body').text().replace(/\s+/g, ' ').trim();
+            if (textPassesFilters(fullPageText, source)) {
+              const aiLead = await extractLeadWithAI(fullPageText, source.name, source.fieldSchema);
+              if (aiLead) {
+                const lead = {
+                  permit_number: aiLead.permit_number || 'N/A',
+                  address: aiLead.address || 'N/A',
+                  value: aiLead.value || 'N/A',
+                  description: aiLead.description || fullPageText.substring(0, 300),
+                  phone: aiLead.phone || null,
+                  page_url: aiLead.page_url || source.url
+                };
+                const extractedData = { ...aiLead };
+                delete extractedData._aiConfidence;
+                
+                if (await insertLeadIfNew({ raw: fullPageText, sourceName: source.name, lead, hashSalt: source.url, userId, extractedData, sourceId: source._sourceId })) {
+                  newLeads++;
+                  totalInserted++;
+                }
+              }
+            }
+          }
+        } else {
+          // Text-based extraction (no Puppeteer)
+          logger.warn(`⚠️ Text-based AI extraction for ${source.name} - enable Puppeteer for better accuracy`);
+          const fullPageText = $('body').text().replace(/\s+/g, ' ').trim();
+          
+          if (textPassesFilters(fullPageText, source)) {
+            const aiLead = await extractLeadWithAI(fullPageText, source.name, source.fieldSchema);
+            if (aiLead) {
+              const lead = {
+                permit_number: aiLead.permit_number || 'N/A',
+                address: aiLead.address || 'N/A',
+                value: aiLead.value || 'N/A',
+                description: aiLead.description || fullPageText.substring(0, 300),
+                phone: aiLead.phone || null,
+                page_url: aiLead.page_url || source.url
+              };
+              const extractedData = { ...aiLead };
+              delete extractedData._aiConfidence;
+              
+              if (await insertLeadIfNew({ raw: fullPageText, sourceName: source.name, lead, hashSalt: source.url, userId, extractedData })) {
+                newLeads++;
+                totalInserted++;
+                logger.info(`✨ AI extracted lead from full page: ${source.name}`);
+              }
             }
           }
         }
@@ -1331,10 +2119,10 @@ async function scrapeForUser(userId, userSources) {
 
         let lead;
         
-        // Try AI extraction if enabled for this source (WARNING: slow for many elements)
+        // Try AI extraction if enabled for this source with field schema
         if (source.useAI === true && geminiModel) {
-          logger.warn(`⚠️ AI processing element (may be slow) - ${source.name}`);
-          const aiLead = await extractLeadWithAI(raw, source.name);
+          logger.info(`🤖 AI processing element for ${source.name}`);
+          const aiLead = await extractLeadWithAI(raw, source.name, source.fieldSchema);
           if (aiLead) {
             lead = {
               permit_number: aiLead.permit_number || 'N/A',
@@ -1369,7 +2157,7 @@ async function scrapeForUser(userId, userSources) {
           };
         }
         
-        if (await insertLeadIfNew({ raw, sourceName: source.name, lead, hashSalt: source.url, userId })) {
+        if (await insertLeadIfNew({ raw, sourceName: source.name, lead, hashSalt: source.url, userId, sourceId: source._sourceId })) {
           newLeads++;
           totalInserted++;
         }
@@ -1446,8 +2234,8 @@ async function scrapeAllUsers() {
     // Then scrape user-specific sources from database
     for (const user of users) {
       try {
-        // Get user's sources
-        const sourceRows = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ?', [user.id]);
+        // Get user's sources WITH their IDs
+        const sourceRows = await dbAll('SELECT id, source_data FROM user_sources WHERE user_id = ?', [user.id]);
         if (!sourceRows.length) {
           logger.info(`User ${user.username} (${user.id}) has no custom sources configured`);
           continue;
@@ -1455,7 +2243,9 @@ async function scrapeAllUsers() {
         
         const userSources = sourceRows.map(row => {
           try {
-            return JSON.parse(row.source_data);
+            const sourceData = JSON.parse(row.source_data);
+            sourceData._sourceId = row.id; // Add source ID to the source object
+            return sourceData;
           } catch (e) {
             logger.error(`Invalid JSON in user_sources for user ${user.id}: ${e.message}`);
             return null;
@@ -1486,7 +2276,7 @@ function startServer() {
   
   // SQLite session store (survives server restarts!)
   const SqliteStore = require('better-sqlite3-session-store')(session);
-  const sessionDb = new Database(path.join(__dirname, 'data', 'sessions.db'));
+  const sessionDb = new Database(SESSIONS_DB_PATH);
   
   // Validate SESSION_SECRET in production
   if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -1969,24 +2759,21 @@ function startServer() {
   });
 
   // Simple leads API with optional filters: ?limit=200&source=...&q=...&days=7
-  // Returns { data: [...] } for frontend convenience
+  // Returns canonical leads from `leads` table for the authenticated user
   app.get('/api/leads', async (req, res) => {
     try {
-      // CRITICAL: Filter by user_id from session
       const userId = req.session?.user?.id;
-      if (!userId) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
+      if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
       const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
-      const source = req.query.source ? String(req.query.source) : null;
+      const sourceName = req.query.source ? String(req.query.source) : null;
       const q = req.query.q ? String(req.query.q) : null;
       const days = req.query.days ? parseInt(req.query.days, 10) : null;
 
       const where = ['user_id = ?'];
       const params = [userId];
-      
-      if (source) { where.push('source = ?'); params.push(source); }
+
+      if (sourceName) { where.push('source = ?'); params.push(sourceName); }
       if (q) {
         where.push('(permit_number LIKE ? OR address LIKE ? OR description LIKE ? OR raw_text LIKE ?)');
         const like = `%${q}%`;
@@ -1994,22 +2781,16 @@ function startServer() {
       }
       if (Number.isFinite(days) && days > 0) {
         const cutoff = new Date(Date.now() - days*24*60*60*1000).toISOString();
-        where.push('date_added >= ?');
-        params.push(cutoff);
+        where.push('date_added >= ?'); params.push(cutoff);
       }
-      const sql = `SELECT id, user_id, hash, raw_text, permit_number, address, value, description, 
-                   source, date_added, date_issued, phone, page_url, application_date,
-                   owner_name, contractor_name, contractor_address, contractor_city, 
-                   contractor_state, contractor_zip, contractor_phone,
-                   square_footage, units, floors, parcel_number, permit_type, permit_subtype,
-                   work_description, purpose, city, state, zip_code, latitude, longitude,
-                   status, record_type, project_name, is_new
-                   FROM leads WHERE ${where.join(' AND ')}
-                   ORDER BY id DESC LIMIT ?`;
+
+      const sql = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
       params.push(limit);
-      const rows = await dbAll(sql, params);
+      const rows = db.prepare(sql).all(...params);
+
       res.json({ data: rows });
     } catch (e) {
+      logger.error(`Error fetching leads: ${e.message}`);
       res.status(500).json({ error: e.message });
     }
   });
@@ -2276,6 +3057,44 @@ function startServer() {
     }
   });
 
+  // Test AI Status - Check if Gemini is working
+  app.get('/api/test-ai', async (req, res) => {
+    try {
+      if (!geminiModel) {
+        return res.json({
+          status: 'disabled',
+          message: 'GEMINI_API_KEY not configured',
+          working: false
+        });
+      }
+
+      // Test with a simple prompt
+      const testResult = await geminiModel.generateContent([
+        'Extract this data as JSON: {"name": "John Doe", "phone": "555-1234"}. Return only the JSON.'
+      ]);
+      
+      const response = await testResult.response;
+      const text = response.text();
+      
+      res.json({
+        status: 'active',
+        message: 'Gemini AI is working correctly',
+        working: true,
+        model: 'gemini-2.0-flash-exp',
+        testResponse: text.substring(0, 200)
+      });
+      
+    } catch (error) {
+      const isQuotaError = error.message?.includes('quota') || error.message?.includes('429');
+      res.json({
+        status: 'error',
+        message: isQuotaError ? 'API quota exceeded - limit reached' : error.message,
+        working: false,
+        expired: isQuotaError
+      });
+    }
+  });
+
   // Create a new source (alias for /api/sources/add)
   app.post('/api/my-sources', express.json(), async (req, res) => {
     try {
@@ -2294,22 +3113,34 @@ function startServer() {
         [userId, sourceJson, new Date().toISOString()]
       );
       
+      const newSourceId = result.lastID;
+      
+      // ✨ CREATE SOURCE-SPECIFIC TABLE
+      const tableName = createSourceTable(newSourceId, sourceData.fieldSchema);
+      logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
+      
       // Create notification for source addition
       await createNotification(
         userId,
         'source_added',
-        `✅ Added new source: ${sourceData.name}`
+        `✅ Added new source: ${sourceData.name} with table ${tableName}`
       );
       
-      // Immediately scrape the newly added source
-      logger.info(`New source added by user ${userId}, triggering immediate scrape`);
-      scrapeForUser(userId, [sourceData]).then((newLeads) => {
-        logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
-      }).catch((err) => {
-        logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
-      });
+      // Optional: Auto-scrape when source is added (controlled by env variable)
+      const AUTO_SCRAPE_ON_ADD = process.env.AUTO_SCRAPE_ON_ADD === 'true';
       
-      res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
+      if (AUTO_SCRAPE_ON_ADD) {
+        logger.info(`New source added by user ${userId}, triggering immediate scrape`);
+        scrapeForUser(userId, [sourceData]).then((newLeads) => {
+          logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
+        }).catch((err) => {
+          logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
+        });
+        res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
+      } else {
+        logger.info(`New source added by user ${userId}. Auto-scrape disabled - use "Scrape Now" to start.`);
+        res.json({ success: true, id: result.lastID, message: 'Source added. Click "Scrape Now" to extract leads.' });
+      }
     } catch (e) {
       logger.error(`Add source error: ${e.message}`);
       res.status(500).json({ error: e.message });
@@ -2335,22 +3166,34 @@ function startServer() {
         [userId, sourceJson, new Date().toISOString()]
       );
       
+      const newSourceId = result.lastID;
+      
+      // ✨ CREATE SOURCE-SPECIFIC TABLE
+      const tableName = createSourceTable(newSourceId, sourceData.fieldSchema);
+      logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
+      
       // Create notification for source addition
       await createNotification(
         userId,
         'source_added',
-        `✅ Added new source: ${sourceData.name}`
+        `✅ Added new source: ${sourceData.name} with table ${tableName}`
       );
       
-      // Immediately scrape the newly added source
-      logger.info(`New source added by user ${userId}, triggering immediate scrape`);
-      scrapeForUser(userId, [sourceData]).then((newLeads) => {
-        logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
-      }).catch((err) => {
-        logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
-      });
+      // Optional: Auto-scrape when source is added (controlled by env variable)
+      const AUTO_SCRAPE_ON_ADD = process.env.AUTO_SCRAPE_ON_ADD === 'true';
       
-      res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
+      if (AUTO_SCRAPE_ON_ADD) {
+        logger.info(`New source added by user ${userId}, triggering immediate scrape`);
+        scrapeForUser(userId, [sourceData]).then((newLeads) => {
+          logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
+        }).catch((err) => {
+          logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
+        });
+        res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
+      } else {
+        logger.info(`New source added by user ${userId}. Auto-scrape disabled - use "Scrape Now" to start.`);
+        res.json({ success: true, id: result.lastID, message: 'Source added. Click "Scrape Now" to extract leads.' });
+      }
     } catch (e) {
       logger.error(`Add source error: ${e.message}`);
       res.status(500).json({ error: e.message });
@@ -2532,6 +3375,41 @@ function startServer() {
     }
   });
 
+  // Get source-specific column configuration
+  app.get('/api/sources/columns', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceFilter = req.query.source;
+      
+      // Get all sources for this user
+      const userSourcesRows = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ?', [userId]);
+      const globalSources = loadSources();
+      const allSources = [...globalSources, ...userSourcesRows.map(r => JSON.parse(r.source_data))];
+      
+      // Build column configuration for each source
+      const sourceColumns = {};
+      
+      allSources.forEach(source => {
+        if (source.displayColumns && Array.isArray(source.displayColumns)) {
+          sourceColumns[source.name] = source.displayColumns;
+        } else {
+          // Default columns based on source type
+          sourceColumns[source.name] = getDefaultColumnsForSource(source);
+        }
+      });
+      
+      if (sourceFilter) {
+        res.json({ columns: sourceColumns[sourceFilter] || [] });
+      } else {
+        res.json({ sourceColumns });
+      }
+      
+    } catch (e) {
+      logger.error(`Get source columns error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Save field mappings for a source
   app.post('/api/sources/:id/mappings', express.json(), async (req, res) => {
     try {
@@ -2574,19 +3452,50 @@ function startServer() {
       }
       const userId = req.session.user.id;
       
-      const leadCount = await dbGet('SELECT COUNT(*) as count FROM leads WHERE user_id = ?', [userId]);
-      const seenCount = await dbGet('SELECT COUNT(*) as count FROM seen WHERE user_id = ?', [userId]);
+      // Get user's sources to find their source-specific tables
+      const userSources = await dbAll('SELECT id FROM user_sources WHERE user_id = ?', [userId]);
       
-      await dbRun('DELETE FROM leads WHERE user_id = ?', [userId]);
+      let totalLeadsDeleted = 0;
+      
+      // Clear each source-specific table
+      for (const source of userSources) {
+        const tableName = `source_${source.id}`;
+        
+        // Validate table name to prevent SQL injection
+        if (!/^source_\d+$/.test(tableName)) {
+          logger.warn(`Invalid table name: ${tableName}`);
+          continue;
+        }
+        
+        try {
+          // Check if table exists
+          const tableExists = await dbGet(
+            `SELECT name FROM sqlite_master WHERE type='table' AND name=?`,
+            [tableName]
+          );
+          
+          if (tableExists) {
+            const countResult = await dbGet(`SELECT COUNT(*) as count FROM ${tableName}`, []);
+            await dbRun(`DELETE FROM ${tableName}`, []);
+            totalLeadsDeleted += countResult.count;
+            logger.info(`🗑️ Cleared ${countResult.count} leads from ${tableName}`);
+          }
+        } catch (tableErr) {
+          logger.warn(`Could not clear ${tableName}: ${tableErr.message}`);
+        }
+      }
+      
+      const seenCount = await dbGet('SELECT COUNT(*) as count FROM seen WHERE user_id = ?', [userId]);
       await dbRun('DELETE FROM seen WHERE user_id = ?', [userId]);
       
-      logger.info(`🗑️ User ${userId} cleared ${leadCount.count} leads and ${seenCount.count} seen hashes`);
+      logger.info(`🗑️ User ${userId} cleared ${totalLeadsDeleted} leads from ${userSources.length} source tables and ${seenCount.count} seen hashes`);
       
       res.json({ 
         success: true, 
         deleted: {
-          leads: leadCount.count,
-          seen: seenCount.count
+          leads: totalLeadsDeleted,
+          seen: seenCount.count,
+          sourceTables: userSources.length
         }
       });
     } catch (e) {
@@ -2601,15 +3510,32 @@ function startServer() {
       // Accept userId from request body (from server.js) or session
       const userId = req.body.userId || req.session?.user?.id || 1;
       
-      // Get user's sources
-      const sourceRows = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ?', [userId]);
+      // Get user's sources WITH their IDs
+      const sourceRows = await dbAll('SELECT id, source_data FROM user_sources WHERE user_id = ?', [userId]);
       if (!sourceRows.length) {
         return res.json({ success: true, message: 'No sources configured to scrape', leadsFound: 0 });
       }
       
       const userSources = sourceRows.map(row => {
         try {
-          return JSON.parse(row.source_data);
+          const sourceData = JSON.parse(row.source_data);
+          sourceData._sourceId = row.id; // Attach source ID for table saving
+          
+          // Ensure method field is set based on usePuppeteer flag
+          if (sourceData.usePuppeteer === true && !sourceData.method) {
+            sourceData.method = 'puppeteer';
+          }
+          // Also set usePuppeteer if method is puppeteer
+          if (sourceData.method === 'puppeteer' && sourceData.usePuppeteer !== true) {
+            sourceData.usePuppeteer = true;
+          }
+          // Default to puppeteer if useAI is enabled (AI extraction needs screenshots)
+          if (sourceData.useAI === true && !sourceData.usePuppeteer) {
+            sourceData.usePuppeteer = true;
+            sourceData.method = 'puppeteer';
+          }
+          
+          return sourceData;
         } catch (e) {
           return null;
         }
@@ -2645,13 +3571,14 @@ function startServer() {
       const userId = req.session?.user?.id || 1;
       const sourceId = parseInt(req.params.id, 10);
       
-      // Get the specific source
-      const sourceRow = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      // Get the specific source WITH its ID
+      const sourceRow = await dbGet('SELECT id, source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
       if (!sourceRow) {
         return res.status(404).json({ error: 'Source not found or access denied' });
       }
       
       const sourceConfig = JSON.parse(sourceRow.source_data);
+      sourceConfig._sourceId = sourceRow.id; // Attach source ID for table saving
       logger.info(`Manual scrape triggered for source "${sourceConfig.name}" (ID: ${sourceId}) by user ${userId}`);
       
       // Scrape in background and respond immediately
@@ -2822,14 +3749,29 @@ function startServer() {
     })(preferredPort);
   }
   startListening(parseInt(process.env.PORT || '3000', 10));
+
+  // AUTO-SCRAPING CONFIGURATION
+  const AUTO_SCRAPE_ENABLED = process.env.AUTO_SCRAPE_ENABLED === 'true'; // Set to 'true' in .env to enable
+  const AUTO_SCRAPE_ON_STARTUP = process.env.AUTO_SCRAPE_ON_STARTUP === 'true';
+  const AUTO_SCRAPE_INTERVAL = process.env.AUTO_SCRAPE_INTERVAL || '0 */8 * * *'; // Default: every 8 hours
+
+  if (AUTO_SCRAPE_ENABLED) {
+    cron.schedule(AUTO_SCRAPE_INTERVAL, scrapeAllUsers);
+    logger.info(`✅ Auto-scraping ENABLED - Running every 8 hours`);
+  } else {
+    logger.info(`⏸️  Auto-scraping DISABLED - Use "Scrape Now" button or API endpoint /api/scrape/now`);
+  }
+
+  if (AUTO_SCRAPE_ON_STARTUP) {
+    scrapeAllUsers(); // Run once on startup
+    logger.info('Running initial scrape on startup...');
+  }
+
+  logger.info('🚀 SHIIMAN LEADS IS LIVE - Unified server with web UI + scraper');
+  logger.info('Multi-tenant scraper with manual control');
+  logger.info('Each user sees only their own leads!');
+  logger.info('Sources can be scraped manually via "Scrape Now" button');
 }
 
 // === START ===
 startServer();
-cron.schedule('0 */8 * * *', scrapeAllUsers); // Run every 8 hours
-scrapeAllUsers(); // Run once on startup
-
-logger.info('🚀 SHIIMAN LEADS IS LIVE - Unified server with web UI + scraper');
-logger.info('Multi-tenant scraper running every 8 hours');
-logger.info('Each user sees only their own leads!');
-logger.info('Sources are scraped immediately when added and then every 8 hours');

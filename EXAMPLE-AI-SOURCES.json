@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Zillow Phoenix Agents (AI Vision)",
+    "url": "https://www.zillow.com/professionals/real-estate-agent-reviews/phoenix-az/",
+    "type": "html",
+    "method": "puppeteer",
+    "useAI": true,
+    "fieldSchema": {
+      "agent_name": "Real estate agent's full name",
+      "phone": "Agent's phone number (format: XXX-XXX-XXXX)",
+      "email": "Agent's email address",
+      "company_name": "Brokerage or company name",
+      "address": "Office address or location",
+      "description": "Agent bio or specialization"
+    },
+    "minLength": 50
+  },
+  {
+    "name": "Mesa Building Permits (AI Vision)",
+    "url": "https://etrakit.mesaaz.gov/Search/permit.aspx",
+    "type": "html",
+    "method": "puppeteer",
+    "useAI": true,
+    "fieldSchema": {
+      "permit_number": "Building permit number or ID",
+      "address": "Full construction site address",
+      "contractor_name": "General contractor or builder company name",
+      "phone": "Contractor's contact phone number",
+      "value": "Project cost or estimated value as dollar amount (e.g., '$500,000')",
+      "description": "Type of construction project (residential, commercial, renovation, etc.)",
+      "date_issued": "Date permit was issued"
+    },
+    "minLength": 50
+  },
+  {
+    "name": "Realtor.com Agents (AI Vision)",
+    "url": "https://www.realtor.com/realestateagents/phoenix_az",
+    "type": "html",
+    "method": "puppeteer",
+    "useAI": true,
+    "fieldSchema": {
+      "agent_name": "Agent's full name",
+      "phone": "Contact phone number",
+      "email": "Email address",
+      "company_name": "Brokerage name",
+      "address": "Office location",
+      "description": "Agent specialization or areas served"
+    },
+    "minLength": 50
+  }
+]

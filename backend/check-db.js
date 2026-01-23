@@ -1,5 +1,6 @@
 const Database = require('better-sqlite3');
-const db = new Database('./data/data.db');
+const { DB_PATH } = require('./db-path');
+const db = new Database(DB_PATH);
 
 console.log('=== USERS ===');
 const users = db.prepare('SELECT id, username, email FROM users').all();

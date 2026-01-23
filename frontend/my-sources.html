@@ -284,88 +284,43 @@
         <input type="hidden" id="sourceId">
         
         <div class="form-group">
-          <label class="form-label">Source Name *</label>
+          <label class="form-label" for="sourceName">Source Name *</label>
           <input type="text" id="sourceName" class="form-input" placeholder="e.g., Miami Construction Permits" required>
         </div>
         
         <div class="form-group">
-          <label class="form-label">Source Type *</label>
-          <select id="sourceType" class="form-input" onchange="toggleSourceType()" required>
-            <option value="html">HTML Scraping (Website Pages)</option>
-            <option value="json">REST API / JSON Endpoint</option>
-          </select>
-        </div>
-        
-        <div class="form-group">
-          <label class="form-label">Website URL *</label>
+          <label class="form-label" for="sourceUrl">Website URL *</label>
           <input type="url" id="sourceUrl" class="form-input" placeholder="https://example.com/permits" required>
+          <small style="color: var(--gray-600);">The AI bot will visit this page and extract data automatically</small>
         </div>
         
-        <!-- HTML Scraping Options -->
-        <div id="htmlOptions">
-          <div class="form-group">
-            <label class="form-label">CSS Selector (optional)</label>
-            <input type="text" id="sourceSelector" class="form-input" placeholder="e.g., .permit-item">
-            <small style="color: var(--gray-600);">Leave empty to use AI for full-page extraction</small>
-          </div>
-        </div>
+        <!-- Hidden inputs: Force AI + Puppeteer mode -->
+        <input type="hidden" id="sourceType" value="html">
+        <input type="hidden" id="sourceSelector" value="">
+        <input type="hidden" id="useAI" value="true">
+        <input type="hidden" id="usePuppeteer" value="true">
+        <input type="hidden" id="extractTable" value="false">
         
-        <!-- REST API Options -->
-        <div id="apiOptions" style="display: none;">
-          <div class="form-group">
-            <label class="form-label">HTTP Method</label>
-            <select id="apiMethod" class="form-input">
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-            </select>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">Query Parameters (JSON format, optional)</label>
-            <textarea id="apiParams" class="form-input" rows="4" placeholder='{"where": "status='approved'", "outFields": "*", "f": "json"}'></textarea>
-            <small style="color: var(--gray-600);">JSON object for query string or POST body</small>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">JSON Path to Data (optional)</label>
-            <input type="text" id="jsonPath" class="form-input" placeholder="e.g., features[*].attributes or data.records">
-            <small style="color: var(--gray-600);">Path to array of records in response (use [*] for arrays)</small>
-          </div>
-          
-          <div class="form-group">
-            <label class="form-label">Fields to Extract (comma-separated)</label>
-            <input type="text" id="jsonFields" class="form-input" placeholder="e.g., permit_number, contact_name, phone, address">
-            <small style="color: var(--gray-600);">Leave empty to extract all fields</small>
-          </div>
+        <div class="form-group">
+          <label class="form-label" for="fieldSchema">Custom Fields (JSON format) - Optional</label>
+          <textarea id="fieldSchema" class="form-input" rows="6" placeholder='{"permit_number":"string","address":"string","company_name":"string","phone":"string","permit_type":"string","date_issued":"string"}'></textarea>
+          <small style="color: var(--gray-600);">Define what fields you want AI to extract from the webpage. Leave empty for auto-detection.</small>
         </div>
         
         <div class="form-group">
-          <label class="form-label">
-            <input type="checkbox" id="useAI"> Use AI Extraction
-          </label>
-        </div>
-        
-        <div class="form-group">
-          <label class="form-label">
-            <input type="checkbox" id="usePuppeteer"> Use Dynamic Rendering (for JavaScript sites)
-          </label>
-        </div>
-        
-        <div class="form-group">
-          <label class="form-label">
-            <input type="checkbox" id="extractTable"> Extract Data from HTML Table
-          </label>
-          <small style="color: var(--gray-600);">Check this if the page shows data in a table (like Nashville permits)</small>
-        </div>
-        
-        <div class="form-group">
-          <label class="form-label">Include Keywords (comma-separated)</label>
+          <label class="form-label" for="includeKeywords">Include Keywords (comma-separated)</label>
           <input type="text" id="includeKeywords" class="form-input" placeholder="e.g., commercial, construction">
         </div>
         
         <div class="form-group">
-          <label class="form-label">Exclude Keywords (comma-separated)</label>
+          <label class="form-label" for="excludeKeywords">Exclude Keywords (comma-separated)</label>
           <input type="text" id="excludeKeywords" class="form-input" placeholder="e.g., residential, remodel">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" for="displayColumns">Display Columns (Optional)</label>
+          <input type="text" id="displayColumns" class="form-input" placeholder="permit_number, address, value, contractor_name, phone, source">
+          <small style="color: var(--gray-600);">Leave empty for auto-detection. Comma-separated list of columns to show in your dashboard table.</small>
         </div>
         
         <div class="form-group" style="display: flex; gap: 1rem;">
@@ -403,47 +358,47 @@
           <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--gray-900);">Field Mappings</h3>
           <div style="display: grid; gap: 1rem;">
             <div class="mapping-row">
-              <label><strong>Permit Number:</strong></label>
+              <label for="map_permit_number"><strong>Permit Number:</strong></label>
               <select id="map_permit_number" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Date Issued:</strong></label>
+              <label for="map_date_issued"><strong>Date Issued:</strong></label>
               <select id="map_date_issued" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Contractor Name:</strong></label>
+              <label for="map_contractor_name"><strong>Contractor Name:</strong></label>
               <select id="map_contractor_name" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Owner Name:</strong></label>
+              <label for="map_owner_name"><strong>Owner Name:</strong></label>
               <select id="map_owner_name" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Address:</strong></label>
+              <label for="map_address"><strong>Address:</strong></label>
               <select id="map_address" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>City:</strong></label>
+              <label for="map_city"><strong>City:</strong></label>
               <select id="map_city" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>State:</strong></label>
+              <label for="map_state"><strong>State:</strong></label>
               <select id="map_state" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Zip Code:</strong></label>
+              <label for="map_zip_code"><strong>Zip Code:</strong></label>
               <select id="map_zip_code" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Phone:</strong></label>
+              <label for="map_phone"><strong>Phone:</strong></label>
               <select id="map_phone" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Value/Budget:</strong></label>
+              <label for="map_value"><strong>Value/Budget:</strong></label>
               <select id="map_value" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
             <div class="mapping-row">
-              <label><strong>Description:</strong></label>
+              <label for="map_description"><strong>Description:</strong></label>
               <select id="map_description" class="form-input"><option value="none">-- Not Available --</option></select>
             </div>
           </div>
@@ -488,20 +443,13 @@
 
     // Toggle between HTML and API source types
     function toggleSourceType() {
-      const type = document.getElementById('sourceType').value;
-      const htmlOptions = document.getElementById('htmlOptions');
-      const apiOptions = document.getElementById('apiOptions');
-      
-      if (type === 'json') {
-        htmlOptions.style.display = 'none';
-        apiOptions.style.display = 'block';
-        document.getElementById('useAI').checked = false;
-        document.getElementById('usePuppeteer').checked = false;
-        document.getElementById('extractTable').checked = false;
-      } else {
-        htmlOptions.style.display = 'block';
-        apiOptions.style.display = 'none';
-      }
+      // Simplified: All sources now use AI + Puppeteer mode automatically
+      // No need to toggle between HTML/API options
+    }
+
+    // Toggle field schema visibility (kept for compatibility)
+    function toggleFieldSchema() {
+      // Field schema is always visible in simplified mode
     }
 
     // Load sources and user info on page load
@@ -538,16 +486,15 @@
               </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
-              <div><strong>Type:</strong> ${source.data.type === 'json' ? 'REST API' : 'HTML Scraping'}</div>
+              <div><strong>Type:</strong> ${source.data.type === 'json' ? 'REST API' : source.data.useAI ? 'AI Vision' : 'HTML Scraping'}</div>
               ${source.data.type === 'json' ? `<div><strong>Method:</strong> ${source.data.method || 'GET'}</div>` : ''}
               ${source.data.type === 'json' && source.data.jsonPath ? `<div><strong>JSON Path:</strong> ${escapeHtml(source.data.jsonPath)}</div>` : ''}
               ${source.data.type !== 'json' && source.data.selector ? `<div><strong>Selector:</strong> ${escapeHtml(source.data.selector)}</div>` : ''}
-              ${source.data.type !== 'json' && !source.data.selector ? '<div><strong>Mode:</strong> AI Full-Page</div>' : ''}
-              ${source.data.useAI ? '<div><strong>AI:</strong> ✓ Enabled</div>' : ''}
-              ${source.data.usePuppeteer ? '<div><strong>Dynamic:</strong> ✓ Enabled</div>' : ''}
+              ${source.data.type !== 'json' && !source.data.selector && source.data.useAI ? '<div><strong>Mode:</strong> Full-Page Screenshot</div>' : ''}
+              ${source.data.usePuppeteer ? '<div><strong>Browser:</strong> ✓ Puppeteer</div>' : ''}
+              ${source.data.fieldSchema ? `<div><strong>Custom Fields:</strong> ${Object.keys(source.data.fieldSchema).length} fields</div>` : ''}
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
-              ${source.data.fieldMappings ? '<div><strong>Mappings:</strong> ✓ Configured</div>' : '<div style="color: #f59e0b;"><strong>Mappings:</strong> ⚠️ Not configured</div>'}
             </div>
           </div>
         `).join('');
@@ -563,8 +510,6 @@
       document.getElementById('sourceForm').reset();
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'html';
-      document.getElementById('useAI').checked = true;
-      toggleSourceType();
       document.getElementById('sourceModal').classList.add('show');
     }
 
@@ -588,13 +533,13 @@
         // Set source type
         const sourceType = source.data.type || 'html';
         document.getElementById('sourceType').value = sourceType;
-        toggleSourceType();
         
-        // HTML scraping fields
-        document.getElementById('sourceSelector').value = source.data.selector || '';
-        document.getElementById('useAI').checked = source.data.useAI === true;
-        document.getElementById('usePuppeteer').checked = source.data.usePuppeteer === true;
-        document.getElementById('extractTable').checked = source.data.extractTable === true;
+        // Set fieldSchema for editing
+        if (source.data.fieldSchema) {
+          document.getElementById('fieldSchema').value = JSON.stringify(source.data.fieldSchema, null, 2);
+        } else {
+          document.getElementById('fieldSchema').value = '';
+        }
         
         // API fields
         if (sourceType === 'json') {
@@ -606,6 +551,7 @@
         
         document.getElementById('includeKeywords').value = source.data.includeWords?.join(', ') || '';
         document.getElementById('excludeKeywords').value = source.data.excludeWords?.join(', ') || '';
+        document.getElementById('displayColumns').value = source.data.displayColumns?.join(', ') || '';
         
         document.getElementById('sourceModal').classList.add('show');
       } catch (error) {
@@ -843,12 +789,30 @@
         excludeWords: document.getElementById('excludeKeywords').value.split(',').map(s => s.trim()).filter(Boolean)
       };
       
-      if (sourceType === 'html') {
-        sourceData.selector = document.getElementById('sourceSelector').value || null;
-        sourceData.useAI = document.getElementById('useAI').checked;
-        sourceData.usePuppeteer = document.getElementById('usePuppeteer').checked;
-        sourceData.extractTable = document.getElementById('extractTable').checked;
-      } else if (sourceType === 'json') {
+      // Add displayColumns if specified
+      const displayColumnsInput = document.getElementById('displayColumns').value.trim();
+      if (displayColumnsInput) {
+        sourceData.displayColumns = displayColumnsInput.split(',').map(col => col.trim()).filter(Boolean);
+      }
+      
+      // Always enable AI and Puppeteer for automated extraction
+      sourceData.selector = null;
+      sourceData.useAI = true;
+      sourceData.usePuppeteer = true;
+      sourceData.extractTable = false;
+      
+      // Add fieldSchema if provided
+      const fieldSchemaInput = document.getElementById('fieldSchema').value.trim();
+      if (fieldSchemaInput) {
+        try {
+          sourceData.fieldSchema = JSON.parse(fieldSchemaInput);
+        } catch (error) {
+          alert('Invalid JSON in Custom Fields. Please check the format.');
+          return;
+        }
+      }
+      
+      if (sourceType === 'json') {
         sourceData.method = document.getElementById('apiMethod').value;
         const paramsText = document.getElementById('apiParams').value.trim();
         try {

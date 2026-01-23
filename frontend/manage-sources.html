@@ -240,9 +240,33 @@
 
         <div class="form-group">
           <label for="useAI">
-            <input type="checkbox" id="useAI" checked> Use AI to extract contact info
+            <input type="checkbox" id="useAI" checked onchange="toggleFieldSchema()"> Use AI to extract contact info
           </label>
           <small>Automatically extract names, emails, phones using AI</small>
+        </div>
+
+        <div id="fieldSchemaSection" class="form-group" style="display:block;">
+          <label for="fieldSchema">Custom Fields (JSON format)</label>
+          <textarea id="fieldSchema" placeholder='{"permit_date": "Date permit was issued", "project_value": "Total project cost", "contractor_name": "Contractor company name", "phone": "Contact phone number"}'></textarea>
+          <small>Optional: Define custom fields you want AI to extract. Leave empty for auto-detection.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="includeKeywords">Include Keywords (comma-separated)</label>
+          <input type="text" id="includeKeywords" placeholder="commercial, office, retail, warehouse">
+          <small>Only extract leads containing these keywords</small>
+        </div>
+
+        <div class="form-group">
+          <label for="excludeKeywords">Exclude Keywords (comma-separated)</label>
+          <input type="text" id="excludeKeywords" placeholder="residential, single family, duplex">
+          <small>Skip leads containing these keywords</small>
+        </div>
+
+        <div class="form-group">
+          <label for="displayColumns">Display Columns (Optional)</label>
+          <input type="text" id="displayColumns" placeholder="permit_number, address, value, contractor_name, phone">
+          <small>Leave empty for auto-detection. Comma-separated list of columns to show in table. Examples: permit_number, date_issued, address, value, contractor_name, phone, email, square_footage, source, page_url</small>
         </div>
 
         <div class="form-group">
@@ -345,6 +369,12 @@
       puppeteerFields.style.display = method === 'puppeteer' ? 'block' : 'none';
     }
 
+    function toggleFieldSchema() {
+      const useAI = document.getElementById('useAI').checked;
+      const fieldSchemaSection = document.getElementById('fieldSchemaSection');
+      fieldSchemaSection.style.display = useAI ? 'block' : 'none';
+    }
+
     function loadZillowTemplate() {
       document.getElementById('sourceName').value = 'Zillow Real Estate Agents';
       document.getElementById('sourceUrl').value = 'https://www.zillow.com/professionals/real-estate-agent-reviews/';
@@ -352,6 +382,7 @@
       document.getElementById('waitSelector').value = 'article[data-test="agent-card"]';
       document.getElementById('dataSelector').value = 'article[data-test="agent-card"]';
       document.getElementById('useAI').checked = true;
+      document.getElementById('displayColumns').value = 'contractor_name, company_name, phone, email, address, city, state, source, page_url';
       document.getElementById('sourceNotes').value = 'Scrapes real estate agent info including name, email, phone, brokerage';
       updateMethodFields();
     }
@@ -390,6 +421,37 @@
         enabled: true,
         notes: document.getElementById('sourceNotes').value
       };
+
+      // Add fieldSchema if AI is enabled and fieldSchema is provided
+      if (sourceData.useAI) {
+        const fieldSchemaInput = document.getElementById('fieldSchema').value.trim();
+        if (fieldSchemaInput) {
+          try {
+            sourceData.fieldSchema = JSON.parse(fieldSchemaInput);
+          } catch (error) {
+            alert('Invalid JSON in Custom Fields. Please check the format.');
+            return;
+          }
+        }
+      }
+
+      // Add include/exclude keywords
+      const includeKeywordsInput = document.getElementById('includeKeywords').value.trim();
+      if (includeKeywordsInput) {
+        sourceData.keywords = includeKeywordsInput.split(',').map(k => k.trim()).filter(k => k);
+      }
+
+      const excludeKeywordsInput = document.getElementById('excludeKeywords').value.trim();
+      if (excludeKeywordsInput) {
+        sourceData.excludeRegex = excludeKeywordsInput.split(',').map(k => k.trim()).filter(k => k);
+      }
+
+      // Add displayColumns if specified
+      const displayColumnsInput = document.getElementById('displayColumns').value.trim();
+      if (displayColumnsInput) {
+        // Convert comma-separated string to array and trim whitespace
+        sourceData.displayColumns = displayColumnsInput.split(',').map(col => col.trim()).filter(col => col);
+      }
 
       if (method === 'puppeteer') {
         sourceData.puppeteerConfig = {

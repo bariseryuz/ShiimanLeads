@@ -150,17 +150,17 @@
       <h3 class="card-title">Request New Data Source</h3>
       <form id="sourceRequestForm">
         <div class="form-group">
-          <label class="form-label">Source Name *</label>
+          <label class="form-label" for="sourceName">Source Name *</label>
           <input type="text" class="form-input" id="sourceName" placeholder="Phoenix Building Permits" required>
         </div>
         
         <div class="form-group">
-          <label class="form-label">Source URL *</label>
+          <label class="form-label" for="sourceUrl">Source URL *</label>
           <input type="url" class="form-input" id="sourceUrl" placeholder="https://permits.phoenix.gov" required>
         </div>
         
         <div class="form-group">
-          <label class="form-label">Description / Special Requirements</label>
+          <label class="form-label" for="sourceDescription">Description / Special Requirements</label>
           <textarea class="form-textarea" id="sourceDescription" placeholder="Describe what information you need from this source..."></textarea>
         </div>
         
@@ -217,14 +217,14 @@
       <h3 class="card-title"><img src="icons/sources.svg" style="width:18px;height:18px;vertical-align:middle;margin-right:8px;"> Filter & Search Leads</h3>
       <div class="filters">
         <div class="filter-group">
-          <label class="form-label">Data Source</label>
+          <label class="form-label" for="sourceFilter">Data Source</label>
           <select id="sourceFilter" class="form-select">
             <option value="">All Sources</option>
           </select>
         </div>
         
         <div class="filter-group">
-          <label class="form-label">Time Range</label>
+          <label class="form-label" for="daysFilter">Time Range</label>
           <select id="daysFilter" class="form-select">
             <option value="">All Time</option>
             <option value="1">Last 24 Hours</option>
@@ -234,7 +234,7 @@
         </div>
         
         <div class="filter-group">
-          <label class="form-label">Search</label>
+          <label class="form-label" for="searchInput">Search</label>
           <input 
             type="text" 
             id="searchInput" 
@@ -273,28 +273,9 @@
     <div class="card" id="leadsDisplayDiv" style="padding: 0; overflow: hidden;">
       <div class="table-container" style="overflow-x: auto; max-width: 100%;">
         <table id="leadsTable" style="min-width: 1800px;">
-          <thead>
+          <thead id="leadsTableHead">
             <tr>
-              <th>Permit #</th>
-              <th>Date Issued</th>
-              <th>Address</th>
-              <th>City</th>
-              <th>State</th>
-              <th>Zip</th>
-              <th>Value</th>
-              <th>Owner</th>
-              <th>Contractor</th>
-              <th>Contractor Address</th>
-              <th>Phone</th>
-              <th>Sq Ft</th>
-              <th>Units</th>
-              <th>Type</th>
-              <th>Subtype</th>
-              <th>Status</th>
-              <th>Parcel #</th>
-              <th>Source</th>
-              <th>Link</th>
-              <th>Added</th>
+              <th>Loading...</th>
             </tr>
           </thead>
           <tbody>
@@ -445,6 +426,9 @@
         const data = await response.json();
         const sources = data.data || [];
         
+        // Store sources globally for dynamic column generation
+        allSourcesData = sources;
+        
         const select = document.getElementById('sourceFilter');
         sources.forEach(source => {
           const option = document.createElement('option');
@@ -535,7 +519,10 @@
       loadLeads();
     }
 
-    // Load leads
+    // Store sources data globally for dynamic column generation
+    let allSourcesData = [];
+
+    // Load leads with dynamic source-specific columns
     async function loadLeads() {
       const source = document.getElementById('sourceFilter').value;
       const days = document.getElementById('daysFilter').value;
@@ -548,6 +535,7 @@
       if (search) params.set('search', search);
       
       const tbody = document.querySelector('#leadsTable tbody');
+      const thead = document.querySelector('#leadsTableHead');
       tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</td></tr>';
       
       try {
@@ -575,49 +563,176 @@
           return;
         }
         
-        filteredLeads.forEach(lead => {
-          const tr = document.createElement('tr');
-          // Add 'new-lead' class if this lead is marked as new
-          if (lead.is_new === 1) {
-            tr.classList.add('new-lead');
+        // Get unique sources from filtered leads
+        const uniqueSources = [...new Set(filteredLeads.map(lead => lead.source))];
+        
+        // Get fieldSchemas for these sources
+        const sourceFieldSchemas = {};
+        for (const sourceName of uniqueSources) {
+          const sourceData = allSourcesData.find(s => s.name === sourceName);
+          if (sourceData && sourceData.fieldSchema) {
+            sourceFieldSchemas[sourceName] = sourceData.fieldSchema;
           }
-          tr.innerHTML = `
-            <td>${escapeHtml(lead.permit_number || '-')}</td>
-            <td style="white-space: nowrap;">${lead.date_issued ? formatDate(lead.date_issued) : 'N/A'}</td>
-            <td>${escapeHtml(lead.address || '-')}</td>
-            <td>${escapeHtml(lead.city || '-')}</td>
-            <td>${escapeHtml(lead.state || '-')}</td>
-            <td>${escapeHtml(lead.zip_code || '-')}</td>
-            <td>${escapeHtml(lead.value || '-')}</td>
-            <td>${escapeHtml(lead.owner_name || '-')}</td>
-            <td>${escapeHtml(lead.contractor_name || '-')}</td>
-            <td>${escapeHtml(lead.contractor_address || '-')}</td>
-            <td>${escapeHtml(lead.phone || lead.contractor_phone || 'N/A')}</td>
-            <td>${escapeHtml(lead.square_footage || '-')}</td>
-            <td>${escapeHtml(lead.units || '-')}</td>
-            <td>${escapeHtml(lead.permit_type || '-')}</td>
-            <td>${escapeHtml(lead.permit_subtype || '-')}</td>
-            <td>${escapeHtml(lead.status || '-')}</td>
-            <td>${escapeHtml(lead.parcel_number || '-')}</td>
-            <td>${escapeHtml(lead.source || '-')}</td>
-            <td>
-              ${lead.page_url ? `<a href="${escapeHtml(lead.page_url)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>` : '-'}
-            </td>
-            <td style="white-space: nowrap;">${formatDate(lead.date_added)}</td>
-          `;
-          tbody.appendChild(tr);
-        });
+        }
+        
+        // If we have single source selected and it has fieldSchema, use dynamic columns
+        if (source && sourceFieldSchemas[source]) {
+          generateDynamicColumns(sourceFieldSchemas[source], filteredLeads, source);
+        } else if (uniqueSources.length === 1 && sourceFieldSchemas[uniqueSources[0]]) {
+          // Single source in results with fieldSchema
+          generateDynamicColumns(sourceFieldSchemas[uniqueSources[0]], filteredLeads, uniqueSources[0]);
+        } else {
+          // Multiple sources or no fieldSchema - use default columns
+          generateDefaultColumns(filteredLeads);
+        }
         
         const filterText = currentNewLeadFilter === 'new' ? ' new' : '';
         document.getElementById('statusMessage').textContent = `✓ Showing ${filteredLeads.length}${filterText} lead(s)`;
-        
-        // Don't update total stats here - those come from /api/stats which shows real totals
         
       } catch (error) {
         console.error('Failed to load leads:', error);
         tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--danger);">Error loading leads. Please try again.</td></tr>';
         document.getElementById('statusMessage').textContent = '❌ Error: ' + error.message;
       }
+    }
+
+    // Generate dynamic columns based on source fieldSchema
+    function generateDynamicColumns(fieldSchema, leads, sourceName) {
+      const thead = document.querySelector('#leadsTableHead');
+      const tbody = document.querySelector('#leadsTable tbody');
+      
+      // Get field names from schema
+      const fieldNames = Object.keys(fieldSchema);
+      
+      // Build header
+      const headerRow = document.createElement('tr');
+      fieldNames.forEach(field => {
+        const th = document.createElement('th');
+        th.textContent = formatFieldName(field);
+        th.title = fieldSchema[field]; // Show description on hover
+        headerRow.appendChild(th);
+      });
+      
+      // Add standard columns
+      headerRow.innerHTML += `
+        <th>Source</th>
+        <th>Link</th>
+        <th>Added</th>
+      `;
+      
+      thead.innerHTML = '';
+      thead.appendChild(headerRow);
+      
+      // Build rows
+      tbody.innerHTML = '';
+      leads.forEach(lead => {
+        const tr = document.createElement('tr');
+        if (lead.is_new === 1) {
+          tr.classList.add('new-lead');
+        }
+        
+        // Try to parse extracted_data if it exists
+        let extractedData = {};
+        if (lead.extracted_data) {
+          try {
+            extractedData = JSON.parse(lead.extracted_data);
+          } catch (e) {
+            console.warn('Failed to parse extracted_data:', e);
+          }
+        }
+        
+        // Add cells for each field in schema
+        fieldNames.forEach(field => {
+          const td = document.createElement('td');
+          // Try extracted_data first, then fall back to lead properties
+          const value = extractedData[field] || lead[field] || lead[field.replace(/_/g, '')] || '-';
+          td.textContent = value;
+          tr.appendChild(td);
+        });
+        
+        // Add standard columns
+        tr.innerHTML += `
+          <td>${escapeHtml(lead.source || sourceName)}</td>
+          <td>${lead.page_url ? `<a href="${escapeHtml(lead.page_url)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>` : '-'}</td>
+          <td style="white-space: nowrap;">${formatDate(lead.date_added)}</td>
+        `;
+        
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Generate default columns for multiple sources
+    function generateDefaultColumns(leads) {
+      const thead = document.querySelector('#leadsTableHead');
+      const tbody = document.querySelector('#leadsTable tbody');
+      
+      // Default header
+      thead.innerHTML = `
+        <tr>
+          <th>Permit #</th>
+          <th>Date Issued</th>
+          <th>Address</th>
+          <th>City</th>
+          <th>State</th>
+          <th>Zip</th>
+          <th>Value</th>
+          <th>Owner</th>
+          <th>Contractor</th>
+          <th>Contractor Address</th>
+          <th>Phone</th>
+          <th>Sq Ft</th>
+          <th>Units</th>
+          <th>Type</th>
+          <th>Subtype</th>
+          <th>Status</th>
+          <th>Parcel #</th>
+          <th>Source</th>
+          <th>Link</th>
+          <th>Added</th>
+        </tr>
+      `;
+      
+      // Default rows
+      tbody.innerHTML = '';
+      leads.forEach(lead => {
+        const tr = document.createElement('tr');
+        if (lead.is_new === 1) {
+          tr.classList.add('new-lead');
+        }
+        tr.innerHTML = `
+          <td>${escapeHtml(lead.permit_number || '-')}</td>
+          <td style="white-space: nowrap;">${lead.date_issued ? formatDate(lead.date_issued) : 'N/A'}</td>
+          <td>${escapeHtml(lead.address || '-')}</td>
+          <td>${escapeHtml(lead.city || '-')}</td>
+          <td>${escapeHtml(lead.state || '-')}</td>
+          <td>${escapeHtml(lead.zip_code || '-')}</td>
+          <td>${escapeHtml(lead.value || '-')}</td>
+          <td>${escapeHtml(lead.owner_name || '-')}</td>
+          <td>${escapeHtml(lead.contractor_name || '-')}</td>
+          <td>${escapeHtml(lead.contractor_address || '-')}</td>
+          <td>${escapeHtml(lead.phone || lead.contractor_phone || 'N/A')}</td>
+          <td>${escapeHtml(lead.square_footage || '-')}</td>
+          <td>${escapeHtml(lead.units || '-')}</td>
+          <td>${escapeHtml(lead.permit_type || '-')}</td>
+          <td>${escapeHtml(lead.permit_subtype || '-')}</td>
+          <td>${escapeHtml(lead.status || '-')}</td>
+          <td>${escapeHtml(lead.parcel_number || '-')}</td>
+          <td>${escapeHtml(lead.source || '-')}</td>
+          <td>
+            ${lead.page_url ? `<a href="${escapeHtml(lead.page_url)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>` : '-'}
+          </td>
+          <td style="white-space: nowrap;">${formatDate(lead.date_added)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Format field names for display (convert snake_case to Title Case)
+    function formatFieldName(fieldName) {
+      return fieldName
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
     }
 
     // Export to CSV
