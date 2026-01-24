@@ -12,4 +12,4 @@ cmd = 'cd backend && node index.js'
 
 [variables]
 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true'
-PUPPETEER_EXECUTABLE_PATH = '$(which chromium-browser || which chromium)'
+PUPPETEER_EXECUTABLE_PATH = '/usr/bin/chromium'
