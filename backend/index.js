@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
@@ -9,7 +10,6 @@ const puppeteer = require('puppeteer');
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
-const path = require('path');
 const crypto = require('crypto');
 const jp = require('jsonpath');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
@@ -18,10 +18,24 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-  console.log('✅ Google Gemini AI initialized for lead extraction');
+  geminiModel = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
+  console.log('✅ Google Gemini AI initialized for lead extraction (gemini-3-flash-preview)');
 } else {
   console.warn('⚠️ GEMINI_API_KEY not found in .env - AI extraction disabled');
+}
+
+// AI generation config — allow controlling "thinking level" via env
+const AI_THINKING_LEVEL = String(process.env.AI_THINKING_LEVEL || 'low').toLowerCase();
+function buildGenConfig() {
+  const base = { responseMimeType: 'application/json' };
+  if (AI_THINKING_LEVEL === 'low') {
+    return { ...base, temperature: 0.2, topP: 0.8, maxOutputTokens: 1024 };
+  }
+  if (AI_THINKING_LEVEL === 'medium') {
+    return { ...base, temperature: 0.5, topP: 0.9, maxOutputTokens: 2048 };
+  }
+  // high
+  return { ...base, temperature: 0.7, topP: 0.95, maxOutputTokens: 3072 };
 }
 
 // === LOGGING ===
@@ -314,7 +328,7 @@ ${isRetry ? '⚠️ RETRY: Previous attempt had errors. Be MORE CAREFUL with fie
         imageData = input;
       }
 
-      content = [prompt, imageData];
+      content = [{ role: 'user', parts: [{ text: prompt }, imageData] }];
     } else {
       // Text-based extraction (fallback)
       const truncatedText = typeof input === 'string' ? input.substring(0, 6000) : String(input).substring(0, 6000);
@@ -334,10 +348,10 @@ ${isRetry ? 'RETRY ATTEMPT: Previous extraction had validation errors. Please do
 Text to extract from:
 ${truncatedText}`;
 
-      content = [prompt];
+      content = [{ role: 'user', parts: [{ text: prompt }] }];
     }
 
-    const result = await geminiModel.generateContent(content);
+    const result = await geminiModel.generateContent({ contents: content, generationConfig: buildGenConfig() });
     const response = await result.response;
     const text = response.text();
     
@@ -369,7 +383,21 @@ ${truncatedText}`;
     // Final cleanup - remove any remaining non-JSON text
     cleanedText = cleanedText.trim();
     
-    const extracted = JSON.parse(cleanedText);
+    // Safer JSON parse: fix common issues like single quotes and trailing commas
+    const safeParse = (txt) => {
+      try { return JSON.parse(txt); } catch {}
+      try {
+        let t = txt;
+        // Replace single quotes around keys/strings with double quotes carefully
+        t = t.replace(/\{\s*'([^']+)'\s*:/g, '{ "$1":');
+        t = t.replace(/:\s*'([^']*)'/g, ': "$1"');
+        // Remove trailing commas before closing braces/brackets
+        t = t.replace(/,\s*(\}|\])/g, '$1');
+        return JSON.parse(t);
+      } catch {}
+      throw new Error('Invalid JSON returned by AI');
+    };
+    const extracted = safeParse(cleanedText);
     
     // Validate extracted data
     const validation = validateExtractedFields(extracted, sourceName);
@@ -1166,7 +1194,7 @@ async function scrapeForUser(userId, userSources) {
             
             // Auto-scroll to load all lazy-loaded data
             logger.info(`Auto-scrolling to load all data...`);
-            const totalRows = await page.evaluate(async () => {
+            const totalRows = await page.evaluate(async (preferredScrollSelector) => {
               let previousRowCount = 0;
               let currentRowCount = 0;
               let noChangeCount = 0;
@@ -1174,23 +1202,55 @@ async function scrapeForUser(userId, userSources) {
               const maxScrollAttempts = 300;
               
               // Find the actual scrollable container (ArcGIS Hub uses specific containers)
+              const isScrollable = (el) => {
+                if (!el) return false;
+                const cs = getComputedStyle(el);
+                const canScroll = /(auto|scroll)/.test(cs.overflowY) || el.scrollHeight > el.clientHeight;
+                return canScroll;
+              };
+
+              const closestScrollableAncestor = (el) => {
+                let node = el;
+                while (node && node !== document.body) {
+                  if (isScrollable(node)) return node;
+                  node = node.parentElement;
+                }
+                return null;
+              };
+
               const findScrollContainer = () => {
-                const selectors = [
+                // Prefer explicit selector
+                if (preferredScrollSelector) {
+                  const el = document.querySelector(preferredScrollSelector);
+                  if (isScrollable(el)) return el;
+                }
+
+                // Prefer table/grid viewport containers
+                const table = document.querySelector('table')
+                  || document.querySelector('[role="grid"]')
+                  || document.querySelector('[aria-label*="table"]')
+                  || document.querySelector('.esri-feature-table')
+                  || document.querySelector('.ag-center-cols-viewport')
+                  || document.querySelector('.mdc-data-table__content');
+                const fromTable = closestScrollableAncestor(table);
+                if (isScrollable(fromTable)) return fromTable;
+
+                // Common scroll containers
+                const candidates = [
+                  '.ag-center-cols-viewport',
+                  '.ag-body-viewport',
+                  '.mdc-data-table__content',
+                  '.sds-data-table__wrapper',
                   '.table-container',
-                  '[class*="table"]',
+                  '[class*="data-table"]',
+                  '[class*="viewport"]',
                   '[class*="scroll"]',
-                  '[class*="content"]',
                   'div[role="main"]',
                   'main'
                 ];
-                
-                for (const selector of selectors) {
-                  const elements = document.querySelectorAll(selector);
-                  for (const el of elements) {
-                    if (el.scrollHeight > el.clientHeight) {
-                      return el;
-                    }
-                  }
+                for (const sel of candidates) {
+                  const el = document.querySelector(sel);
+                  if (isScrollable(el)) return el;
                 }
                 return null;
               };
@@ -1210,17 +1270,53 @@ async function scrapeForUser(userId, userSources) {
                   }
                 }
                 
-                // Scroll the container or window
+                // Scroll the container or window using incremental wheel to trigger virtualization
+                const doWheel = (target) => {
+                  try {
+                    const evt = new WheelEvent('wheel', { deltaY: 800, bubbles: true });
+                    (target || window).dispatchEvent(evt);
+                  } catch {}
+                };
                 if (scrollContainer) {
-                  scrollContainer.scrollTop = scrollContainer.scrollHeight;
+                  scrollContainer.scrollTop = Math.min(scrollContainer.scrollTop + 800, scrollContainer.scrollHeight);
+                  doWheel(scrollContainer);
                 } else {
-                  window.scrollTo(0, document.documentElement.scrollHeight);
+                  window.scrollTo({ top: document.documentElement.scrollTop + 1000, behavior: 'instant' });
+                  doWheel(window);
                 }
                 
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 
-                // Count current rows
-                currentRowCount = document.querySelectorAll('table tbody tr').length;
+                // Count current items using multiple common patterns (tables, grids, lists)
+                const countItems = () => {
+                  const candidates = [
+                    'table tbody tr',
+                    '.k-grid tbody tr',
+                    '.esri-feature-table__body tr',
+                    '.esri-feature-table__row',
+                    'div[role="row"]',
+                    '[role="listitem"]',
+                    'ul li',
+                    '.mdc-data-table__row',
+                    '.MuiDataGrid-row',
+                    '.mat-row',
+                    '[data-rowindex]',
+                    '.grid-row',
+                    '.card, .result-card, .search-result',
+                    '.ag-center-cols-container .ag-row'
+                  ];
+                  let maxCount = 0;
+                  let matchedSelector = '';
+                  for (const sel of candidates) {
+                    const c = document.querySelectorAll(sel).length;
+                    if (c > maxCount) { maxCount = c; matchedSelector = sel; }
+                  }
+                  // Debug hint in console to help tuning
+                  if (typeof console !== 'undefined') console.debug('Counted', maxCount, 'items using', matchedSelector);
+                  return maxCount;
+                };
+
+                currentRowCount = countItems();
                 
                 if (currentRowCount === previousRowCount) {
                   noChangeCount++;
@@ -1233,8 +1329,23 @@ async function scrapeForUser(userId, userSources) {
                 scrollAttempts++;
               }
               
+              // If table shows pagination controls, click Next until disabled
+              const nextBtn = document.querySelector('button[aria-label*="Next"], button[title*="Next"], button');
+              let safety = 0;
+              while (nextBtn && !nextBtn.disabled && safety < 50) {
+                const text = (nextBtn.textContent || '').toLowerCase();
+                if (text.includes('next')) {
+                  nextBtn.click();
+                  await new Promise(r => setTimeout(r, 1200));
+                  const after = countItems();
+                  if (after <= currentRowCount) break;
+                  currentRowCount = after;
+                }
+                safety++;
+              }
+
               return currentRowCount;
-            });
+            }, source.puppeteerConfig?.scrollSelector || null);
             logger.info(`Finished auto-scrolling - loaded ${totalRows} total rows`);
             
             // Use pre-extracted tableData if available, otherwise extract now
@@ -2301,8 +2412,10 @@ function startServer() {
     cookie: { 
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'lax' : 'lax',
+      // Allow override via env: set SESSION_SECURE=true on HTTPS, false on HTTP
+      secure: process.env.SESSION_SECURE === 'true' ? true : false,
+      // Allow override via env: SESSION_SAMESITE=none|lax|strict (default lax)
+      sameSite: (process.env.SESSION_SAMESITE || 'lax'),
       path: '/'
     },
     name: 'shiiman.sid',
@@ -3071,9 +3184,13 @@ function startServer() {
       }
 
       // Test with a simple prompt
-      const testResult = await geminiModel.generateContent([
-        'Extract this data as JSON: {"name": "John Doe", "phone": "555-1234"}. Return only the JSON.'
-      ]);
+      const testResult = await geminiModel.generateContent({
+        contents: [{
+          role: 'user',
+          parts: [{ text: 'Extract this data as JSON: {"name": "John Doe", "phone": "555-1234"}. Return only the JSON.' }]
+        }],
+        generationConfig: buildGenConfig()
+      });
       
       const response = await testResult.response;
       const text = response.text();
@@ -3082,7 +3199,7 @@ function startServer() {
         status: 'active',
         message: 'Gemini AI is working correctly',
         working: true,
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-3-flash-preview',
         testResponse: text.substring(0, 200)
       });
       
@@ -3094,6 +3211,61 @@ function startServer() {
         working: false,
         expired: isQuotaError
       });
+    }
+  });
+
+  // Agent: Screenshot a URL, analyze with AI, and save lead(s)
+  app.post('/api/agent/analyze-url', express.json(), async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+
+      const { url, name, fieldSchema } = req.body || {};
+      if (!url) return res.status(400).json({ error: 'url is required' });
+
+      // Find or create a dedicated source for this agent run
+      const sourceName = name || (new URL(url).hostname + ' (Agent)');
+      let sourceRow = await dbGet('SELECT id FROM user_sources WHERE user_id = ? AND source_data LIKE ?', [userId, `%"name":"${sourceName}"%`]);
+      let sourceId;
+      if (!sourceRow) {
+        const sourceData = { name: sourceName, url, useAI: true, usePuppeteer: true, fieldSchema: fieldSchema || null };
+        const insert = await dbRun('INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)', [userId, JSON.stringify(sourceData), new Date().toISOString()]);
+        sourceId = insert.lastID;
+        createSourceTable(sourceId, fieldSchema || null);
+      } else {
+        sourceId = sourceRow.id;
+      }
+
+      // Capture the page with Puppeteer
+      const browser = await puppeteer.launch({ headless: process.env.PUPPETEER_HEADLESS || 'new', args: ['--no-sandbox','--disable-setuid-sandbox'] });
+      const page = await browser.newPage();
+      await page.setViewport({ width: 1366, height: 900 });
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+      // Try to scroll to load content
+      try {
+        await page.evaluate(async () => { window.scrollTo(0, document.body.scrollHeight); await new Promise(r => setTimeout(r, 1000)); });
+      } catch {}
+      const screenshot = await page.screenshot({ type: 'png', fullPage: true });
+      const rawText = await page.evaluate(() => document.body.innerText || document.body.textContent || '');
+      await browser.close();
+
+      // Analyze with AI
+      const aiResult = await extractLeadWithAI(screenshot, sourceName, fieldSchema || null);
+      if (!aiResult) {
+        return res.status(500).json({ error: 'AI extraction failed or disabled' });
+      }
+
+      const items = Array.isArray(aiResult) ? aiResult : [aiResult];
+      let inserted = 0; let duplicates = 0;
+      for (const item of items) {
+        const ok = await insertLeadIfNew({ raw: rawText, sourceName, lead: item, userId, extractedData: item, sourceId });
+        if (ok && ok.inserted) inserted++; else duplicates++;
+      }
+
+      return res.json({ success: true, count: inserted, duplicates, sourceId, sample: items[0] });
+    } catch (e) {
+      logger.error(`Agent analyze-url error: ${e.message}`);
+      return res.status(500).json({ error: e.message });
     }
   });
 

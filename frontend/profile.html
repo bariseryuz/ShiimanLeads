@@ -222,7 +222,7 @@
         console.log('🔄 Loading profile...');
         const response = await fetch('/api/profile', {
           method: 'GET',
-          credentials: 'same-origin',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json'
           }
@@ -286,6 +286,7 @@
           headers: {
             'Content-Type': 'application/json'
           },
+          credentials: 'include',
           body: JSON.stringify(formData)
         });
 

@@ -1,17 +1,25 @@
-Local SQLite database files removed from the repository workspace.
+```markdown
+# Repo setup (minimal)
 
-Reason: This project is configured to use a single canonical SQLite database provided by the Railway volume.
-To avoid storing PII (leads, users) in the local workspace, the local DB files were removed.
+1. Copy the example:
+   - cp .env.example .env
+2. Edit `.env` locally:
+   - Fill SMTP_USER, SMTP_PASS, GEMINI_API_KEY, and set SESSION_SECRET (strong random).
+   - Trim trailing spaces (e.g., SMTP_HOST and AUTO_SCRAPE_INTERVAL).
+3. Protect secrets:
+   - Ensure `.env` is in `.gitignore` (it is).
+   - If secrets were committed, rotate them now.
+4. Prepare directories:
+   - mkdir -p data logs output
+5. Install & run:
+   - npm install
+   - npm start
+6. Quick checks:
+   - curl http://localhost:3000/health
+   - Visit /api/test-ai (if GEMINI_API_KEY set) and /test-email (if SMTP configured).
 
-If you need to restore any file manually, check backups outside this repo.
-
-Removed files (deleted from workspace):
-- backend/leads.db
-- backend/sessions.db
-- backend/data/leads.db
-- backend/data/sessions.db
-- backend/data/data.db
-- backend/data/database.db
-
-The app now uses the path from environment variable `SQLITE_DB_PATH`.
-Set `SQLITE_DB_PATH` in your Railway environment to the Railway SQLite volume path.
+Security notes (short)
+- Never commit `.env` with real credentials.
+- Rotate any API keys/passwords that were posted or pushed.
+- Use a secrets manager in production (Railway/Heroku/Cloud).
+```

@@ -1,14 +1,22 @@
-# Dependencies
+# Node / dependencies
 node_modules/
 package-lock.json
+npm-debug.log*
+yarn-error.log*
 
 # Environment
 .env
 .env.local
+.env.development
+.env.production
+.env.*.local
 
 # Database
 *.db
 *.db-journal
+data/
+data/*.db
+data/*.db-journal
 
 # Logs
 logs/
@@ -20,14 +28,21 @@ backend/logs/
 backend/output/
 backend/_RUNTIME_ARCHIVE/
 backend/output/*.jsonl
+npm-debug.log*
+
+# Backend outputs
+output/
+backend/output/
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# IDE
+# IDE / editors
 .vscode/
 .idea/
 *.swp
 *.swo
 
+# Misc
+.cache/
