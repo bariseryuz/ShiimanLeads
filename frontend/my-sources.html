@@ -302,9 +302,9 @@
         <input type="hidden" id="extractTable" value="false">
         
         <div class="form-group">
-          <label class="form-label" for="fieldSchema">Custom Fields (JSON format) - Optional</label>
-          <textarea id="fieldSchema" class="form-input" rows="6" placeholder='{"permit_number":"string","address":"string","company_name":"string","phone":"string","permit_type":"string","date_issued":"string"}'></textarea>
-          <small style="color: var(--gray-600);">Define what fields you want AI to extract from the webpage. Leave empty for auto-detection.</small>
+          <label class="form-label" for="naturalFields">What fields do you want to extract?</label>
+          <textarea id="naturalFields" class="form-input" rows="4" placeholder="Example: permit type, address, company name, phone number, contractor, permit value, issue date"></textarea>
+          <small style="color: var(--gray-600);">Just list the fields you want, separated by commas. AI will extract them automatically.</small>
         </div>
         
         <div class="form-group">
@@ -534,11 +534,15 @@
         const sourceType = source.data.type || 'html';
         document.getElementById('sourceType').value = sourceType;
         
-        // Set fieldSchema for editing
+        // Set fieldSchema for editing - convert back to natural language
         if (source.data.fieldSchema) {
-          document.getElementById('fieldSchema').value = JSON.stringify(source.data.fieldSchema, null, 2);
+          // Convert {"permit_type":"string", "address":"string"} back to "permit type, address"
+          const fields = Object.keys(source.data.fieldSchema).map(key => {
+            return key.replace(/_/g, ' '); // Convert underscores back to spaces
+          }).join(', ');
+          document.getElementById('naturalFields').value = fields;
         } else {
-          document.getElementById('fieldSchema').value = '';
+          document.getElementById('naturalFields').value = '';
         }
         
         // API fields
@@ -802,14 +806,19 @@
       sourceData.extractTable = false;
       
       // Add fieldSchema if provided
-      const fieldSchemaInput = document.getElementById('fieldSchema').value.trim();
-      if (fieldSchemaInput) {
-        try {
-          sourceData.fieldSchema = JSON.parse(fieldSchemaInput);
-        } catch (error) {
-          alert('Invalid JSON in Custom Fields. Please check the format.');
-          return;
-        }
+      const naturalFieldsInput = document.getElementById('naturalFields').value.trim();
+      if (naturalFieldsInput) {
+        // Parse natural language field list into fieldSchema
+        const fields = naturalFieldsInput.split(',').map(f => f.trim()).filter(Boolean);
+        const fieldSchema = {};
+        
+        fields.forEach(field => {
+          // Convert "permit type" to "permit_type" and make it lowercase
+          const fieldKey = field.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+          fieldSchema[fieldKey] = 'string';
+        });
+        
+        sourceData.fieldSchema = fieldSchema;
       }
       
       if (sourceType === 'json') {
