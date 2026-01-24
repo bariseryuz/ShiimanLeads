@@ -1087,6 +1087,35 @@ async function scrapeForUser(userId, userSources) {
           await page.goto(source.url, navOpts);
           logger.info(`Puppeteer loaded page: ${source.url}`);
           
+          // === BLOCK DETECTION ===
+          const pageContent = await page.content();
+          const pageTitle = await page.title();
+          const responseStatus = page.url(); // Check if redirected
+          
+          // Check for blocking signals
+          const blockSignals = {
+            captcha: /captcha|recaptcha|hcaptcha/i.test(pageContent),
+            accessDenied: /access denied|forbidden|not authorized/i.test(pageContent),
+            cloudflare: /cloudflare|cf-ray|checking your browser/i.test(pageContent),
+            rateLimit: /rate limit|too many requests|slow down/i.test(pageContent),
+            blocked: /blocked|banned|suspicious/i.test(pageContent),
+            bot: /bot detected|automated/i.test(pageContent)
+          };
+          
+          const isBlocked = Object.values(blockSignals).some(signal => signal);
+          
+          if (isBlocked) {
+            logger.error(`🚫 BLOCKING DETECTED for ${source.name}!`);
+            logger.error(`Block signals: ${JSON.stringify(blockSignals, null, 2)}`);
+            logger.error(`Page title: ${pageTitle}`);
+            logger.error(`Content preview: ${pageContent.substring(0, 500)}`);
+            logger.error(`⚠️ SOLUTION: Enable residential proxy to bypass blocking`);
+          } else {
+            logger.info(`✅ No blocking detected - page loaded successfully`);
+            logger.info(`Page title: ${pageTitle}`);
+            logger.info(`Content length: ${pageContent.length} characters`);
+          }
+          
           // Handle puppeteerConfig actions (for Phoenix, Scottsdale, etc.)
           if (source.puppeteerConfig && source.puppeteerConfig.actions) {
             logger.info(`Executing ${source.puppeteerConfig.actions.length} puppeteer actions for ${source.name}`);
@@ -1763,6 +1792,33 @@ async function scrapeForUser(userId, userSources) {
           });
         }
         data = axiosResponse.data;
+        
+        // === BLOCK DETECTION FOR AXIOS ===
+        if (typeof data === 'string') {
+          const dataLower = data.toLowerCase();
+          const blockSignals = {
+            captcha: /captcha|recaptcha|hcaptcha/.test(dataLower),
+            accessDenied: /access denied|forbidden|not authorized/.test(dataLower),
+            cloudflare: /cloudflare|cf-ray|checking your browser/.test(dataLower),
+            rateLimit: /rate limit|too many requests|slow down/.test(dataLower),
+            blocked: /blocked|banned|suspicious/.test(dataLower),
+            bot: /bot detected|automated/.test(dataLower),
+            httpError: axiosResponse.status === 403 || axiosResponse.status === 429
+          };
+          
+          const isBlocked = Object.values(blockSignals).some(signal => signal);
+          
+          if (isBlocked) {
+            logger.error(`🚫 BLOCKING DETECTED (axios) for ${source.name}!`);
+            logger.error(`HTTP Status: ${axiosResponse.status}`);
+            logger.error(`Block signals: ${JSON.stringify(blockSignals, null, 2)}`);
+            logger.error(`Response preview: ${data.substring(0, 500)}`);
+            logger.error(`⚠️ SOLUTION: Enable residential proxy to bypass blocking`);
+          } else {
+            logger.info(`✅ No blocking detected (axios)`);
+            logger.info(`HTTP Status: ${axiosResponse.status}, Content length: ${data.length}`);
+          }
+        }
       }
 
       logger.info(`Data type: ${typeof data}, is array: ${Array.isArray(data)}, keys: ${typeof data === 'object' && !Array.isArray(data) ? Object.keys(data).slice(0, 5).join(', ') : 'N/A'}`);
