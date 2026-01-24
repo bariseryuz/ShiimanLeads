@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ['nodejs_20', 'chromium', 'python3', 'gcc', 'gnumake']
+nixPkgs = ['nodejs_20', 'chromium', 'python3', 'gcc', 'gnumake', 'glib', 'nss', 'nspr', 'atk', 'cups', 'dbus', 'libdrm', 'libxkbcommon', 'gtk3', 'pango', 'cairo', 'alsa-lib', 'expat', 'xorg.libX11', 'xorg.libxcb', 'xorg.libXcomposite', 'xorg.libXdamage', 'xorg.libXext', 'xorg.libXfixes', 'xorg.libXrandr']
 
 [phases.install]
 cmds = ['cd backend && npm install --production']
