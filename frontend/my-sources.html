@@ -20,28 +20,33 @@
     }
     
     .header {
-      margin-bottom: 2rem;
+      margin-bottom: 3rem;
       padding-top: 1rem;
     }
     
     .header h1 {
-      color: var(--gray-900);
+      color: white;
       font-size: 2rem;
     }
     
+    .header h1 img {
+      filter: brightness(0) invert(1);
+    }
+    
     .source-card {
-      background: white;
+      background: rgba(0, 0, 0, 0.3);
       border-radius: 12px;
       padding: 1.5rem;
       margin-bottom: 1rem;
-      box-shadow: var(--shadow);
+      box-shadow: none;
       transition: transform 0.2s;
-      border: 1px solid var(--gray-200);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     
     .source-card:hover {
       transform: translateY(-2px);
-      box-shadow: var(--shadow-lg);
+      background: rgba(0, 0, 0, 0.4);
+      border-color: rgba(255, 255, 255, 0.2);
     }
     
     .source-header {
@@ -70,31 +75,48 @@
     }
     
     .btn-small {
-      padding: 0.5rem 1rem;
-      font-size: 0.875rem;
-      border: none;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.2);
       border-radius: 6px;
       cursor: pointer;
       font-weight: 500;
       transition: all 0.2s;
-    }
-    
-    .btn-edit {
-      background: var(--primary);
+      background: rgba(0, 0, 0, 0.4);
       color: white;
     }
     
-    .btn-edit:hover {
-      background: var(--primary-dark);
-    }
-    
-    .btn-delete {
-      background: var(--danger);
-      color: white;
+    .btn-small:hover {
+      background: rgba(0, 0, 0, 0.6);
+      border-color: rgba(255, 255, 255, 0.3);
     }
     
     .btn-delete:hover {
-      background: #dc2626;
+      animation: glitch 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) both infinite;
+      text-shadow: 0.05em 0 0 rgba(255, 0, 0, 0.75),
+        -0.025em -0.05em 0 rgba(0, 255, 0, 0.75),
+        0.025em 0.05em 0 rgba(0, 0, 255, 0.75);
+    }
+    
+    @keyframes glitch {
+      0% {
+        transform: translate(0);
+      }
+      20% {
+        transform: translate(-4px, 4px);
+      }
+      40% {
+        transform: translate(-4px, -4px);
+      }
+      60% {
+        transform: translate(4px, 4px);
+      }
+      80% {
+        transform: translate(4px, -4px);
+      }
+      100% {
+        transform: translate(0);
+      }
     }
     
     .modal {
@@ -255,7 +277,7 @@
       <div>
         <h1><img src="icons/sources.svg" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;"> My Data Sources</h1>
       </div>
-      <div style="display: flex; gap: 1rem;">
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
         <button class="btn btn-secondary" onclick="scrapeNow()" id="scrapeBtn">
           <img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Scrape Now
         </button>
@@ -339,95 +361,6 @@
     </div>
   </div>
 
-  <!-- Field Mappings Modal -->
-  <div id="mappingsModal" class="modal">
-    <div class="modal-content" style="max-width: 800px;">
-      <div class="modal-header">
-        <h2>Configure Field Mappings</h2>
-        <button type="button" class="close-modal" onclick="closeMappingsModal()">×</button>
-      </div>
-      
-      <div id="mappingsContent">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
-          <p style="color: var(--gray-600); margin: 0;">
-            Map the fields from your data source to the standard columns in your leads database.
-          </p>
-          <button type="button" class="btn" onclick="editSourceFromMapping()" style="background: var(--primary); color: white; padding: 0.5rem 1rem; font-size: 0.875rem;">
-            ✏️ Edit Source
-          </button>
-        </div>
-        
-        <div id="sampleDataSection" style="margin-bottom: 2rem; display: none;">
-          <h3 style="font-size: 1rem; margin-bottom: 0.5rem; color: var(--gray-900);">Sample Data Preview</h3>
-          <div id="sampleDataPreview" style="background: var(--gray-100); padding: 1rem; border-radius: 8px; font-family: monospace; font-size: 0.875rem; max-height: 200px; overflow-y: auto;"></div>
-        </div>
-        
-        <div id="mappingsForm" style="display: none;">
-          <h3 style="font-size: 1rem; margin-bottom: 1rem; color: var(--gray-900);">Field Mappings</h3>
-          <div style="display: grid; gap: 1rem;">
-            <div class="mapping-row">
-              <label for="map_permit_number"><strong>Permit Number:</strong></label>
-              <select id="map_permit_number" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_date_issued"><strong>Date Issued:</strong></label>
-              <select id="map_date_issued" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_contractor_name"><strong>Contractor Name:</strong></label>
-              <select id="map_contractor_name" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_owner_name"><strong>Owner Name:</strong></label>
-              <select id="map_owner_name" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_address"><strong>Address:</strong></label>
-              <select id="map_address" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_city"><strong>City:</strong></label>
-              <select id="map_city" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_state"><strong>State:</strong></label>
-              <select id="map_state" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_zip_code"><strong>Zip Code:</strong></label>
-              <select id="map_zip_code" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_phone"><strong>Phone:</strong></label>
-              <select id="map_phone" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_value"><strong>Value/Budget:</strong></label>
-              <select id="map_value" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-            <div class="mapping-row">
-              <label for="map_description"><strong>Description:</strong></label>
-              <select id="map_description" class="form-input"><option value="none">-- Not Available --</option></select>
-            </div>
-          </div>
-        </div>
-        
-        <div id="loadingMappings" style="text-align: center; padding: 2rem;">
-          <img src="icons/loading.svg" style="width: 48px; height: 48px;">
-          <p style="color: var(--gray-600); margin-top: 1rem;">Fetching sample data...</p>
-        </div>
-        
-        <div id="mappingsError" style="display: none; background: #fee; color: #c00; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;"></div>
-        
-        <div style="display: flex; gap: 1rem; margin-top: 2rem;">
-          <button type="button" class="btn btn-primary" onclick="saveMappings()" style="flex: 1;">💾 Save Mappings</button>
-          <button type="button" class="btn" onclick="scrapeFromModal()" style="flex: 1; background: #10b981; color: white;">🔄 Scrape Now</button>
-          <button type="button" class="btn btn-secondary" onclick="closeMappingsModal()" style="flex: 1;">Cancel</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <script>
     let editingSourceId = null;
     let currentMappingSourceId = null;
@@ -482,12 +415,6 @@
                 <div class="source-name">${escapeHtml(source.data.name)}</div>
                 <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
               </div>
-              <div class="source-actions" style="display: flex; gap: 0.5rem;">
-                <button class="btn-small" onclick="editSource(${source.id})" style="background: #8b5cf6;">✏️ Edit Source</button>
-                <button class="btn-small" onclick="openMappingsModal(${source.id})" style="background: #3b82f6;">✏️ Edit Mappings</button>
-                <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}" style="background: #10b981;">🔄 Scrape Now</button>
-                <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}" style="background: #ef4444;">🗑️ Delete</button>
-              </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
               <div><strong>Type:</strong> ${source.data.type === 'json' ? 'REST API' : source.data.useAI ? 'AI Vision' : 'HTML Scraping'}</div>
@@ -500,6 +427,11 @@
               ${source.data.fieldSchema ? `<div><strong>Custom Fields:</strong> ${Object.keys(source.data.fieldSchema).length} fields</div>` : ''}
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
+            </div>
+            <div class="source-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
+              <button class="btn-small" onclick="editSource(${source.id})"><img src="icons/edit.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"> Edit</button>
+              <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/pull.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"> Scrape</button>
+              <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/trash.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"> Delete</button>
             </div>
           </div>
         `).join('');
