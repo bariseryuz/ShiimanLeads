@@ -530,9 +530,9 @@
       
       const params = new URLSearchParams();
       params.set('limit', '500');
-      if (source) params.set('source', source);
-      if (days) params.set('sinceDays', days);
-      if (search) params.set('search', search);
+      if (source) params.set('source_id', source); // Use source_id instead of source name
+      if (days) params.set('days', days);
+      if (search) params.set('q', search);
       
       const tbody = document.querySelector('#leadsTable tbody');
       const thead = document.querySelector('#leadsTableHead');
@@ -552,42 +552,53 @@
           return;
         }
         
-        // Apply filter
-        const filteredLeads = currentNewLeadFilter === 'new' 
-          ? leads.filter(lead => lead.is_new === 1)
-          : leads;
-        
-        if (filteredLeads.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--gray-600);">No ' + (currentNewLeadFilter === 'new' ? 'new ' : '') + 'leads found.</td></tr>';
-          document.getElementById('statusMessage').textContent = '';
-          return;
+        // Determine columns dynamically from actual data
+        if (leads.length > 0) {
+          const firstLead = leads[0];
+          const excludeColumns = ['id', 'user_id', 'created_at', 'hash', 'raw_text', '_source_id', '_source_name'];
+          const columns = Object.keys(firstLead).filter(col => !excludeColumns.includes(col) && !col.startsWith('_'));
+          
+          // Build header
+          thead.innerHTML = '';
+          const headerRow = document.createElement('tr');
+          columns.forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = formatFieldName(col);
+            headerRow.appendChild(th);
+          });
+          // Add metadata columns
+          headerRow.innerHTML += '<th>Source</th><th>Added</th>';
+          thead.appendChild(headerRow);
+          
+          // Build rows
+          leads.forEach(lead => {
+            const tr = document.createElement('tr');
+            columns.forEach(col => {
+              const td = document.createElement('td');
+              const value = lead[col];
+              if (value && col.includes('url')) {
+                td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
+              } else {
+                td.textContent = value || '-';
+              }
+              tr.appendChild(td);
+            });
+            // Add metadata
+            const sourceTd = document.createElement('td');
+            sourceTd.textContent = lead._source_name || '-';
+            tr.appendChild(sourceTd);
+            
+            const dateTd = document.createElement('td');
+            dateTd.style.whiteSpace = 'nowrap';
+            dateTd.textContent = formatDate(lead.created_at || new Date().toISOString());
+            tr.appendChild(dateTd);
+            
+            tbody.appendChild(tr);
+          });
         }
         
-        // Get unique sources from filtered leads
-        const uniqueSources = [...new Set(filteredLeads.map(lead => lead.source))];
-        
-        // Get fieldSchemas for these sources
-        const sourceFieldSchemas = {};
-        for (const sourceName of uniqueSources) {
-          const sourceData = allSourcesData.find(s => s.name === sourceName);
-          if (sourceData && sourceData.fieldSchema) {
-            sourceFieldSchemas[sourceName] = sourceData.fieldSchema;
-          }
-        }
-        
-        // If we have single source selected and it has fieldSchema, use dynamic columns
-        if (source && sourceFieldSchemas[source]) {
-          generateDynamicColumns(sourceFieldSchemas[source], filteredLeads, source);
-        } else if (uniqueSources.length === 1 && sourceFieldSchemas[uniqueSources[0]]) {
-          // Single source in results with fieldSchema
-          generateDynamicColumns(sourceFieldSchemas[uniqueSources[0]], filteredLeads, uniqueSources[0]);
-        } else {
-          // Multiple sources or no fieldSchema - use default columns
-          generateDefaultColumns(filteredLeads);
-        }
-        
-        const filterText = currentNewLeadFilter === 'new' ? ' new' : '';
-        document.getElementById('statusMessage').textContent = `✓ Showing ${filteredLeads.length}${filterText} lead(s)`;
+        document.getElementById('statusMessage').textContent = `✓ Showing ${leads.length} lead(s)`;
+        document.getElementById('totalLeads').textContent = leads.length;
         
       } catch (error) {
         console.error('Failed to load leads:', error);

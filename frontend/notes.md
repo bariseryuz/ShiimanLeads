@@ -76,3 +76,14 @@ created db-patch and set them all to this
 
 fixed mismatch on website types
 
+26.01.2026 
+
+-Added ai thinking level to .env
+
+-Puppeteer needs proxy setting (we don't have it)
+-Axios needs an agent to tunnel the request through proxy.
+-Checked we have dispatcher that decides what to start with.
+-We need rotating IPs that changes with every other request.
+-I want to see where the screenshots are located.
+
+

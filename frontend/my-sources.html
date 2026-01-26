@@ -250,7 +250,7 @@
     </div>
   </div>
 
-  <div class="sources-container">
+  <div class="sources-container" id="sourcesContainer">
     <div class="header">
       <div>
         <h1><img src="icons/sources.svg" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;"> My Data Sources</h1>
@@ -305,6 +305,14 @@
           <label class="form-label" for="naturalFields">What fields do you want to extract?</label>
           <textarea id="naturalFields" class="form-input" rows="4" placeholder="Example: permit type, address, company name, phone number, contractor, permit value, issue date"></textarea>
           <small style="color: var(--gray-600);">Just list the fields you want, separated by commas. AI will extract them automatically.</small>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="useProxy" checked style="width: auto; cursor: pointer;">
+            <span>Use Residential Proxy</span>
+          </label>
+          <small style="color: var(--gray-600);">Enable proxy to avoid blocking. Disable if the website blocks residential IPs.</small>
         </div>
         
         <div class="form-group">
@@ -452,10 +460,6 @@
       // Field schema is always visible in simplified mode
     }
 
-    // Load sources and user info on page load
-    loadSources();
-    initializeUserInfo();
-
     async function loadSources() {
       try {
         const response = await fetch('/api/my-sources');
@@ -481,8 +485,8 @@
               <div class="source-actions" style="display: flex; gap: 0.5rem;">
                 <button class="btn-small" onclick="editSource(${source.id})" style="background: #8b5cf6;">✏️ Edit Source</button>
                 <button class="btn-small" onclick="openMappingsModal(${source.id})" style="background: #3b82f6;">✏️ Edit Mappings</button>
-                <button class="btn-small" onclick="scrapeSource(${source.id}, '${escapeHtml(source.data.name)}')" style="background: #10b981;">🔄 Scrape Now</button>
-                <button class="btn-small btn-delete" onclick="deleteSource(${source.id}, '${escapeHtml(source.data.name)}')" style="background: #ef4444;">🗑️ Delete</button>
+                <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}" style="background: #10b981;">🔄 Scrape Now</button>
+                <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}" style="background: #ef4444;">🗑️ Delete</button>
               </div>
             </div>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
@@ -492,6 +496,7 @@
               ${source.data.type !== 'json' && source.data.selector ? `<div><strong>Selector:</strong> ${escapeHtml(source.data.selector)}</div>` : ''}
               ${source.data.type !== 'json' && !source.data.selector && source.data.useAI ? '<div><strong>Mode:</strong> Full-Page Screenshot</div>' : ''}
               ${source.data.usePuppeteer ? '<div><strong>Browser:</strong> ✓ Puppeteer</div>' : ''}
+              <div><strong>Proxy:</strong> ${source.data.useProxy !== false ? '🌐 Enabled' : '⚠️ Disabled'}</div>
               ${source.data.fieldSchema ? `<div><strong>Custom Fields:</strong> ${Object.keys(source.data.fieldSchema).length} fields</div>` : ''}
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
@@ -557,6 +562,9 @@
         document.getElementById('excludeKeywords').value = source.data.excludeWords?.join(', ') || '';
         document.getElementById('displayColumns').value = source.data.displayColumns?.join(', ') || '';
         
+        // Set proxy checkbox (default to true if not specified)
+        document.getElementById('useProxy').checked = source.data.useProxy !== false;
+        
         document.getElementById('sourceModal').classList.add('show');
       } catch (error) {
         console.error('Error loading source:', error);
@@ -565,24 +573,35 @@
     }
 
     async function deleteSource(id, name) {
+      console.log('deleteSource called with id:', id, 'name:', name);
+      
       if (!confirm(`Are you sure you want to delete "${name}"?\n\nThis will permanently remove the source configuration. Your scraped leads will remain.`)) {
+        console.log('User cancelled delete');
         return;
       }
       
+      console.log('Making DELETE request to /api/sources/' + id);
+      
       try {
         const response = await fetch(`/api/sources/${id}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          credentials: 'include'
         });
         
+        console.log('Delete response status:', response.status);
+        
         if (response.ok) {
+          console.log('Delete successful');
           alert('✅ Source deleted successfully');
           loadSources();
         } else {
-          alert('❌ Failed to delete source');
+          const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+          console.error('Delete failed:', error);
+          alert('❌ Failed to delete source: ' + (error.error || 'Unknown error'));
         }
       } catch (error) {
         console.error('Error deleting source:', error);
-        alert('❌ Failed to delete source');
+        alert('❌ Failed to delete source: ' + error.message);
       }
     }
 
@@ -805,6 +824,9 @@
       sourceData.usePuppeteer = true;
       sourceData.extractTable = false;
       
+      // Add proxy configuration
+      sourceData.useProxy = document.getElementById('useProxy').checked;
+      
       // Add fieldSchema if provided
       const naturalFieldsInput = document.getElementById('naturalFields').value.trim();
       if (naturalFieldsInput) {
@@ -815,7 +837,8 @@
         fields.forEach(field => {
           // Convert "permit type" to "permit_type" and make it lowercase
           const fieldKey = field.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-          fieldSchema[fieldKey] = 'string';
+          // Use the original field name as the description for AI
+          fieldSchema[fieldKey] = field;
         });
         
         sourceData.fieldSchema = fieldSchema;
@@ -1013,6 +1036,48 @@
     if (document.getElementById('dropdownUserEmail')) {
       document.getElementById('dropdownUserEmail').textContent = userEmail;
     }
+
+    // Initialize the page after DOM is loaded
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initPage);
+    } else {
+      initPage();
+    }
+
+    async function initPage() {
+      console.log('initPage called');
+      await loadSources();
+      initializeUserInfo();
+      
+      // Set up event delegation for all action buttons
+      const sourcesContainer = document.getElementById('sourcesContainer');
+      console.log('sourcesContainer found:', !!sourcesContainer);
+      
+      if (sourcesContainer) {
+        sourcesContainer.addEventListener('click', async (e) => {
+          console.log('Click detected on sourcesContainer');
+          const button = e.target.closest('[data-action]');
+          console.log('Button found:', button);
+          
+          if (!button) return;
+          
+          const action = button.dataset.action;
+          const id = parseInt(button.dataset.id);
+          const name = button.dataset.name;
+          
+          console.log('Button clicked:', action, 'for source:', id, name);
+          
+          if (action === 'delete') {
+            await deleteSource(id, name);
+          } else if (action === 'scrape') {
+            await scrapeSource(id, name);
+          }
+        });
+        console.log('Event listener attached to sourcesContainer');
+      } else {
+        console.error('sourcesContainer NOT FOUND - buttons will not work!');
+      }
+    }
   </script>
 
   <!-- Profile Modal -->
@@ -1072,5 +1137,6 @@
       <button onclick="hideProfile()" class="btn btn-secondary" style="width: 100%;">Close</button>
     </div>
   </div>
+
 </body>
 </html>

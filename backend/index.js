@@ -13,6 +13,35 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const jp = require('jsonpath');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const { ProxyAgent } = require('undici');
+
+// Proxy Configuration
+const PROXY_ENABLED = process.env.PROXY_ENABLED === 'true';
+const PROXY_URL = process.env.PROXY_URL || 'http://Sk3vydHQSz93OeDz:DQeASUiiQpObLVvO@geo.iproyal.com:12321';
+let proxyAgent = null;
+
+if (PROXY_ENABLED) {
+  proxyAgent = new ProxyAgent(PROXY_URL);
+  console.log(`✅ Proxy enabled: ${PROXY_URL.replace(/:\/\/.*@/, '://***@')}`);
+} else {
+  console.log('ℹ️ Proxy disabled - set PROXY_ENABLED=true in .env to enable');
+}
+
+// Axios proxy configuration - use HTTPS for secure tunneling
+const axiosProxyConfig = PROXY_ENABLED ? {
+  proxy: {
+    protocol: 'https',
+    host: 'geo.iproyal.com',
+    port: 12321,
+    auth: {
+      username: 'Sk3vydHQSz93OeDz',
+      password: 'DQeASUiiQpObLVvO'
+    }
+  },
+  httpsAgent: new (require('https').Agent)({
+    rejectUnauthorized: false
+  })
+} : {};
 
 // Initialize Google Gemini client
 let geminiModel = null;
@@ -29,13 +58,13 @@ const AI_THINKING_LEVEL = String(process.env.AI_THINKING_LEVEL || 'low').toLower
 function buildGenConfig() {
   const base = { responseMimeType: 'application/json' };
   if (AI_THINKING_LEVEL === 'low') {
-    return { ...base, temperature: 0.2, topP: 0.8, maxOutputTokens: 1024 };
+    return { ...base, temperature: 0.2, topP: 0.8, maxOutputTokens: 8192 };
   }
   if (AI_THINKING_LEVEL === 'medium') {
-    return { ...base, temperature: 0.5, topP: 0.9, maxOutputTokens: 2048 };
+    return { ...base, temperature: 0.5, topP: 0.9, maxOutputTokens: 12288 };
   }
   // high
-  return { ...base, temperature: 0.7, topP: 0.95, maxOutputTokens: 3072 };
+  return { ...base, temperature: 0.7, topP: 0.95, maxOutputTokens: 16384 };
 }
 
 // === LOGGING ===
@@ -167,7 +196,7 @@ function getDefaultColumnsForSource(source) {
 }
 
 // === FIELD VALIDATION ===
-function validateExtractedFields(data, sourceName) {
+function validateExtractedFields(data, sourceName, fieldSchema = null) {
   // If data is an array, validate the first item as a sample
   const sampleData = Array.isArray(data) ? (data[0] || {}) : data;
   
@@ -177,72 +206,37 @@ function validateExtractedFields(data, sourceName) {
     if (keys.some(k => !isNaN(k))) {
       const firstKey = keys.find(k => !isNaN(k));
       if (firstKey && data[firstKey]) {
-        return validateExtractedFields(data[firstKey], sourceName);
+        return validateExtractedFields(data[firstKey], sourceName, fieldSchema);
       }
     }
   }
   
   const validations = {
-    hasRequiredFields: false,
-    validPhone: true,
-    validValue: true,
-    validAddress: true,
+    hasData: false,
     confidence: 0,
     issues: []
   };
 
-  // Check if at least one key field exists
-  if (sampleData.permit_number || sampleData.address || sampleData.company_name || sampleData.phone) {
-    validations.hasRequiredFields = true;
-    validations.confidence += 30;
+  // Count how many non-null fields we have
+  const dataKeys = Object.keys(sampleData).filter(k => !k.startsWith('_'));
+  const nonNullFields = dataKeys.filter(k => 
+    sampleData[k] !== null && 
+    sampleData[k] !== 'null' && 
+    sampleData[k] !== undefined &&
+    sampleData[k] !== ''
+  );
+  
+  // If we have any data at all, consider it valid
+  if (nonNullFields.length > 0) {
+    validations.hasData = true;
+    // Base confidence on percentage of fields filled
+    const fillPercentage = (nonNullFields.length / Math.max(dataKeys.length, 1)) * 100;
+    validations.confidence = Math.min(Math.round(fillPercentage), 100);
   } else {
-    validations.issues.push('Missing all key fields (permit_number, address, company_name, phone)');
+    validations.issues.push(`No data extracted - all fields are null or empty`);
   }
 
-  // Validate phone format (if present)
-  if (sampleData.phone && sampleData.phone !== null && sampleData.phone !== 'null') {
-    const phoneRegex = /\d{3}[-.]?\d{3}[-.]?\d{4}/;
-    if (phoneRegex.test(sampleData.phone)) {
-      validations.confidence += 20;
-    } else {
-      validations.validPhone = false;
-      validations.issues.push(`Invalid phone format: ${sampleData.phone}`);
-    }
-  }
-
-  // Validate value field (should be dollar amount, not phone)
-  if (sampleData.value && sampleData.value !== null && sampleData.value !== 'null') {
-    const isDollar = /\$|\d+[,.]?\d*/.test(sampleData.value);
-    const isPhone = /\d{3}[-.]?\d{3}[-.]?\d{4}/.test(sampleData.value);
-    
-    if (isDollar && !isPhone) {
-      validations.confidence += 20;
-    } else if (isPhone) {
-      validations.validValue = false;
-      validations.issues.push(`Value field contains phone number: ${sampleData.value}`);
-      validations.confidence -= 30;
-    }
-  }
-
-  // Validate address (should have numbers and street words)
-  if (sampleData.address && sampleData.address !== null && sampleData.address !== 'null') {
-    const hasNumber = /\d+/.test(sampleData.address);
-    const hasStreetWord = /(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|way|lane|ln|ct|court)/i.test(sampleData.address);
-    
-    if (hasNumber && hasStreetWord) {
-      validations.confidence += 30;
-    } else if (hasNumber || sampleData.address.length > 10) {
-      validations.confidence += 15;
-    } else {
-      validations.validAddress = false;
-      validations.issues.push(`Suspicious address format: ${sampleData.address}`);
-    }
-  }
-
-  const isValid = validations.hasRequiredFields && 
-                 validations.validPhone && 
-                 validations.validValue && 
-                 validations.confidence >= 40;
+  const isValid = validations.hasData && validations.confidence >= 20;
 
   if (!isValid) {
     logger.warn(`⚠️ Validation failed for ${sourceName}: ${validations.issues.join(', ')} (confidence: ${validations.confidence}%)`);
@@ -263,69 +257,102 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
     let prompt = '';
     let content = [];
 
-    // Build field schema prompt if provided
-    const schemaFields = fieldSchema || {
-      permit_number: 'Building permit number or project ID',
-      address: 'Full street address of the construction/project site',
-      phone: 'Phone number for contact (format: XXX-XXX-XXXX)',
-      email: 'Email address for contact',
-      company_name: 'Company or organization name',
-      contractor_name: 'Contractor or builder name',
-      value: 'Project budget/cost/value as dollar amount (e.g., "$1,500,000")',
-      description: 'Brief description of the project type, purpose, or scope',
-      page_url: 'Any specific project URL found'
-    };
+    // Build field schema prompt - MUST be provided, no defaults
+    if (!fieldSchema || Object.keys(fieldSchema).length === 0) {
+      logger.error(`❌ No fieldSchema provided for ${sourceName} - cannot extract without knowing what fields to look for`);
+      return null;
+    }
 
+    const schemaFields = fieldSchema;
     const fieldDescriptions = Object.entries(schemaFields)
-      .map(([key, desc]) => `- ${key}: ${desc} (string or null)`)
-      .join('\n');
+      .map(([key, desc]) => `"${key}"`)
+      .join(', ');
 
     if (isScreenshot) {
       // Vision-based extraction
-      prompt = `You are analyzing a screenshot of a construction/building permit webpage or listing. 
+      prompt = `Extract data from this screenshot into JSON format.
 
-CRITICAL INSTRUCTIONS:
-1. Extract EVERY SINGLE permit/record visible on this page
-2. Look carefully at tables, lists, cards, or any structured data
-3. Read column headers to understand what each field represents
-4. Each row in a table = one complete permit record
-
-Extract each permit with these fields:
+REQUIRED JSON FIELDS (use EXACTLY these keys, no modifications):
 ${fieldDescriptions}
 
-EXTRACTION RULES:
-- Multiple permits → Return as array: [{"permit_number": "ABC123", "address": "123 Main St", ...}, {"permit_number": "DEF456", ...}]
-- Single permit → Return as object: {"permit_number": "ABC123", "address": "123 Main St", ...}
-- Read table cells carefully - match data to correct column headers
-- For addresses: Include street number, street name, city, state, zip if visible
-- For permit_number: Look for record ID, permit #, job #, or similar identifier
-- For company_name/contractor_name: Look for business names, contractor fields
-- For phone: Format as XXX-XXX-XXXX or as shown (NEVER put phone in value field)
-- For construction_cost/value: Look for dollar amounts like "$500,000" (NEVER put phone here)
-- For date_issued: Look for issue date, filed date, or similar
-- For permit_type: Look for type, description, or work description
-- Use null for truly missing fields (don't guess)
+CRITICAL RULES:
+✅ CORRECT field names: ${fieldDescriptions}
+❌ WRONG - DO NOT concatenate or modify field names
+❌ DO NOT add descriptions to field names
+❌ DO NOT use underscores to join field name + description
 
-CRITICAL OUTPUT REQUIREMENT:
-⚠️ YOUR ENTIRE RESPONSE MUST BE VALID JSON ONLY - NO TEXT BEFORE OR AFTER
-⚠️ DO NOT write "Based on the screenshot" or any explanations
-⚠️ DO NOT use markdown code blocks
-⚠️ START your response with { or [ and END with } or ]
-⚠️ NOTHING ELSE - ONLY THE JSON DATA
+EXAMPLE OF CORRECT OUTPUT:
+[
+  {
+    "company_name": "ABC Company",
+    "website": "https://example.com",
+    "phone": "555-1234"
+  }
+]
 
-${isRetry ? '⚠️ RETRY: Previous attempt had errors. Be MORE CAREFUL with field matching. Double-check each column header and data cell.' : ''}`;
+EXAMPLE OF WRONG OUTPUT (DO NOT DO THIS):
+[
+  {
+    "company_name_name_of_the_real_estate_company": "ABC Company",
+    "website_company_website_url": "https://example.com"
+  }
+]
 
-      // Prepare image data
+EXTRACTION INSTRUCTIONS:
+1. Extract ALL visible records from the screenshot (tables, lists, cards)
+2. If you see 25 records, extract ALL 25 - do not stop early
+3. For each record, use ONLY the field names listed above
+4. Put null for missing values
+5. Return a JSON array if multiple records, JSON object if single record
+
+OUTPUT REQUIREMENTS:
+⚠️ Return ONLY valid JSON - no explanations, no markdown, no text
+⚠️ Start with [ or {, end with ] or }
+⚠️ Use the EXACT field names shown above - do not modify them
+⚠️ NO CODE BLOCKS (no triple backticks)
+⚠️ NO COMMENTS OR NOTES
+
+${isRetry ? '\n⚠️ RETRY: Previous extraction failed validation. Double-check field assignments. Read table headers carefully!' : ''}`;
+
+      // Prepare image data - MUST be Base64 encoded for Gemini Vision API
       let imageData;
       if (Buffer.isBuffer(input)) {
+        logger.info(`✅ Input is Buffer, converting to Base64 (${input.length} bytes)`);
         imageData = {
           inlineData: {
             data: input.toString('base64'),
             mimeType: 'image/png'
           }
         };
-      } else {
+      } else if (input && typeof input === 'object' && input.type === 'Buffer' && Array.isArray(input.data)) {
+        // Handle serialized Buffer object { type: 'Buffer', data: [...] }
+        logger.info(`✅ Input is serialized Buffer, converting to Base64 (${input.data.length} bytes)`);
+        const buffer = Buffer.from(input.data);
+        imageData = {
+          inlineData: {
+            data: buffer.toString('base64'),
+            mimeType: 'image/png'
+          }
+        };
+      } else if (input && typeof input === 'object' && input.inlineData) {
+        // Already in correct format
+        logger.info(`✅ Input already in inlineData format`);
         imageData = input;
+      } else {
+        // Try to convert whatever we got to Buffer
+        logger.warn(`⚠️ Unexpected input type: ${typeof input}, attempting conversion`);
+        try {
+          const buffer = Buffer.from(input);
+          imageData = {
+            inlineData: {
+              data: buffer.toString('base64'),
+              mimeType: 'image/png'
+            }
+          };
+        } catch (e) {
+          logger.error(`❌ Failed to convert input to Base64: ${e.message}`);
+          throw new Error('Screenshot must be a Buffer or Base64-encoded image');
+        }
       }
 
       content = [{ role: 'user', parts: [{ text: prompt }, imageData] }];
@@ -355,6 +382,12 @@ ${truncatedText}`;
     const response = await result.response;
     const text = response.text();
     
+    logger.info(`📝 Raw AI response length: ${text.length} chars`);
+    logger.info(`📝 Raw AI response (first 1000 chars): ${text.substring(0, 1000)}`);
+    if (text.length > 1000) {
+      logger.info(`📝 Raw AI response (last 500 chars): ...${text.substring(text.length - 500)}`);
+    }
+    
     // Clean up response (remove markdown and extract JSON)
     let cleanedText = text.trim();
     
@@ -383,9 +416,33 @@ ${truncatedText}`;
     // Final cleanup - remove any remaining non-JSON text
     cleanedText = cleanedText.trim();
     
+    logger.info(`🧹 Cleaned JSON length: ${cleanedText.length} chars`);
+    logger.info(`🧹 Cleaned JSON (first 1000 chars): ${cleanedText.substring(0, 1000)}`);
+    
+    // Try to fix incomplete JSON arrays/objects
+    if (cleanedText.startsWith('[') && !cleanedText.endsWith(']')) {
+      logger.warn(`⚠️ Incomplete JSON array detected, attempting to close it`);
+      // Count open braces to close properly
+      let openBraces = 0;
+      for (const char of cleanedText) {
+        if (char === '{') openBraces++;
+        if (char === '}') openBraces--;
+      }
+      // Close any open objects
+      while (openBraces > 0) {
+        cleanedText += '}';
+        openBraces--;
+      }
+      // Close the array
+      cleanedText += ']';
+      logger.info(`🔧 Fixed JSON: ${cleanedText.substring(cleanedText.length - 100)}`);
+    }
+    
     // Safer JSON parse: fix common issues like single quotes and trailing commas
     const safeParse = (txt) => {
-      try { return JSON.parse(txt); } catch {}
+      try { return JSON.parse(txt); } catch (e) {
+        logger.warn(`❌ JSON.parse failed: ${e.message}`);
+      }
       try {
         let t = txt;
         // Replace single quotes around keys/strings with double quotes carefully
@@ -393,14 +450,17 @@ ${truncatedText}`;
         t = t.replace(/:\s*'([^']*)'/g, ': "$1"');
         // Remove trailing commas before closing braces/brackets
         t = t.replace(/,\s*(\}|\])/g, '$1');
+        logger.info(`🔧 Trying to parse with fixes applied`);
         return JSON.parse(t);
-      } catch {}
+      } catch (e2) {
+        logger.error(`❌ Safe parse also failed: ${e2.message}`);
+      }
       throw new Error('Invalid JSON returned by AI');
     };
     const extracted = safeParse(cleanedText);
     
     // Validate extracted data
-    const validation = validateExtractedFields(extracted, sourceName);
+    const validation = validateExtractedFields(extracted, sourceName, fieldSchema);
     
     if (validation.isValid) {
       logger.info(`✨ AI extracted lead from ${sourceName} (confidence: ${validation.confidence}%) ${isScreenshot ? '[VISION]' : '[TEXT]'}`);
@@ -426,7 +486,7 @@ async function getWithRetry(url, options = {}, retries = 3, baseDelayMs = 500) {
   let lastErr;
   const method = (options.method || 'GET').toUpperCase();
   // Build axios config for request() - honors method/data/options
-  const axiosConfig = Object.assign({}, options, { url, method });
+  const axiosConfig = Object.assign({}, axiosProxyConfig, options, { url, method });
   
   while (attempt <= retries) {
     try {
@@ -450,6 +510,7 @@ function dbGet(sql, params = []) {
 
 function dbRun(sql, params = []) {
   const res = db.prepare(sql).run(...params);
+  
   // Normalize better-sqlite3 response for compatibility
   return Promise.resolve({ 
     changes: res.changes, 
@@ -481,14 +542,9 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
     return false;
   }
 
-  // Compute short md5 hash for seen table and canonical SHA256 for canonical dedupe
-  const hashInput = `${raw}${hashSalt}${sourceId || sourceName}`;
+  // Compute hash for deduplication
+  const hashInput = `${raw}${hashSalt}${sourceId}`;
   const hash = crypto.createHash('md5').update(hashInput).digest('hex');
-
-  const normalize = (v) => (v === null || v === undefined) ? '' : String(v).trim().toLowerCase().replace(/\s+/g, ' ');
-  const canonicalParts = [normalize(lead?.permit_number), normalize(lead?.address), normalize(lead?.value)];
-  const canonicalInput = canonicalParts.join('|');
-  const canonical_hash = crypto.createHash('sha256').update(canonicalInput).digest('hex');
 
   try {
     const tx = db.transaction(() => {
@@ -499,78 +555,35 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
       // Insert into seen table
       db.prepare(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`).run(hash, userId);
 
-      // Insert into canonical leads table (use INSERT OR IGNORE to handle races)
-      const leadValues = {
-        user_id: userId,
-        source_id: sourceId,
-        hash: hash,
-        canonical_hash: canonical_hash,
-        raw_text: raw,
-        permit_number: lead?.permit_number || null,
-        address: lead?.address || null,
-        value: lead?.value || null,
-        description: lead?.description || null,
-        source: sourceName || null,
-        date_issued: lead?.date_issued || null,
-        phone: lead?.phone || null,
-        page_url: lead?.page_url || null,
-        application_date: lead?.application_date || null,
-        owner_name: lead?.owner_name || null,
-        contractor_name: lead?.contractor_name || null,
-        contractor_address: lead?.contractor_address || null,
-        contractor_city: lead?.contractor_city || null,
-        contractor_state: lead?.contractor_state || null,
-        contractor_zip: lead?.contractor_zip || null,
-        contractor_phone: lead?.contractor_phone || null,
-        square_footage: lead?.square_footage || null,
-        units: lead?.units || null,
-        floors: lead?.floors || null,
-        parcel_number: lead?.parcel_number || null,
-        permit_type: lead?.permit_type || null,
-        permit_subtype: lead?.permit_subtype || null,
-        work_description: lead?.work_description || null,
-        purpose: lead?.purpose || null,
-        city: lead?.city || null,
-        state: lead?.state || null,
-        zip_code: lead?.zip_code || null,
-        latitude: lead?.latitude || null,
-        longitude: lead?.longitude || null,
-        status: lead?.status || null,
-        record_type: lead?.record_type || null,
-        project_name: lead?.project_name || null,
-        extracted_data: extractedData ? JSON.stringify(extractedData) : null,
-        ai_confidence: (extractedData && extractedData._aiConfidence) ? extractedData._aiConfidence : (lead && lead._aiConfidence) ? lead._aiConfidence : null,
-        ai_validation_issues: (extractedData && extractedData._validationIssues) ? JSON.stringify(extractedData._validationIssues) : (lead && lead._validationIssues) ? JSON.stringify(lead._validationIssues) : null,
-        ai_validated: ((extractedData && !extractedData._validationIssues) || (lead && !lead._validationIssues)) ? 1 : 0
-      };
-
-      const cols = Object.keys(leadValues).join(', ');
-      const placeholders = Object.keys(leadValues).map(() => '?').join(', ');
-      const insertSQL = `INSERT OR IGNORE INTO leads (${cols}) VALUES (${placeholders})`;
-      const res = db.prepare(insertSQL).run(...Object.values(leadValues));
-
-      // If no row inserted (duplicate canonical), bail
-      if (res.changes === 0) {
-        return { inserted: false, reason: 'duplicate' };
-      }
-
-      const leadId = res.lastInsertRowid;
-
-      // Insert into source-specific table
+      // Insert ONLY into source-specific table (no generic leads table)
       const insertedSource = insertIntoSourceTableSync(sourceId, userId, raw, lead, extractedData);
+
+      if (!insertedSource) {
+        return { inserted: false, reason: 'source_insert_failed' };
+      }
 
       // Create outbox row for JSONL persistence
       const jobId = crypto.randomBytes(8).toString('hex');
-      const payload = JSON.stringify({ canonical_hash, sourceName, userId, data: extractedData || lead, job_id: jobId, ts: new Date().toISOString() });
+      const payload = JSON.stringify({ 
+        hash, 
+        sourceName, 
+        userId, 
+        sourceId,
+        data: extractedData || lead, 
+        job_id: jobId, 
+        ts: new Date().toISOString() 
+      });
       db.prepare(`INSERT INTO outbox (source_id, job_id, event_type, payload_json) VALUES (?, ?, ?, ?)`)
         .run(sourceId, jobId, 'append-jsonl', payload);
 
-      return { inserted: true, leadId };
+      return { inserted: true };
     });
 
     const result = tx();
     if (result.inserted) {
-      logger.info(`NEW LEAD → ${lead?.permit_number || 'N/A'} | ${lead?.address || 'N/A'} | ${lead?.value || 'N/A'}`);
+      // Log first few fields from extractedData for visibility
+      const preview = extractedData ? Object.entries(extractedData).slice(0, 3).map(([k,v]) => `${k}=${v}`).join(' | ') : 'N/A';
+      logger.info(`NEW LEAD → ${preview}`);
       return true;
     }
 
@@ -592,6 +605,26 @@ function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedDat
   }
   
   try {
+    // Check if table exists, create if missing
+    const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(tableName);
+    if (!tableExists) {
+      logger.warn(`Table ${tableName} doesn't exist - creating it now with source's fieldSchema`);
+      
+      // Fetch the source config to get fieldSchema
+      const sourceRow = db.prepare(`SELECT source_data FROM user_sources WHERE id = ?`).get(sourceId);
+      let fieldSchema = null;
+      if (sourceRow) {
+        try {
+          const sourceConfig = JSON.parse(sourceRow.source_data);
+          fieldSchema = sourceConfig.fieldSchema || null;
+        } catch (parseErr) {
+          logger.warn(`Failed to parse source config for source_${sourceId}: ${parseErr.message}`);
+        }
+      }
+      
+      createSourceTable(sourceId, fieldSchema);
+    }
+    
     // Get table columns to determine available fields
     const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all();
     const columns = tableInfo.map(col => col.name);
@@ -1063,9 +1096,26 @@ async function scrapeForUser(userId, userSources) {
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-blink-features=AutomationControlled',
-              '--disable-dev-shm-usage'
+              '--disable-dev-shm-usage',
+              '--ignore-certificate-errors',
+              '--ignore-certificate-errors-spki-list'
             ]
           };
+          
+          // Add proxy if enabled (extract host:port only, no protocol or credentials)
+          // Allow per-source proxy override with useProxy flag (defaults to true)
+          const shouldUseProxy = PROXY_ENABLED && (source.useProxy !== false);
+          if (shouldUseProxy) {
+            const proxyMatch = PROXY_URL.match(/@?([^@\/]+:\d+)/);
+            if (proxyMatch) {
+              const proxyHostPort = proxyMatch[1]; // geo.iproyal.com:12321
+              launchOptions.args.push(`--proxy-server=http://${proxyHostPort}`);
+              launchOptions.args.push('--proxy-bypass-list=<-loopback>');
+              logger.info(`🌐 Puppeteer using proxy: http://${proxyHostPort}`);
+            }
+          } else if (PROXY_ENABLED && source.useProxy === false) {
+            logger.info(`⚠️ Proxy disabled for this source (source.useProxy=false)`);
+          }
           
           // Use custom executable path if provided (for Railway/Nixpacks)
           if (process.env.PUPPETEER_EXECUTABLE_PATH) {
@@ -1076,9 +1126,42 @@ async function scrapeForUser(userId, userSources) {
           browser = await puppeteer.launch(launchOptions);
           page = await browser.newPage();
           
-          // Anti-detection
+          // Set viewport to ultra-wide resolution to capture wide tables
+          await page.setViewport({ width: 2560, height: 1440 });
+          
+          // Authenticate proxy if needed (only if using proxy)
+          if (shouldUseProxy && PROXY_URL.includes('@')) {
+            const proxyAuth = PROXY_URL.match(/:\/\/(.+):(.+)@/);
+            if (proxyAuth) {
+              await page.authenticate({
+                username: proxyAuth[1],
+                password: proxyAuth[2]
+              });
+              logger.info('🔐 Proxy authentication configured');
+            }
+          }
+          
+          // Advanced anti-detection stealth
           await page.evaluateOnNewDocument(() => {
+            // Mask webdriver property
             Object.defineProperty(navigator, 'webdriver', { get: () => false });
+            
+            // Override plugins to look like real Chrome
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            
+            // Override languages
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            
+            // Override permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+              parameters.name === 'notifications' ?
+                Promise.resolve({ state: Notification.permission }) :
+                originalQuery(parameters)
+            );
+            
+            // Chrome runtime
+            window.chrome = { runtime: {} };
           });
           
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
@@ -1092,11 +1175,15 @@ async function scrapeForUser(userId, userSources) {
           const pageTitle = await page.title();
           const responseStatus = page.url(); // Check if redirected
           
+          // Check for actual Cloudflare challenge page (very specific patterns)
+          const cfChallenge = /(checking your browser|enable javascript and cookies to continue|cloudflare ray id.*challenge|cf-browser-verification)/i.test(pageContent);
+          const isSmallPage = pageContent.length < 50000;
+          
           // Check for blocking signals
           const blockSignals = {
             captcha: /captcha|recaptcha|hcaptcha/i.test(pageContent),
             accessDenied: /access denied|forbidden|not authorized/i.test(pageContent),
-            cloudflare: /cloudflare|cf-ray|checking your browser/i.test(pageContent),
+            cloudflare: cfChallenge && isSmallPage,
             rateLimit: /rate limit|too many requests|slow down/i.test(pageContent),
             blocked: /blocked|banned|suspicious/i.test(pageContent),
             bot: /bot detected|automated/i.test(pageContent)
@@ -1104,12 +1191,15 @@ async function scrapeForUser(userId, userSources) {
           
           const isBlocked = Object.values(blockSignals).some(signal => signal);
           
-          if (isBlocked) {
+          if (isBlocked && !PROXY_ENABLED) {
             logger.error(`🚫 BLOCKING DETECTED for ${source.name}!`);
             logger.error(`Block signals: ${JSON.stringify(blockSignals, null, 2)}`);
             logger.error(`Page title: ${pageTitle}`);
             logger.error(`Content preview: ${pageContent.substring(0, 500)}`);
             logger.error(`⚠️ SOLUTION: Enable residential proxy to bypass blocking`);
+          } else if (isBlocked && PROXY_ENABLED) {
+            logger.warn(`⚠️ Possible blocking detected but proxy is enabled - continuing anyway`);
+            logger.info(`Block signals: ${JSON.stringify(blockSignals, null, 2)}`);
           } else {
             logger.info(`✅ No blocking detected - page loaded successfully`);
             logger.info(`Page title: ${pageTitle}`);
@@ -1158,8 +1248,19 @@ async function scrapeForUser(userId, userSources) {
             logger.info(`Completed puppeteer actions for ${source.name}`);
           }
           
-          // Wait for page to render
-          await new Promise(resolve => setTimeout(resolve, 5000));
+          // Wait for page to render - increased timeout for data portals
+          logger.info(`Waiting for page content to load...`);
+          
+          // Wait for network to be idle (better for dynamic content)
+          try {
+            await page.waitForNetworkIdle({ timeout: 15000, idleTime: 1000 });
+            logger.info(`✅ Network idle - page loaded`);
+          } catch (e) {
+            logger.warn(`Network idle timeout - continuing anyway`);
+          }
+          
+          // Additional wait for JavaScript rendering
+          await new Promise(resolve => setTimeout(resolve, 8000));
           
           // Extract data using puppeteerConfig.dataSelector if provided
           if (source.puppeteerConfig && source.puppeteerConfig.dataSelector) {
@@ -1541,7 +1642,7 @@ async function scrapeForUser(userId, userSources) {
               let pageNumber = 1;
               let hasNextPage = true;
               const allScreenshots = [];
-              const maxPages = 20; // Increased from 10 to capture more results
+              const maxPages = 1; // TEST MODE: Only scrape first page
               
               while (hasNextPage && pageNumber <= maxPages) {
                 logger.info(`📄 Processing page ${pageNumber}/${maxPages}...`);
@@ -1549,9 +1650,10 @@ async function scrapeForUser(userId, userSources) {
                 // Wait for page content to load
                 await new Promise(resolve => setTimeout(resolve, 2000));
                 
-                // Scroll page to load all content
+                // Scroll page vertically AND horizontally to load all content
                 logger.info(`📜 Scrolling page ${pageNumber} to load all visible content...`);
                 await page.evaluate(async () => {
+                  // First scroll vertically
                   await new Promise((resolve) => {
                     let totalHeight = 0;
                     const distance = 100;
@@ -1566,10 +1668,58 @@ async function scrapeForUser(userId, userSources) {
                       }
                     }, 100);
                   });
+                  
+                  // Then scroll horizontally to load any off-screen tables
+                  await new Promise((resolve) => {
+                    let totalWidth = 0;
+                    const distance = 200;
+                    const timer = setInterval(() => {
+                      const scrollWidth = document.body.scrollWidth;
+                      window.scrollBy(distance, 0);
+                      totalWidth += distance;
+
+                      if(totalWidth >= scrollWidth){
+                        clearInterval(timer);
+                        resolve();
+                      }
+                    }, 100);
+                  });
                 });
                 
                 // Wait for any lazy-loaded content
                 await new Promise(resolve => setTimeout(resolve, 2500));
+                
+                // Extra wait after scrolling to let any loading indicators disappear
+                logger.info(`⏳ Waiting 5 seconds for content to fully render after scrolling...`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                // Expand all scrollable containers to show full content
+                logger.info(`🔧 Expanding scrollable containers to show full content...`);
+                await page.evaluate(() => {
+                  // Remove overflow restrictions on all elements
+                  const allElements = document.querySelectorAll('*');
+                  allElements.forEach(el => {
+                    const style = window.getComputedStyle(el);
+                    if (style.overflow === 'hidden' || style.overflow === 'scroll' || style.overflow === 'auto') {
+                      el.style.overflow = 'visible';
+                    }
+                    if (style.overflowX === 'hidden' || style.overflowX === 'scroll' || style.overflowX === 'auto') {
+                      el.style.overflowX = 'visible';
+                    }
+                    if (style.overflowY === 'hidden' || style.overflowY === 'scroll' || style.overflowY === 'auto') {
+                      el.style.overflowY = 'visible';
+                    }
+                    // Remove max-width/max-height restrictions
+                    if (el.style.maxWidth) el.style.maxWidth = 'none';
+                    if (el.style.maxHeight) el.style.maxHeight = 'none';
+                  });
+                  
+                  // Make tables fully visible
+                  document.querySelectorAll('table').forEach(table => {
+                    table.style.width = 'auto';
+                    table.style.tableLayout = 'auto';
+                  });
+                });
                 
                 // Scroll back to top for complete screenshot
                 await page.evaluate(() => window.scrollTo(0, 0));
@@ -1582,6 +1732,12 @@ async function scrapeForUser(userId, userSources) {
                   captureBeyondViewport: true
                 });
                 logger.info(`✅ Screenshot ${pageNumber} captured (${(screenshot.length / 1024).toFixed(0)} KB)`);
+                
+                // Save screenshot to disk for debugging with timestamp
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                const screenshotPath = path.join(__dirname, 'output', `ai-screenshot-${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`);
+                fs.writeFileSync(screenshotPath, screenshot);
+                logger.info(`💾 Screenshot saved to: ${screenshotPath}`);
                 
                 allScreenshots.push({ pageNumber, screenshot });
                 
@@ -2155,7 +2311,8 @@ async function scrapeForUser(userId, userSources) {
       const matches = source.selector ? $(source.selector) : [];
       
       // Full-page AI extraction with vision - if enabled and using Puppeteer
-      if (!source.selector && source.useAI === true && geminiModel) {
+      // When screenshots available, AI takes priority over selector-based extraction
+      if (source.useAI === true && geminiModel && (screenshotBuffer || !source.selector)) {
         logger.info(`🤖 Using AI extraction for ${source.name} ${usedPuppeteer && screenshotBuffer ? '[VISION MODE]' : '[TEXT MODE]'}`);
         
         // Use screenshot(s) if available from Puppeteer
@@ -2170,24 +2327,39 @@ async function scrapeForUser(userId, userSources) {
             // Process each page's screenshot
             for (const { pageNumber, screenshot } of screenshots) {
               logger.info(`🔍 Analyzing page ${pageNumber} screenshot with AI vision...`);
-              const aiResult = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
+              logger.info(`📊 Screenshot buffer type: ${typeof screenshot}, size: ${screenshot?.length || 0} bytes`);
               
-              // Check if AI returned multiple leads (object with numeric keys) or single lead
-              let leadsFromThisPage = [];
-              if (aiResult && typeof aiResult === 'object') {
-                // Check if it's an array-like object with numeric keys
-                const keys = Object.keys(aiResult).filter(k => !k.startsWith('_'));
-                if (keys.some(k => !isNaN(k))) {
-                  // It's an array-like object - extract each lead
-                  leadsFromThisPage = keys.filter(k => !isNaN(k)).map(k => aiResult[k]);
-                  logger.info(`🎯 AI extracted ${leadsFromThisPage.length} permit(s) from page ${pageNumber}`);
-                } else {
-                  // Single lead
-                  leadsFromThisPage = [aiResult];
+              try {
+                const aiResult = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
+                logger.info(`✅ AI returned result: ${aiResult ? 'YES' : 'NULL'}, type: ${typeof aiResult}`);
+                
+                if (aiResult) {
+                  logger.info(`📋 AI result keys: ${Object.keys(aiResult).join(', ')}`);
                 }
+                
+                // Check if AI returned multiple leads (object with numeric keys) or single lead
+                let leadsFromThisPage = [];
+                if (aiResult && typeof aiResult === 'object') {
+                  // Check if it's an array-like object with numeric keys
+                  const keys = Object.keys(aiResult).filter(k => !k.startsWith('_'));
+                  if (keys.some(k => !isNaN(k))) {
+                    // It's an array-like object - extract each lead
+                    leadsFromThisPage = keys.filter(k => !isNaN(k)).map(k => aiResult[k]);
+                    logger.info(`🎯 AI extracted ${leadsFromThisPage.length} permit(s) from page ${pageNumber}`);
+                  } else {
+                    // Single lead
+                    leadsFromThisPage = [aiResult];
+                    logger.info(`🎯 AI extracted 1 lead from page ${pageNumber}`);
+                  }
+                } else {
+                  logger.warn(`⚠️ AI result was null or not an object for page ${pageNumber}`);
+                }
+                
+                allLeadsToProcess.push(...leadsFromThisPage);
+              } catch (pageError) {
+                logger.error(`❌ Error processing page ${pageNumber} with AI: ${pageError.message}`);
+                logger.error(`Stack: ${pageError.stack}`);
               }
-              
-              allLeadsToProcess.push(...leadsFromThisPage);
             }
             
             logger.info(`📦 Total permits extracted from all pages: ${allLeadsToProcess.length}`);
@@ -2280,7 +2452,7 @@ async function scrapeForUser(userId, userSources) {
           logger.info(`Selector '${source.selector}' matched ${matches.length} elements on ${source.name}`);
         } catch {}
 
-      for (const el of matches.toArray()) {
+        for (const el of matches.toArray()) {
         const raw = $(el).text().replace(/\s+/g, ' ').trim();
         if (!textPassesFilters(raw, source)) continue;
 
@@ -2937,29 +3109,71 @@ function startServer() {
       if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
       const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
-      const sourceName = req.query.source ? String(req.query.source) : null;
+      const sourceId = req.query.source_id ? parseInt(req.query.source_id, 10) : null;
       const q = req.query.q ? String(req.query.q) : null;
       const days = req.query.days ? parseInt(req.query.days, 10) : null;
 
-      const where = ['user_id = ?'];
-      const params = [userId];
+      // Get all user sources to query their tables
+      const userSources = db.prepare('SELECT id, source_data FROM user_sources WHERE user_id = ?').all(userId);
+      let allLeads = [];
 
-      if (sourceName) { where.push('source = ?'); params.push(sourceName); }
-      if (q) {
-        where.push('(permit_number LIKE ? OR address LIKE ? OR description LIKE ? OR raw_text LIKE ?)');
-        const like = `%${q}%`;
-        params.push(like, like, like, like);
+      for (const sourceRow of userSources) {
+        // Skip if filtering by specific source
+        if (sourceId && sourceRow.id !== sourceId) continue;
+
+        const tableName = `source_${sourceRow.id}`;
+        
+        // Check if table exists
+        const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(tableName);
+        if (!tableExists) continue;
+
+        // Get all columns from this source table
+        const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+        const columnNames = columns.map(col => col.name);
+
+        // Build dynamic query
+        const where = ['user_id = ?'];
+        const params = [userId];
+
+        // Search across all text columns if query provided
+        if (q) {
+          const textCols = columnNames.filter(col => !['id', 'user_id', 'created_at'].includes(col));
+          const searchConditions = textCols.map(col => `${col} LIKE ?`).join(' OR ');
+          if (searchConditions) {
+            where.push(`(${searchConditions})`);
+            const like = `%${q}%`;
+            textCols.forEach(() => params.push(like));
+          }
+        }
+
+        if (Number.isFinite(days) && days > 0 && columnNames.includes('created_at')) {
+          const cutoff = new Date(Date.now() - days*24*60*60*1000).toISOString();
+          where.push('created_at >= ?');
+          params.push(cutoff);
+        }
+
+        const sql = `SELECT * FROM ${tableName} WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
+        params.push(limit);
+        
+        try {
+          const rows = db.prepare(sql).all(...params);
+          // Add source info to each row
+          const sourceData = JSON.parse(sourceRow.source_data);
+          rows.forEach(row => {
+            row._source_id = sourceRow.id;
+            row._source_name = sourceData.name;
+          });
+          allLeads.push(...rows);
+        } catch (queryErr) {
+          logger.error(`Error querying ${tableName}: ${queryErr.message}`);
+        }
       }
-      if (Number.isFinite(days) && days > 0) {
-        const cutoff = new Date(Date.now() - days*24*60*60*1000).toISOString();
-        where.push('date_added >= ?'); params.push(cutoff);
-      }
 
-      const sql = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
-      params.push(limit);
-      const rows = db.prepare(sql).all(...params);
+      // Sort by ID desc and limit
+      allLeads.sort((a, b) => b.id - a.id);
+      allLeads = allLeads.slice(0, limit);
 
-      res.json({ data: rows });
+      res.json({ data: allLeads });
     } catch (e) {
       logger.error(`Error fetching leads: ${e.message}`);
       res.status(500).json({ error: e.message });
@@ -3464,13 +3678,18 @@ function startServer() {
       const userId = req.session?.user?.id || 1;
       const sourceId = parseInt(req.params.id, 10);
       
+      logger.info(`Delete request for source ${sourceId} by user ${userId}`);
+      
       // Check ownership before deleting
       const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
       if (!existing) {
+        logger.warn(`Source ${sourceId} not found or access denied for user ${userId}`);
         return res.status(404).json({ error: 'Source not found or access denied' });
       }
       
+      logger.info(`Deleting source ${sourceId} for user ${userId}`);
       await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      logger.info(`Successfully deleted source ${sourceId}`);
       res.json({ success: true });
     } catch (e) {
       logger.error(`Delete source error: ${e.message}`);
