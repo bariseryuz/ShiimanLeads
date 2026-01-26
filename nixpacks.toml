@@ -1,5 +1,5 @@
 [phases.setup]
-nixpkgs = [
+nixPkgs = [
   "nodejs_20",
   "chromium",
   "python3",
@@ -9,7 +9,8 @@ nixpkgs = [
   "nss",
   "nspr",
   "atk",
-  "atk-bridge",
+  "at-spi2-atk",
+  "at-spi2-core",
   "cups",
   "dbus",
   "libdrm",
@@ -27,18 +28,20 @@ nixpkgs = [
   "xorg.libXext",
   "xorg.libXfixes",
   "xorg.libXrandr",
-  "libxss",
-  "libxtst"
+  "xorg.libXScrnSaver",
+  "libgbm",
+  "mesa"
 ]
 
 [phases.install]
-cmds = ['cd backend && npm install --production']
+cmds = ["cd backend && npm install --production=false"]
 
 [phases.build]
-cmds = ['echo "Build complete"']
+cmds = ["cd backend && npm run postinstall || true"]
 
 [start]
-cmd = 'cd backend && node index.js'
+cmd = "cd backend && node index.js"
 
 [variables]
-PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = 'true'
+PUPPETEER_SKIP_CHROMIUM_DOWNLOAD = "true"
+PUPPETEER_EXECUTABLE_PATH = "/nix/store/*/bin/chromium"
