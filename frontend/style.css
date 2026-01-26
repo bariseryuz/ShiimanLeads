@@ -434,22 +434,20 @@ gap: 6rem;
 
 /* Cards */
 .card {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(7, 7, 7, 0.5);
   border-radius: var(--radius);
   padding: 1.5rem;
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin-bottom: 1.5rem;
   position: relative;
   z-index: 1;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--gray-200);
 }
 
 .card-title {
   font-size: 1.25rem;
   font-weight: 700;
   margin-bottom: 1rem;
-  color: white;
-}
   color: rgba(255, 255, 255, 0.95);
 }
 
@@ -462,7 +460,7 @@ gap: 6rem;
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: white;
+  color: var(--gray-700);
 }
 
 .form-input,
@@ -494,7 +492,7 @@ gap: 6rem;
 .table-container {
   overflow-x: auto;
   border-radius: var(--radius);
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   margin-bottom: 1.5rem;
 }
 
@@ -502,19 +500,19 @@ table {
   width: 100%;
   min-width: 995px;
   border-collapse: collapse;
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.6);
 }
 
 thead {
-  background: rgba(255, 255, 255, 0.05);
-  border-bottom: 2px solid rgba(255, 255, 255, 0.15);
+  background: rgba(249, 250, 251, 0.5);
+  border-bottom: 2px solid var(--gray-200);
 }
 
 th {
   padding: 0.75rem 1rem;
   text-align: left;
   font-weight: 600;
-  color: white;
+  color: var(--gray-700);
   font-size: 0.875rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -533,13 +531,12 @@ th:nth-child(9) { width: 90px; } /* Date Added */
 
 td {
   padding: 1rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--gray-200);
   font-size: 0.875rem;
-  color: white;
 }
 
 tr:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(249, 250, 251, 0.5);
 }
 
 /* Layout */
@@ -635,11 +632,11 @@ tr:hover {
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
   border-radius: var(--radius);
   padding: 1.5rem;
   box-shadow: none;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .stat-label {
