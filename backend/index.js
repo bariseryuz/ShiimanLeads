@@ -3249,7 +3249,30 @@ function startServer() {
     }
   });
 
-  // Get a specific source by ID
+  // Get current user's configured sources (MUST come before /:id route)
+  app.get('/api/sources/mine', async (req, res) => {
+    try {
+      // Use user ID from session, or default to 1 if not logged in
+      const userId = req.session?.user?.id || 1;
+      const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
+      const sources = rows.map(row => {
+        try {
+          return {
+            id: row.id,
+            data: JSON.parse(row.source_data),
+            created_at: row.created_at
+          };
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      res.json({ data: sources });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get a specific source by ID (MUST come after /mine route)
   app.get('/api/sources/:id', async (req, res) => {
     try {
       const userId = req.session?.user?.id || 1;
@@ -3271,29 +3294,6 @@ function startServer() {
         aiEnabled: sourceData.aiEnabled,
         created_at: row.created_at
       });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  // Get current user's configured sources
-  app.get('/api/sources/mine', async (req, res) => {
-    try {
-      // Use user ID from session, or default to 1 if not logged in
-      const userId = req.session?.user?.id || 1;
-      const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
-      const sources = rows.map(row => {
-        try {
-          return {
-            id: row.id,
-            data: JSON.parse(row.source_data),
-            created_at: row.created_at
-          };
-        } catch (e) {
-          return null;
-        }
-      }).filter(Boolean);
-      res.json({ data: sources });
     } catch (e) {
       res.status(500).json({ error: e.message });
     }
