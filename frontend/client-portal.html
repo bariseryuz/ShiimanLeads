@@ -435,7 +435,7 @@
     // Load sources for filter
     async function loadSources() {
       try {
-        const response = await fetch('/api/sources');
+        const response = await fetch('/api/sources/mine');
         const data = await response.json();
         const sources = data.data || [];
         
@@ -445,7 +445,7 @@
         const select = document.getElementById('sourceFilter');
         sources.forEach(source => {
           const option = document.createElement('option');
-          option.value = source.name;
+          option.value = source.id; // Use ID instead of name
           option.textContent = source.name;
           select.appendChild(option);
         });
@@ -743,13 +743,6 @@
         
         tbody.appendChild(tr);
       });
-    }
-        
-      } catch (error) {
-        console.error('Failed to load leads:', error);
-        tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--danger);">Error loading leads. Please try again.</td></tr>';
-        document.getElementById('statusMessage').textContent = '❌ Error: ' + error.message;
-      }
     }
 
     // Generate dynamic columns based on source fieldSchema

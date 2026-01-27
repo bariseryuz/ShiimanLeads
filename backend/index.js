@@ -3249,6 +3249,33 @@ function startServer() {
     }
   });
 
+  // Get a specific source by ID
+  app.get('/api/sources/:id', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const sourceId = req.params.id;
+      
+      const row = await dbGet('SELECT id, source_data, created_at FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+      
+      if (!row) {
+        return res.status(404).json({ error: 'Source not found' });
+      }
+      
+      const sourceData = JSON.parse(row.source_data);
+      res.json({
+        id: row.id,
+        name: sourceData.name,
+        url: sourceData.url,
+        fieldSchema: sourceData.fieldSchema || {},
+        method: sourceData.method,
+        aiEnabled: sourceData.aiEnabled,
+        created_at: row.created_at
+      });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Get current user's configured sources
   app.get('/api/sources/mine', async (req, res) => {
     try {
