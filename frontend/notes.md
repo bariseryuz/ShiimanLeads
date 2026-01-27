@@ -86,4 +86,10 @@ fixed mismatch on website types
 -We need rotating IPs that changes with every other request.
 -I want to see where the screenshots are located.
 
+27.01.2026
 
+-On the local hsot scraper works as expected but not on the deployed website.
+-Updated the nixpacks.toml
+-Checked the directory of the nixpacks.toml.
+  
+-System doesn't read nickpacks.toml wtiched to Docker 
