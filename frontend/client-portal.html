@@ -270,9 +270,22 @@
       </div>
     </div>
 
+    <!-- Current Source View Header -->
+    <div id="currentSourceHeader" style="display: none; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 1.5rem; color: white;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; font-weight: 600;" id="currentSourceName">Source Name</h3>
+          <p style="margin: 0; opacity: 0.9; font-size: 0.875rem;" id="currentSourceDesc">Viewing leads from this source only</p>
+        </div>
+        <button onclick="clearSourceFilter()" style="background: rgba(255,255,255,0.2); color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.375rem; cursor: pointer; font-weight: 500; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
+          View All Sources
+        </button>
+      </div>
+    </div>
+
     <div class="card" id="leadsDisplayDiv" style="padding: 0; overflow: hidden;">
       <div class="table-container" style="overflow-x: auto; max-width: 100%;">
-        <table id="leadsTable" style="min-width: 1800px;">
+        <table id="leadsTable">
           <thead id="leadsTableHead">
             <tr>
               <th>Loading...</th>
@@ -521,24 +534,50 @@
 
     // Store sources data globally for dynamic column generation
     let allSourcesData = [];
+    let currentSourceSchema = null;
 
-    // Load leads with dynamic source-specific columns
+    // Clear source filter and view all
+    function clearSourceFilter() {
+      document.getElementById('sourceFilter').value = '';
+      document.getElementById('currentSourceHeader').style.display = 'none';
+      currentSourceSchema = null;
+      loadLeads();
+    }
+
+    // Load leads with source-specific columns
     async function loadLeads() {
-      const source = document.getElementById('sourceFilter').value;
+      const sourceId = document.getElementById('sourceFilter').value;
       const days = document.getElementById('daysFilter').value;
       const search = document.getElementById('searchInput').value.trim();
       
       const params = new URLSearchParams();
       params.set('limit', '500');
-      if (source) params.set('source_id', source); // Use source_id instead of source name
+      if (sourceId) params.set('source_id', sourceId);
       if (days) params.set('days', days);
       if (search) params.set('q', search);
       
       const tbody = document.querySelector('#leadsTable tbody');
       const thead = document.querySelector('#leadsTableHead');
+      const currentSourceHeader = document.getElementById('currentSourceHeader');
+      
       tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</td></tr>';
       
       try {
+        // If a specific source is selected, fetch its schema
+        if (sourceId) {
+          const sourceResponse = await fetch(`/api/sources/${sourceId}`);
+          const sourceData = await sourceResponse.json();
+          currentSourceSchema = sourceData.fieldSchema || {};
+          
+          // Show source header
+          currentSourceHeader.style.display = 'block';
+          document.getElementById('currentSourceName').textContent = sourceData.name || 'Source';
+          document.getElementById('currentSourceDesc').textContent = `Viewing ${sourceData.name} leads with custom fields`;
+        } else {
+          currentSourceSchema = null;
+          currentSourceHeader.style.display = 'none';
+        }
+        
         const response = await fetch('/api/leads?' + params.toString());
         const result = await response.json();
         const leads = result.data || [];
@@ -546,59 +585,165 @@
         tbody.innerHTML = '';
         
         if (leads.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: white;">No leads found. Try adjusting your filters.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</td></tr>';
           document.getElementById('statusMessage').textContent = '';
           document.getElementById('totalLeads').textContent = '0';
           return;
         }
         
-        // Determine columns dynamically from actual data
-        if (leads.length > 0) {
-          const firstLead = leads[0];
-          const excludeColumns = ['id', 'user_id', 'created_at', 'hash', 'raw_text', '_source_id', '_source_name'];
-          const columns = Object.keys(firstLead).filter(col => !excludeColumns.includes(col) && !col.startsWith('_'));
-          
-          // Build header
-          thead.innerHTML = '';
-          const headerRow = document.createElement('tr');
-          columns.forEach(col => {
-            const th = document.createElement('th');
-            th.textContent = formatFieldName(col);
-            headerRow.appendChild(th);
-          });
-          // Add metadata columns
-          headerRow.innerHTML += '<th>Source</th><th>Added</th>';
-          thead.appendChild(headerRow);
-          
-          // Build rows
-          leads.forEach(lead => {
-            const tr = document.createElement('tr');
-            columns.forEach(col => {
-              const td = document.createElement('td');
-              const value = lead[col];
-              if (value && col.includes('url')) {
-                td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
-              } else {
-                td.textContent = value || '-';
-              }
-              tr.appendChild(td);
-            });
-            // Add metadata
-            const sourceTd = document.createElement('td');
-            sourceTd.textContent = lead._source_name || '-';
-            tr.appendChild(sourceTd);
-            
-            const dateTd = document.createElement('td');
-            dateTd.style.whiteSpace = 'nowrap';
-            dateTd.textContent = formatDate(lead.created_at || new Date().toISOString());
-            tr.appendChild(dateTd);
-            
-            tbody.appendChild(tr);
-          });
+        // If viewing a specific source, use its schema
+        if (currentSourceSchema && Object.keys(currentSourceSchema).length > 0) {
+          renderSourceSpecificTable(leads, currentSourceSchema, sourceId);
+        } else {
+          // Multiple sources or no source filter - show all columns dynamically
+          renderMultiSourceTable(leads);
         }
         
         document.getElementById('statusMessage').textContent = `✓ Showing ${leads.length} lead(s)`;
         document.getElementById('totalLeads').textContent = leads.length;
+        
+      } catch (error) {
+        console.error('Failed to load leads:', error);
+        tbody.innerHTML = '<tr><td colspan="20" style="text-align: center; padding: 3rem; color: var(--danger);">Error loading leads. Please try again.</td></tr>';
+        document.getElementById('statusMessage').textContent = '❌ Error: ' + error.message;
+      }
+    }
+
+    // Render table for a specific source with its custom fields
+    function renderSourceSpecificTable(leads, fieldSchema, sourceId) {
+      const thead = document.querySelector('#leadsTableHead');
+      const tbody = document.querySelector('#leadsTable tbody');
+      const table = document.getElementById('leadsTable');
+      
+      // Remove min-width when showing specific source
+      table.style.minWidth = 'auto';
+      
+      const fieldNames = Object.keys(fieldSchema);
+      
+      // Build header with source-specific fields only
+      thead.innerHTML = '';
+      const headerRow = document.createElement('tr');
+      
+      fieldNames.forEach(field => {
+        const th = document.createElement('th');
+        th.textContent = formatFieldName(field);
+        th.title = fieldSchema[field]; // Show description on hover
+        headerRow.appendChild(th);
+      });
+      
+      // Add standard columns (no Source column since we're viewing one source)
+      const addedTh = document.createElement('th');
+      addedTh.textContent = 'Added';
+      addedTh.style.whiteSpace = 'nowrap';
+      headerRow.appendChild(addedTh);
+      
+      thead.appendChild(headerRow);
+      
+      // Build rows with source-specific data
+      tbody.innerHTML = '';
+      leads.forEach(lead => {
+        const tr = document.createElement('tr');
+        if (lead.is_new === 1 && currentNewLeadFilter === 'new') {
+          tr.classList.add('new-lead');
+        }
+        
+        fieldNames.forEach(field => {
+          const td = document.createElement('td');
+          const value = lead[field];
+          
+          // Handle URL fields
+          if (value && (field.toLowerCase().includes('url') || field.toLowerCase().includes('link'))) {
+            td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
+          } else {
+            td.textContent = value || '-';
+          }
+          
+          tr.appendChild(td);
+        });
+        
+        // Add date
+        const dateTd = document.createElement('td');
+        dateTd.style.whiteSpace = 'nowrap';
+        dateTd.textContent = formatDate(lead.created_at || new Date().toISOString());
+        tr.appendChild(dateTd);
+        
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Render table for multiple sources (show all columns)
+    function renderMultiSourceTable(leads) {
+      const thead = document.querySelector('#leadsTableHead');
+      const tbody = document.querySelector('#leadsTable tbody');
+      const table = document.getElementById('leadsTable');
+      
+      // Set min-width for multi-source view
+      table.style.minWidth = '1800px';
+      
+      if (leads.length === 0) return;
+      
+      // Determine columns dynamically from actual data
+      const firstLead = leads[0];
+      const excludeColumns = ['id', 'user_id', 'created_at', 'hash', 'raw_text', 'is_new'];
+      const columns = Object.keys(firstLead).filter(col => 
+        !excludeColumns.includes(col) && 
+        !col.startsWith('_') &&
+        col !== 'source_id'
+      );
+      
+      // Build header
+      thead.innerHTML = '';
+      const headerRow = document.createElement('tr');
+      columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = formatFieldName(col);
+        headerRow.appendChild(th);
+      });
+      // Add metadata columns
+      const sourceTh = document.createElement('th');
+      sourceTh.textContent = 'Source';
+      headerRow.appendChild(sourceTh);
+      
+      const addedTh = document.createElement('th');
+      addedTh.textContent = 'Added';
+      addedTh.style.whiteSpace = 'nowrap';
+      headerRow.appendChild(addedTh);
+      
+      thead.appendChild(headerRow);
+      
+      // Build rows
+      tbody.innerHTML = '';
+      leads.forEach(lead => {
+        const tr = document.createElement('tr');
+        if (lead.is_new === 1 && currentNewLeadFilter === 'new') {
+          tr.classList.add('new-lead');
+        }
+        
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          const value = lead[col];
+          if (value && (col.toLowerCase().includes('url') || col.toLowerCase().includes('link'))) {
+            td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
+          } else {
+            td.textContent = value || '-';
+          }
+          tr.appendChild(td);
+        });
+        
+        // Add source name
+        const sourceTd = document.createElement('td');
+        sourceTd.textContent = lead._source_name || lead.source || '-';
+        tr.appendChild(sourceTd);
+        
+        // Add date
+        const dateTd = document.createElement('td');
+        dateTd.style.whiteSpace = 'nowrap';
+        dateTd.textContent = formatDate(lead.created_at || new Date().toISOString());
+        tr.appendChild(dateTd);
+        
+        tbody.appendChild(tr);
+      });
+    }
         
       } catch (error) {
         console.error('Failed to load leads:', error);
