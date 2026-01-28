@@ -1259,5 +1259,26 @@
     </div>
   </div>
 
+  <script>
+    // Check for active scraping on page load
+    async function checkActiveScrapingOnLoad() {
+      try {
+        const response = await fetch('/api/scrape/progress', { credentials: 'include' });
+        const data = await response.json();
+        
+        if (data.success && data.progress && data.progress.status === 'running') {
+          // Active scraping detected - show modal
+          showProgressModal();
+          updateProgress(); // Initial update
+          progressInterval = setInterval(updateProgress, 2000); // Update every 2 seconds
+        }
+      } catch (error) {
+        console.error('Failed to check scraping status:', error);
+      }
+    }
+
+    // Check for active scraping when page loads
+    setTimeout(checkActiveScrapingOnLoad, 500);
+  </script>
 </body>
 </html>
