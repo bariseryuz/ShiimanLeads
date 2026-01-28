@@ -142,9 +142,162 @@
     .progress-close-btn:hover {
       background: rgba(255,255,255,0.9);
     }
+    
+    /* Delete Confirmation Modal */
+    .delete-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      z-index: 3000;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .delete-modal.show {
+      display: flex;
+    }
+    
+    .delete-modal-content {
+      background: white;
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      position: relative;
+    }
+    
+    .delete-modal-close {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      color: #666;
+      cursor: pointer;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+    
+    .delete-modal-close:hover {
+      background: #f0f0f0;
+      color: #000;
+    }
+    
+    .delete-modal-header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .delete-modal-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+    
+    .delete-modal-header h3 {
+      color: #dc2626;
+      font-size: 1.5rem;
+      margin: 0 0 0.5rem 0;
+    }
+    
+    .delete-modal-body {
+      text-align: center;
+      color: #333;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+    }
+    
+    .delete-modal-body p {
+      margin: 0.5rem 0;
+    }
+    
+    .delete-modal-warning {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      color: #991b1b;
+      font-weight: 500;
+    }
+    
+    .delete-modal-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+    }
+    
+    .delete-modal-btn {
+      padding: 0.75rem 2rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    
+    .delete-modal-btn-yes {
+      background: #dc2626;
+      color: white;
+    }
+    
+    .delete-modal-btn-yes:hover {
+      background: #b91c1c;
+    }
+    
+    .delete-modal-btn-no {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    
+    .delete-modal-btn-no:hover {
+      background: #d1d5db;
+    }
   </style>
 </head>
 <body>
+  <!-- Delete Confirmation Modal -->
+  <div class="delete-modal" id="deleteModal">
+    <div class="delete-modal-content">
+      <button class="delete-modal-close" onclick="closeDeleteModal()">&times;</button>
+      
+      <div class="delete-modal-header">
+        <div class="delete-modal-icon">⚠️</div>
+        <h3>Delete All Leads</h3>
+      </div>
+      
+      <div class="delete-modal-body">
+        <p style="font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem;">
+          You are deleting all leads. This action cannot be undone.
+        </p>
+        
+        <div class="delete-modal-warning">
+          ⚠️ Your sources will NOT be deleted - only the lead data.
+        </div>
+        
+        <p style="color: #666; font-size: 0.875rem;">
+          After clearing, click "Scrape Now" on the Sources page to get fresh data with all fields.
+        </p>
+      </div>
+      
+      <div class="delete-modal-buttons">
+        <button class="delete-modal-btn delete-modal-btn-no" onclick="closeDeleteModal()">No</button>
+        <button class="delete-modal-btn delete-modal-btn-yes" onclick="confirmDeleteLeads()">Yes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Top Navigation Bar -->
   <nav class="navbar" style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
     <div class="nav-container">
@@ -1265,14 +1418,16 @@
     }
 
     // Clear all leads (with confirmation)
-    async function clearAllLeads() {
-      const confirmed = confirm('⚠️ WARNING: This will permanently delete ALL your leads!\n\nYour sources will NOT be deleted - only the lead data.\n\nAfter clearing, click "Scrape Now" on the Sources page to get fresh data with all fields.\n\nAre you sure?');
-      
-      if (!confirmed) return;
-      
-      // Double confirmation
-      const doubleConfirm = confirm('🚨 FINAL WARNING: Delete ALL leads? This cannot be undone!');
-      if (!doubleConfirm) return;
+    function clearAllLeads() {
+      document.getElementById('deleteModal').classList.add('show');
+    }
+
+    function closeDeleteModal() {
+      document.getElementById('deleteModal').classList.remove('show');
+    }
+
+    async function confirmDeleteLeads() {
+      closeDeleteModal();
       
       try {
         const res = await fetch('/api/leads/clear', { method: 'DELETE' });
@@ -1282,6 +1437,7 @@
           alert(`✅ Successfully deleted ${data.deleted.leads} leads!\n\nNow go to Sources page and click "Scrape Now" to get fresh data.`);
           loadLeads(); // Refresh table
           loadStats(); // Refresh stats
+          loadMetrics(); // Refresh metrics
         } else {
           alert('❌ Failed to clear leads: ' + (data.error || 'Unknown error'));
         }
