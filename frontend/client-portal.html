@@ -268,7 +268,7 @@
 </head>
 <body>
   <!-- Delete Confirmation Modal -->
-  <div class="delete-modal" id="deleteModal">
+  <div class="delete-modal" id="deleteModal" onclick="if(event.target === this) closeDeleteModal()">
     <div class="delete-modal-content">
       <button class="delete-modal-close" onclick="closeDeleteModal()">&times;</button>
       
