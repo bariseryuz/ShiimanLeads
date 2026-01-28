@@ -97,6 +97,32 @@ function getRateLimiter(source) {
   return rateLimiters.get(source.name);
 }
 
+// Scraping progress tracking
+const scrapeProgress = new Map(); // userId -> progress object
+
+function initProgress(userId, sources) {
+  scrapeProgress.set(userId, {
+    status: 'running',
+    startTime: Date.now(),
+    totalSources: sources.length,
+    completedSources: 0,
+    currentSource: null,
+    leadsFound: 0,
+    errors: []
+  });
+}
+
+function updateProgress(userId, updates) {
+  const progress = scrapeProgress.get(userId);
+  if (progress) {
+    Object.assign(progress, updates);
+  }
+}
+
+function getProgress(userId) {
+  return scrapeProgress.get(userId) || null;
+}
+
 // Default timing configuration (can be overridden per source)
 const DEFAULT_TIMINGS = {
   networkIdleTimeout: 10000,    // 15s → 10s (faster timeout)
@@ -1086,6 +1112,9 @@ function loadSources() {
 async function scrapeForUser(userId, userSources) {
   logger.info(`Starting scrape cycle for user ${userId}...`);
   
+  // Initialize progress tracking
+  initProgress(userId, userSources);
+  
   // Mark all existing "new" leads as old before scraping new ones
   try {
     const result = await dbRun('UPDATE leads SET is_new = 0 WHERE user_id = ? AND is_new = 1', [userId]);
@@ -1120,6 +1149,9 @@ async function scrapeForUser(userId, userSources) {
   }
   
   for (const source of SOURCES) {
+    // Update progress: starting new source
+    updateProgress(userId, { currentSource: source.name });
+    
     // Get rate limiter for this source
     const rateLimiter = getRateLimiter(source);
     
@@ -2591,6 +2623,13 @@ async function scrapeForUser(userId, userSources) {
       // Mark rate limiter success
       rateLimiter.onSuccess();
       
+      // Update progress: source completed successfully
+      const progress = getProgress(userId);
+      if (progress) {
+        progress.completedSources++;
+        progress.leadsFound = totalInserted;
+      }
+      
       // Small delay between sources to ensure cleanup
       await new Promise(resolve => setTimeout(resolve, timings.betweenSourcesWait));
       
@@ -2604,11 +2643,25 @@ async function scrapeForUser(userId, userSources) {
         rateLimiter.onError();
       }
       
+      // Update progress: track error
+      const progress = getProgress(userId);
+      if (progress) {
+        progress.completedSources++;
+        progress.errors.push({ source: source.name, error: err.message });
+      }
+      
       // Ensure cleanup even on error
       await new Promise(resolve => setTimeout(resolve, timings.betweenSourcesWait));
     }
   }
   logger.info(`Scrape cycle finished for user ${userId}. Inserted ${totalInserted} total leads.\n`);
+  
+  // Mark scraping as complete
+  updateProgress(userId, { 
+    status: 'completed',
+    endTime: Date.now(),
+    leadsFound: totalInserted
+  });
   
   // Create notification for scrape results
   if (SOURCES.length > 0) {
@@ -4193,6 +4246,40 @@ function startServer() {
       });
     } catch (e) {
       logger.error(`Metrics error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Get scraping progress for current user
+  app.get('/api/scrape/progress', (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      const progress = getProgress(userId);
+      
+      if (!progress) {
+        return res.json({ 
+          success: true, 
+          progress: null,
+          message: 'No active scraping session'
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        progress: {
+          status: progress.status,
+          currentSource: progress.currentSource,
+          completedSources: progress.completedSources,
+          totalSources: progress.totalSources,
+          leadsFound: progress.leadsFound,
+          errors: progress.errors,
+          startTime: progress.startTime,
+          endTime: progress.endTime,
+          elapsedTime: Date.now() - progress.startTime
+        }
+      });
+    } catch (e) {
+      logger.error(`Progress error: ${e.message}`);
       res.status(500).json({ error: e.message });
     }
   });

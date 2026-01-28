@@ -182,9 +182,131 @@
       color: var(--gray-600);
       margin-bottom: 2rem;
     }
+    
+    /* Progress Modal Styles */
+    .progress-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.7);
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .progress-modal.show {
+      display: flex;
+    }
+    
+    .progress-content {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 500px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    
+    .progress-header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    
+    .progress-header h3 {
+      margin: 0 0 0.5rem 0;
+      font-size: 1.5rem;
+    }
+    
+    .progress-bar-container {
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+      height: 8px;
+      overflow: hidden;
+      margin: 1rem 0;
+    }
+    
+    .progress-bar {
+      background: #4ade80;
+      height: 100%;
+      transition: width 0.3s ease;
+      border-radius: 8px;
+    }
+    
+    .progress-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+    
+    .progress-item {
+      background: rgba(255,255,255,0.1);
+      padding: 0.75rem;
+      border-radius: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .progress-close-btn {
+      display: none;
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: 0.75rem;
+      background: white;
+      color: #667eea;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    
+    .progress-close-btn:hover {
+      background: rgba(255,255,255,0.9);
+    }
   </style>
 </head>
 <body>
+  <!-- Progress Modal -->
+  <div class="progress-modal" id="progressModal">
+    <div class="progress-content">
+      <div class="progress-header">
+        <h3>🔄 Scraping In Progress</h3>
+        <p id="progressStatus" style="opacity: 0.9; font-size: 0.875rem;">Initializing...</p>
+      </div>
+      
+      <div class="progress-bar-container">
+        <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: 0.875rem; opacity: 0.9;">
+        <span id="progressText">0 / 0 sources</span>
+        <span id="progressTime">0s</span>
+      </div>
+      
+      <div class="progress-details">
+        <div class="progress-item">
+          <span>Current Source</span>
+          <span id="currentSource" style="font-weight: 700;">-</span>
+        </div>
+        <div class="progress-item">
+          <span>Leads Found</span>
+          <span id="leadsFound" style="font-weight: 700; color: #4ade80;">0</span>
+        </div>
+        <div class="progress-item" id="errorsContainer" style="display: none;">
+          <span>Errors</span>
+          <span id="errorsCount" style="font-weight: 700; color: #f87171;">0</span>
+        </div>
+      </div>
+      
+      <button class="progress-close-btn" id="progressCloseBtn" onclick="closeProgressModal()">Close</button>
+    </div>
+  </div>
+
   <!-- Top Navigation Bar -->
   <nav class="navbar" style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
     <div class="nav-container">
@@ -826,23 +948,90 @@
       return div.innerHTML;
     }
 
+    // Progress modal tracking
+    let progressInterval = null;
+
+    function showProgressModal() {
+      document.getElementById('progressModal').classList.add('show');
+      document.getElementById('progressCloseBtn').style.display = 'none';
+    }
+
+    function closeProgressModal() {
+      document.getElementById('progressModal').classList.remove('show');
+      if (progressInterval) {
+        clearInterval(progressInterval);
+        progressInterval = null;
+      }
+      loadSources(); // Refresh sources list
+    }
+
+    async function updateProgress() {
+      try {
+        const response = await fetch('/api/scrape/progress', { credentials: 'include' });
+        const data = await response.json();
+        
+        if (!data.success || !data.progress) {
+          closeProgressModal();
+          return;
+        }
+        
+        const p = data.progress;
+        
+        // Update progress bar
+        const percentage = p.totalSources > 0 ? (p.completedSources / p.totalSources) * 100 : 0;
+        document.getElementById('progressBar').style.width = percentage + '%';
+        
+        // Update text
+        document.getElementById('progressText').textContent = `${p.completedSources} / ${p.totalSources} sources`;
+        document.getElementById('currentSource').textContent = p.currentSource || 'Waiting...';
+        document.getElementById('leadsFound').textContent = p.leadsFound || 0;
+        
+        // Update elapsed time
+        const seconds = Math.floor(p.elapsedTime / 1000);
+        document.getElementById('progressTime').textContent = seconds + 's';
+        
+        // Update status
+        if (p.status === 'completed') {
+          document.getElementById('progressStatus').textContent = '✅ Scraping Complete!';
+          document.getElementById('progressCloseBtn').style.display = 'block';
+          clearInterval(progressInterval);
+          progressInterval = null;
+        } else {
+          document.getElementById('progressStatus').textContent = 'Scraping sources...';
+        }
+        
+        // Show errors if any
+        if (p.errors && p.errors.length > 0) {
+          document.getElementById('errorsContainer').style.display = 'flex';
+          document.getElementById('errorsCount').textContent = p.errors.length;
+        }
+      } catch (error) {
+        console.error('Failed to fetch progress:', error);
+      }
+    }
+
     // Manual scrape trigger
     async function scrapeNow() {
       const btn = document.getElementById('scrapeBtn');
       const originalText = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML = '<img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;animation:spin 1s linear infinite;"> Scraping...';
+      btn.innerHTML = '<img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;animation:spin 1s linear infinite;"> Starting...';
       
       try {
         const response = await fetch('/api/scrape/now', { method: 'POST', credentials: 'include' });
         const data = await response.json();
         
         if (data.success) {
-          alert(data.message || 'Scraping started! Check the dashboard in a few moments.');
-          setTimeout(() => {
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-          }, 3000);
+          // Show progress modal
+          showProgressModal();
+          
+          // Start polling for progress
+          updateProgress(); // Initial update
+          progressInterval = setInterval(updateProgress, 2000); // Update every 2 seconds
+          
+          // Re-enable button
+          btn.disabled = false;
+          btn.innerHTML = originalText;
         } else {
           alert('Failed to start scraping');
           btn.disabled = false;
