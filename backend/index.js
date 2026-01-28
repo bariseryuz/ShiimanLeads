@@ -43,6 +43,70 @@ const axiosProxyConfig = PROXY_ENABLED ? {
   })
 } : {};
 
+// Rate Limiter Class - prevents getting blocked by websites
+class RateLimiter {
+  constructor(requestsPerMinute = 10, randomness = 0.3) {
+    this.requestsPerMinute = requestsPerMinute;
+    this.randomness = randomness; // ±30% variance by default
+    this.lastRequestTime = 0;
+    this.consecutiveErrors = 0;
+  }
+  
+  async throttle() {
+    const now = Date.now();
+    const baseDelay = (60 * 1000) / this.requestsPerMinute;
+    
+    // Add randomness (±30% by default) to look human
+    const randomFactor = 1 + (Math.random() - 0.5) * 2 * this.randomness;
+    const minDelay = baseDelay * randomFactor;
+    
+    // Exponential backoff if errors detected
+    const backoffMultiplier = Math.pow(2, Math.min(this.consecutiveErrors, 5));
+    const finalDelay = minDelay * backoffMultiplier;
+    
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    
+    if (timeSinceLastRequest < finalDelay) {
+      const waitTime = finalDelay - timeSinceLastRequest;
+      logger.info(`⏳ Rate limiting: waiting ${Math.round(waitTime/1000)}s${this.consecutiveErrors > 0 ? ` (backoff x${backoffMultiplier})` : ''}`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    this.lastRequestTime = Date.now();
+  }
+  
+  // Call this when scraping succeeds
+  onSuccess() {
+    this.consecutiveErrors = 0;
+  }
+  
+  // Call this when getting blocked/errors
+  onError() {
+    this.consecutiveErrors = Math.min(this.consecutiveErrors + 1, 5); // Cap at 5
+  }
+}
+
+// Per-source rate limiters
+const rateLimiters = new Map();
+
+function getRateLimiter(source) {
+  if (!rateLimiters.has(source.name)) {
+    const rpm = source.requestsPerMinute || 10; // Default 10 requests per minute
+    rateLimiters.set(source.name, new RateLimiter(rpm));
+  }
+  return rateLimiters.get(source.name);
+}
+
+// Default timing configuration (can be overridden per source)
+const DEFAULT_TIMINGS = {
+  networkIdleTimeout: 10000,    // 15s → 10s (faster timeout)
+  jsRenderWait: 5000,            // 8s → 5s (with network idle)
+  afterScrollWait: 3000,         // 5s → 3s (content render after scroll)
+  betweenScrollWait: 1500,       // 2s → 1.5s (between scroll actions)
+  betweenSourcesWait: 500,       // 1s → 0.5s (cleanup delay)
+  pageLoadWait: 2000             // Initial page load wait
+};
+
 // Initialize Google Gemini client
 let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
@@ -1056,13 +1120,29 @@ async function scrapeForUser(userId, userSources) {
   }
   
   for (const source of SOURCES) {
+    // Get rate limiter for this source
+    const rateLimiter = getRateLimiter(source);
+    
+    // Get timing configuration (source-specific or defaults)
+    const timings = {
+      networkIdleTimeout: source.timing?.networkIdleTimeout || DEFAULT_TIMINGS.networkIdleTimeout,
+      jsRenderWait: source.timing?.jsRenderWait || DEFAULT_TIMINGS.jsRenderWait,
+      afterScrollWait: source.timing?.afterScrollWait || DEFAULT_TIMINGS.afterScrollWait,
+      betweenScrollWait: source.timing?.betweenScrollWait || DEFAULT_TIMINGS.betweenScrollWait,
+      pageLoadWait: source.timing?.pageLoadWait || DEFAULT_TIMINGS.pageLoadWait
+    };
+    
     try {
+      // Apply rate limiting before scraping this source
+      await rateLimiter.throttle();
+      
       logger.info(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       logger.info(`🔍 Starting source: ${source.name} (User ${userId})`);
       logger.info(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       const configDetails = [
         `Method: ${source.method || (source.usePuppeteer ? 'puppeteer' : 'axios')}`,
-        `AI: ${source.useAI ? 'enabled' : 'disabled'}`
+        `AI: ${source.useAI ? 'enabled' : 'disabled'}`,
+        `Rate: ${source.requestsPerMinute || 10} req/min`
       ];
       if (source.params) configDetails.push(`API Params: configured`);
       logger.info(configDetails.join(', '));
@@ -1248,19 +1328,16 @@ async function scrapeForUser(userId, userSources) {
             logger.info(`Completed puppeteer actions for ${source.name}`);
           }
           
-          // Wait for page to render - increased timeout for data portals
-          logger.info(`Waiting for page content to load...`);
-          
-          // Wait for network to be idle (better for dynamic content)
+          // Wait for page to render - optimized timeout for data portals
           try {
-            await page.waitForNetworkIdle({ timeout: 15000, idleTime: 1000 });
+            await page.waitForNetworkIdle({ timeout: timings.networkIdleTimeout, idleTime: 1000 });
             logger.info(`✅ Network idle - page loaded`);
           } catch (e) {
             logger.warn(`Network idle timeout - continuing anyway`);
           }
           
           // Additional wait for JavaScript rendering
-          await new Promise(resolve => setTimeout(resolve, 8000));
+          await new Promise(resolve => setTimeout(resolve, timings.jsRenderWait));
           
           // Extract data using puppeteerConfig.dataSelector if provided
           if (source.puppeteerConfig && source.puppeteerConfig.dataSelector) {
@@ -1316,7 +1393,7 @@ async function scrapeForUser(userId, userSources) {
               
               if (loadAllClicked) {
                 logger.info(`Clicked "Show All" button - waiting for data to load...`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                await new Promise(resolve => setTimeout(resolve, timings.afterScrollWait));
               }
             } catch (err) {
               logger.info(`No "Show All" button found: ${err.message}`);
@@ -1395,7 +1472,7 @@ async function scrapeForUser(userId, userSources) {
                   const text = (btn.textContent || '').toLowerCase();
                   if ((text.includes('load') || text.includes('show') || text.includes('more')) && btn.offsetParent !== null) {
                     btn.click();
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise(resolve => setTimeout(resolve, timings.betweenScrollWait));
                     break;
                   }
                 }
@@ -1415,7 +1492,7 @@ async function scrapeForUser(userId, userSources) {
                   doWheel(window);
                 }
                 
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, timings.betweenScrollWait));
                 
                 // Count current items using multiple common patterns (tables, grids, lists)
                 const countItems = () => {
@@ -1648,7 +1725,7 @@ async function scrapeForUser(userId, userSources) {
                 logger.info(`📄 Processing page ${pageNumber}/${maxPages}...`);
                 
                 // Wait for page content to load
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                await new Promise(resolve => setTimeout(resolve, timings.pageLoadWait));
                 
                 // Scroll page vertically AND horizontally to load all content
                 logger.info(`📜 Scrolling page ${pageNumber} to load all visible content...`);
@@ -1687,11 +1764,11 @@ async function scrapeForUser(userId, userSources) {
                 });
                 
                 // Wait for any lazy-loaded content
-                await new Promise(resolve => setTimeout(resolve, 2500));
+                await new Promise(resolve => setTimeout(resolve, timings.afterScrollWait));
                 
                 // Extra wait after scrolling to let any loading indicators disappear
-                logger.info(`⏳ Waiting 5 seconds for content to fully render after scrolling...`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                logger.info(`⏳ Waiting ${Math.round(timings.afterScrollWait/1000)}s for content to fully render after scrolling...`);
+                await new Promise(resolve => setTimeout(resolve, timings.afterScrollWait));
                 
                 // Expand all scrollable containers to show full content
                 logger.info(`🔧 Expanding scrollable containers to show full content...`);
@@ -1723,7 +1800,7 @@ async function scrapeForUser(userId, userSources) {
                 
                 // Scroll back to top for complete screenshot
                 await page.evaluate(() => window.scrollTo(0, 0));
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                await new Promise(resolve => setTimeout(resolve, timings.betweenScrollWait));
                 
                 logger.info(`📸 Capturing high-quality screenshot for page ${pageNumber}...`);
                 const screenshot = await page.screenshot({ 
@@ -1834,7 +1911,7 @@ async function scrapeForUser(userId, userSources) {
                     // Wait for navigation or content change
                     await Promise.race([
                       page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }).catch(() => null),
-                      new Promise(resolve => setTimeout(resolve, 4000))
+                      new Promise(resolve => setTimeout(resolve, timings.afterScrollWait))
                     ]);
                     
                     const newUrl = page.url();
@@ -1970,6 +2047,9 @@ async function scrapeForUser(userId, userSources) {
             logger.error(`Block signals: ${JSON.stringify(blockSignals, null, 2)}`);
             logger.error(`Response preview: ${data.substring(0, 500)}`);
             logger.error(`⚠️ SOLUTION: Enable residential proxy to bypass blocking`);
+            
+            // Trigger rate limiter backoff on blocking detection
+            rateLimiter.onError();
           } else {
             logger.info(`✅ No blocking detected (axios)`);
             logger.info(`HTTP Status: ${axiosResponse.status}, Content length: ${data.length}`);
@@ -2508,15 +2588,24 @@ async function scrapeForUser(userId, userSources) {
         logger.info(`Dynamic mode (Puppeteer) used for ${source.name}`);
       }
       
+      // Mark rate limiter success
+      rateLimiter.onSuccess();
+      
       // Small delay between sources to ensure cleanup
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, timings.betweenSourcesWait));
       
     } catch (err) {
       logger.error(`Failed ${source.name}: ${err.message}`);
       logger.error(`Stack trace: ${err.stack}`);
       
+      // Check if it's a rate limit or block error (403, 429)
+      if (err.message.includes('403') || err.message.includes('429') || err.message.includes('blocked') || err.message.includes('rate limit')) {
+        logger.warn(`⚠️ Detected blocking/rate limiting - triggering backoff`);
+        rateLimiter.onError();
+      }
+      
       // Ensure cleanup even on error
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, timings.betweenSourcesWait));
     }
   }
   logger.info(`Scrape cycle finished for user ${userId}. Inserted ${totalInserted} total leads.\n`);
