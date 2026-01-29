@@ -1028,6 +1028,29 @@ try {
   logger.error('Error migrating users table: ' + err.message);
 }
 
+// Create default admin user if no users exist
+try {
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
+  if (userCount.count === 0) {
+    logger.info('No users found - creating default admin user');
+    const bcrypt = require('bcryptjs');
+    const defaultPassword = 'admin123'; // Change this in production!
+    const hash = bcrypt.hashSync(defaultPassword, 10);
+    db.prepare('INSERT INTO users (username, email, password_hash, role, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)').run(
+      'admin',
+      'admin@shiimanleads.com',
+      hash,
+      'admin',
+      new Date().toISOString(),
+      1
+    );
+    logger.info('✅ Created default admin user (username: admin, password: admin123)');
+    logger.warn('⚠️  IMPORTANT: Change the default admin password immediately!');
+  }
+} catch (err) {
+  logger.error('Error creating default admin user: ' + err.message);
+}
+
 // Add columns to existing leads table if missing
 try {
   const leadColumns = db.prepare("PRAGMA table_info(leads)").all();
