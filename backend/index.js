@@ -15,14 +15,23 @@ const jp = require('jsonpath');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { ProxyAgent } = require('undici');
 
-// Proxy Configuration
+// Proxy Configuration - Support multiple proxies for rotation/fallback
 const PROXY_ENABLED = process.env.PROXY_ENABLED === 'true';
-const PROXY_URL = process.env.PROXY_URL || 'http://Sk3vydHQSz93OeDz:DQeASUiiQpObLVvO@geo.iproyal.com:12321';
+const PROXY_URLS = process.env.PROXY_URLS 
+  ? process.env.PROXY_URLS.split(',').map(p => p.trim())
+  : ['http://Sk3vydHQSz93OeDz:DQeASUiiQpObLVvO@geo.iproyal.com:12321'];
+
+// Keep PROXY_URL for backwards compatibility (uses first proxy)
+const PROXY_URL = PROXY_URLS[0];
 let proxyAgent = null;
 
 if (PROXY_ENABLED) {
   proxyAgent = new ProxyAgent(PROXY_URL);
-  console.log(`✅ Proxy enabled: ${PROXY_URL.replace(/:\/\/.*@/, '://***@')}`);
+  console.log(`✅ Proxy enabled: ${PROXY_URLS.length} proxy(ies) configured`);
+  console.log(`   Primary: ${PROXY_URL.replace(/:\/\/.*@/, '://***@')}`);
+  if (PROXY_URLS.length > 1) {
+    console.log(`   Fallback proxies: ${PROXY_URLS.length - 1} available`);
+  }
 } else {
   console.log('ℹ️ Proxy disabled - set PROXY_ENABLED=true in .env to enable');
 }
@@ -125,12 +134,13 @@ function getProgress(userId) {
 
 // Default timing configuration (can be overridden per source)
 const DEFAULT_TIMINGS = {
-  networkIdleTimeout: 10000,    // 15s → 10s (faster timeout)
-  jsRenderWait: 5000,            // 8s → 5s (with network idle)
-  afterScrollWait: 3000,         // 5s → 3s (content render after scroll)
-  betweenScrollWait: 1500,       // 2s → 1.5s (between scroll actions)
-  betweenSourcesWait: 500,       // 1s → 0.5s (cleanup delay)
-  pageLoadWait: 2000             // Initial page load wait
+  networkIdleTimeout: 15000,    // Wait longer for complex pages to load
+  jsRenderWait: 8000,            // Increased for heavy JS apps (ArcGIS, etc)
+  afterScrollWait: 5000,         // More time for lazy-loaded content
+  betweenScrollWait: 2000,       // Slower scrolling for better capture
+  betweenSourcesWait: 500,       // Cleanup delay between sources
+  pageLoadWait: 3000,            // Initial wait after page load
+  aiNavigationWait: 2000         // Wait between AI navigation steps
 };
 
 // Initialize Google Gemini client
@@ -335,6 +345,863 @@ function validateExtractedFields(data, sourceName, fieldSchema = null) {
   return { isValid, confidence: validations.confidence, issues: validations.issues };
 }
 
+// === DYNAMIC DATE REPLACEMENT ===
+// Replace placeholders like {{DATE_365_DAYS_AGO}} with actual dates
+function replaceDynamicDates(text) {
+  if (!text) return text;
+  
+  const today = new Date();
+  
+  // {{DATE_365_DAYS_AGO}} or {{LAST_365_DAYS}} → date from 365 days ago
+  if (text.includes('{{DATE_365_DAYS_AGO}}') || text.includes('{{LAST_365_DAYS}}')) {
+    const date365DaysAgo = new Date(today);
+    date365DaysAgo.setDate(date365DaysAgo.getDate() - 365);
+    const formatted = formatDate(date365DaysAgo);
+    text = text.replace(/\{\{DATE_365_DAYS_AGO\}\}/g, formatted);
+    text = text.replace(/\{\{LAST_365_DAYS\}\}/g, formatted);
+  }
+  
+  // {{DATE_30_DAYS_AGO}} or {{LAST_30_DAYS}} → date from 30 days ago
+  if (text.includes('{{DATE_30_DAYS_AGO}}') || text.includes('{{LAST_30_DAYS}}')) {
+    const date30DaysAgo = new Date(today);
+    date30DaysAgo.setDate(date30DaysAgo.getDate() - 30);
+    const formatted = formatDate(date30DaysAgo);
+    text = text.replace(/\{\{DATE_30_DAYS_AGO\}\}/g, formatted);
+    text = text.replace(/\{\{LAST_30_DAYS\}\}/g, formatted);
+  }
+  
+  // {{DATE_90_DAYS_AGO}} or {{LAST_90_DAYS}} → date from 90 days ago
+  if (text.includes('{{DATE_90_DAYS_AGO}}') || text.includes('{{LAST_90_DAYS}}')) {
+    const date90DaysAgo = new Date(today);
+    date90DaysAgo.setDate(date90DaysAgo.getDate() - 90);
+    const formatted = formatDate(date90DaysAgo);
+    text = text.replace(/\{\{DATE_90_DAYS_AGO\}\}/g, formatted);
+    text = text.replace(/\{\{LAST_90_DAYS\}\}/g, formatted);
+  }
+  
+  // {{TODAY}} → today's date
+  if (text.includes('{{TODAY}}')) {
+    const formatted = formatDate(today);
+    text = text.replace(/\{\{TODAY\}\}/g, formatted);
+  }
+  
+  // {{FIRST_DAY_OF_MONTH}} → first day of current month
+  if (text.includes('{{FIRST_DAY_OF_MONTH}}')) {
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+    const formatted = formatDate(firstDay);
+    text = text.replace(/\{\{FIRST_DAY_OF_MONTH\}\}/g, formatted);
+  }
+  
+  // {{FIRST_DAY_OF_YEAR}} → January 1st of current year
+  if (text.includes('{{FIRST_DAY_OF_YEAR}}')) {
+    const firstDay = new Date(today.getFullYear(), 0, 1);
+    const formatted = formatDate(firstDay);
+    text = text.replace(/\{\{FIRST_DAY_OF_YEAR\}\}/g, formatted);
+  }
+  
+  return text;
+}
+
+// Format date as MM/DD/YYYY
+function formatDate(date) {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
+}
+
+// === AI AUTONOMOUS NAVIGATION ===
+// Uses AI vision to understand page structure and perform actions autonomously
+async function aiNavigateAndExtract(page, userPrompt, sourceName, fieldSchema = {}, userId = 1, sourceId = null) {
+  if (!geminiModel) {
+    logger.warn('Google Gemini API not configured - skipping AI navigation');
+    return null;
+  }
+
+  try {
+    // Replace dynamic date placeholders in userPrompt
+    userPrompt = replaceDynamicDates(userPrompt);
+    
+    logger.info(`🤖 AI autonomous navigation started for: "${userPrompt}"`);
+    
+    const maxSteps = 50; // Increased for pagination
+    let currentStep = 0;
+    let extractedData = [];
+    let lastExtractedHash = null; // Track if we're extracting same page repeatedly
+    let samePageCount = 0; // Count how many times we extracted the same page
+    let downloadedData = null; // Store downloaded file data across actions
+    
+    // Initial wait for heavy JavaScript apps (ArcGIS, etc.) - only on first step
+    logger.info(`⏳ Waiting 8 seconds for initial page load (ArcGIS/heavy JS apps)...`);
+    await new Promise(resolve => setTimeout(resolve, 8000));
+    
+    // Wait for network to settle after initial load
+    try {
+      await page.waitForNetworkIdle({ timeout: 10000, idleTime: 1000 });
+      logger.info(`✅ Initial page load complete - network idle`);
+    } catch (e) {
+      logger.info('⏳ Network still active after 10s, proceeding anyway...');
+    }
+    
+    while (currentStep < maxSteps) {
+      currentStep++;
+      logger.info(`🔍 AI Navigation Step ${currentStep}/${maxSteps}`);
+      
+      // Wait for page to stabilize before taking screenshot
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Wait for any network activity to settle
+      try {
+        await page.waitForNetworkIdle({ timeout: 5000 });
+      } catch (e) {
+        // Timeout is ok, just continue
+        logger.info('⏳ Network still active, proceeding anyway...');
+      }
+      
+      // Take screenshot of current page state
+      // Wait a moment for any animations/transitions to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const screenshot = await page.screenshot({ fullPage: false });
+      logger.info(`📸 Screenshot captured (${Math.round(screenshot.length / 1024)}KB)`);
+      
+      // Save screenshot to disk for debugging
+      const screenshotPath = path.join(__dirname, 'output', `ai-nav-${sourceName.replace(/[^a-z0-9]/gi, '-')}-step${currentStep}.png`);
+      fs.writeFileSync(screenshotPath, screenshot);
+      logger.info(`💾 Screenshot saved: ${screenshotPath}`);
+      
+      // Get page HTML for context (including form elements with their actual IDs/names)
+      const pageInfo = await page.evaluate(() => {
+        // Get visible text
+        const text = document.body.innerText.substring(0, 3000);
+        
+        // Get all form elements with their actual selectors
+        const formElements = [];
+        document.querySelectorAll('input, select, button, a').forEach((el, idx) => {
+          if (idx < 50) { // Increased to 50 elements to capture more buttons
+            const info = {
+              tag: el.tagName.toLowerCase(),
+              id: el.id || '',
+              name: el.name || '',
+              class: el.className || '',
+              type: el.type || '',
+              text: el.innerText?.substring(0, 100) || el.value?.substring(0, 100) || '',
+              placeholder: el.placeholder || '',
+              title: el.title || '',
+              value: el.value?.substring(0, 50) || ''
+            };
+            formElements.push(info);
+          }
+        });
+        
+        return { text, formElements };
+      });
+      
+      // Ask AI what to do next
+      const navigationPrompt = `You are an autonomous web navigation AI. 
+
+USER'S DETAILED INSTRUCTIONS:
+${userPrompt}
+
+Current page text preview:
+${pageInfo.text}
+
+Available form elements on the page (use these EXACT selectors):
+${JSON.stringify(pageInfo.formElements, null, 2)}
+
+You are viewing a screenshot of the current page state. Analyze it and determine the NEXT ACTION to accomplish the user's instructions above.
+
+Your response MUST be a JSON object with ONE of these actions:
+
+1. Click an element BY TEXT (preferred for buttons with visible text like "Table", "Submit", "Next"):
+{"action": "click", "buttonText": "Table", "selector": "button", "reasoning": "clicking Table button to show table view"}
+
+2. Click an element BY SELECTOR (when no visible text):
+{"action": "click", "selector": "CSS selector of element to click", "reasoning": "why clicking this"}
+
+3. Fill a form field:
+{"action": "fill", "selector": "CSS selector", "value": "text to enter", "reasoning": "why"}
+
+4. Download data file (for Export/Download buttons):
+{"action": "download", "selector": "CSS selector of Export/Download button", "reasoning": "downloading data file"}
+
+5. Extract data from table/list OR downloaded file (WAIT until after form submission/download to use this):
+{"action": "extract", "tableSelector": "table CSS selector", "reasoning": "data is ready to extract"}
+
+6. Click next page/pagination (ONLY use AFTER extracting current page):
+{"action": "nextPage", "selector": "next button CSS selector", "reasoning": "more pages to process"}
+
+7. Done - all pages extracted:
+{"action": "done", "reasoning": "task completed successfully"}
+
+CRITICAL RULES:
+- Follow the USER'S DETAILED INSTRUCTIONS step by step
+- Use ONLY selectors from the "Available form elements" list above
+- Construct selectors as: #id, [name="..."], .classname, button, or a
+- Look for button text like "Create a List", "Create List", "Submit", "Search", "Next", "Load More"
+- NEVER use jQuery syntax like :contains(), :visible, :checked, etc.
+- Use ONLY standard CSS selectors that work with document.querySelector()
+- Return ONLY valid JSON, no explanations outside the JSON
+- After filling form fields, CLICK the submit/search button
+- WAIT for results to load, THEN use "extract" action
+- After extracting, look for pagination: page numbers (2, 3, 4...), "Next" button, "Load More" button
+- Use "nextPage" to click pagination, then "extract" again on the new page
+- Repeat "nextPage" → "extract" until no more pages exist, then say "done"
+
+VALID selector examples: #btnSearch, button, [name="search"], .search-button
+INVALID selectors: button:contains('Search'), input:visible, :checked
+
+Current step: ${currentStep}/${maxSteps}`;
+
+      const imageData = {
+        inlineData: {
+          data: screenshot.toString('base64'),
+          mimeType: 'image/png'
+        }
+      };
+
+      const result = await geminiModel.generateContent({
+        contents: [{ role: 'user', parts: [{ text: navigationPrompt }, imageData] }],
+        generationConfig: buildGenConfig()
+      });
+
+      const response = await result.response;
+      let aiResponse = response.text().trim();
+      
+      logger.info(`📝 Raw AI response: ${aiResponse.substring(0, 500)}`);
+      
+      // Clean response - remove markdown code blocks
+      if (aiResponse.startsWith('```json')) {
+        aiResponse = aiResponse.replace(/```json\n?/g, '').replace(/```\n?/g, '');
+      } else if (aiResponse.startsWith('```')) {
+        aiResponse = aiResponse.replace(/```\n?/g, '');
+      }
+      
+      // Remove any trailing text after JSON
+      aiResponse = aiResponse.trim();
+      
+      // Extract JSON - find first { and last }
+      const jsonStart = aiResponse.indexOf('{');
+      const jsonEnd = aiResponse.lastIndexOf('}');
+      
+      if (jsonStart < 0 || jsonEnd < 0 || jsonEnd <= jsonStart) {
+        logger.error(`❌ No valid JSON found in AI response`);
+        logger.error(`Response was: ${aiResponse}`);
+        throw new Error('AI did not return valid JSON');
+      }
+      
+      aiResponse = aiResponse.substring(jsonStart, jsonEnd + 1);
+      
+      // Additional cleanup - remove any text after the closing brace
+      const extraText = aiResponse.indexOf('}') + 1;
+      if (extraText < aiResponse.length) {
+        const after = aiResponse.substring(extraText).trim();
+        if (after.length > 0) {
+          logger.warn(`⚠️ Removing extra text after JSON: ${after.substring(0, 100)}`);
+          aiResponse = aiResponse.substring(0, extraText);
+        }
+      }
+      
+      logger.info(`🧹 Cleaned JSON: ${aiResponse}`);
+      
+      const action = JSON.parse(aiResponse);
+      logger.info(`🎯 AI Decision: ${action.action} - ${action.reasoning}`);
+      
+      // Execute the action
+      if (action.action === 'download') {
+        logger.info(`📥 Attempting to download file...`);
+        
+        // Set up download behavior
+        const downloadPath = path.join(__dirname, 'output', 'downloads');
+        if (!fs.existsSync(downloadPath)) {
+          fs.mkdirSync(downloadPath, { recursive: true });
+        }
+        
+        // Enable downloads
+        const client = await page.target().createCDPSession();
+        await client.send('Page.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: downloadPath
+        });
+        
+        // Find and click download/export button - try multiple strategies
+        try {
+          let downloadButton = null;
+          
+          // Try user-specified selector first
+          if (action.selector && action.selector !== 'a' && action.selector !== 'button') {
+            downloadButton = await page.$(action.selector);
+            if (downloadButton) {
+              logger.info(`🔍 Using specified selector: ${action.selector}`);
+            }
+          }
+          
+          // If not found or too generic, search for Export/Download buttons by text
+          if (!downloadButton) {
+            logger.info(`🔍 Searching for Export/Download button...`);
+            downloadButton = await page.evaluateHandle(() => {
+              const buttons = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+              
+              // Look for Export or Download buttons
+              const exportBtn = buttons.find(btn => {
+                const text = (btn.innerText || btn.textContent || '').toLowerCase().trim();
+                return text === 'export' || text === 'download' || text === 'export data' || text === 'download data';
+              });
+              
+              return exportBtn || null;
+            });
+            
+            if (downloadButton && await downloadButton.asElement()) {
+              logger.info(`✅ Found Export/Download button by text search`);
+            }
+          }
+          
+          const elementExists = downloadButton && await downloadButton.asElement();
+          if (elementExists) {
+            logger.info(`🔍 Found download button`);
+            
+            // Start waiting for download
+            const downloadPromise = new Promise((resolve) => {
+              client.on('Page.downloadProgress', (event) => {
+                if (event.state === 'completed') {
+                  logger.info(`✅ Download completed: ${event.url}`);
+                  resolve(event.guid);
+                }
+              });
+            });
+            
+            // Click the download button
+            await downloadButton.click();
+            logger.info(`✅ Clicked download button`);
+            
+            // Wait for download to complete (max 30 seconds)
+            await Promise.race([
+              downloadPromise,
+              new Promise((_, reject) => setTimeout(() => reject(new Error('Download timeout')), 30000))
+            ]).catch(e => logger.warn(`Download wait timeout: ${e.message}`));
+            
+            // Wait a bit for file to be written
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Find the downloaded file
+            const files = fs.readdirSync(downloadPath);
+            if (files.length > 0) {
+              const downloadedFile = path.join(downloadPath, files[files.length - 1]); // Get most recent file
+              logger.info(`📄 Found downloaded file: ${downloadedFile}`);
+              
+              // Parse the downloaded file based on extension
+              const fileExt = path.extname(downloadedFile).toLowerCase();
+              let parsedData = [];
+              
+              if (fileExt === '.csv') {
+                logger.info(`📊 Parsing CSV file...`);
+                const Papa = require('papaparse');
+                const csvContent = fs.readFileSync(downloadedFile, 'utf8');
+                const result = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
+                parsedData = result.data;
+                logger.info(`✅ Parsed ${parsedData.length} rows from CSV`);
+              } else if (fileExt === '.json') {
+                logger.info(`📊 Parsing JSON file...`);
+                const jsonContent = fs.readFileSync(downloadedFile, 'utf8');
+                parsedData = JSON.parse(jsonContent);
+                if (!Array.isArray(parsedData)) {
+                  parsedData = parsedData.data || parsedData.results || [parsedData];
+                }
+                logger.info(`✅ Parsed ${parsedData.length} rows from JSON`);
+              }
+              
+              // Store parsed data for next extract action
+              downloadedData = parsedData;
+              logger.info(`💾 Stored ${parsedData.length} rows for extraction`);
+              
+            } else {
+              logger.warn(`⚠️ No downloaded file found`);
+            }
+            
+          } else {
+            logger.error(`❌ Export/Download button not found on page`);
+            logger.info(`💡 Looking for buttons with text: Export, Download, Export Data, Download Data`);
+          }
+        } catch (downloadError) {
+          logger.error(`❌ Download failed: ${downloadError.message}`);
+        }
+        
+      } else if (action.action === 'click') {
+        // If clicking based on text (e.g., "Table" button), search by text first
+        let clickTarget = null;
+        
+        // Check if action has buttonText specified
+        if (action.buttonText) {
+          logger.info(`🔍 Searching for button with text: "${action.buttonText}"`);
+          clickTarget = await page.evaluateHandle((searchText) => {
+            const buttons = Array.from(document.querySelectorAll('button, a, [role="button"], div[class*="button"]'));
+            
+            // Find button with exact or partial text match
+            const matchingBtn = buttons.find(btn => {
+              const text = (btn.innerText || btn.textContent || '').trim();
+              const title = btn.getAttribute('title') || '';
+              const ariaLabel = btn.getAttribute('aria-label') || '';
+              
+              return text === searchText || 
+                     text.toLowerCase() === searchText.toLowerCase() ||
+                     title.toLowerCase().includes(searchText.toLowerCase()) ||
+                     ariaLabel.toLowerCase().includes(searchText.toLowerCase());
+            });
+            
+            return matchingBtn || null;
+          }, action.buttonText);
+          
+          if (clickTarget && await clickTarget.asElement()) {
+            logger.info(`✅ Found button by text: "${action.buttonText}"`);
+          } else {
+            logger.warn(`⚠️ Button with text "${action.buttonText}" not found, falling back to selector`);
+          }
+        }
+        
+        // Fall back to selector if no buttonText or text search failed
+        if (!clickTarget || !(await clickTarget.asElement())) {
+          clickTarget = await page.$(action.selector);
+        }
+        
+        const elementExists = clickTarget && await clickTarget.asElement();
+        if (!elementExists) {
+          logger.error(`❌ Selector not found: ${action.selector}`);
+          logger.warn(`⚠️ AI hallucinated a selector that doesn't exist on the page`);
+          logger.info(`💡 Taking screenshot to help AI re-evaluate...`);
+          // Continue to next step instead of failing
+        } else {
+          await clickTarget.click();
+          logger.info(`✅ Clicked: ${action.buttonText || action.selector}`);
+          
+          // Wait for page to update after click
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Wait for network to settle
+          await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => logger.warn('Network idle timeout'));
+          
+          // Additional wait for any AJAX/dynamic content
+          await new Promise(resolve => setTimeout(resolve, 2000));
+
+        }
+        
+      } else if (action.action === 'fill') {
+        // Validate selector exists before typing
+        const elementExists = await page.$(action.selector);
+        if (!elementExists) {
+          logger.error(`❌ Selector not found: ${action.selector}`);
+          logger.warn(`⚠️ AI hallucinated a selector that doesn't exist on the page`);
+        } else {
+          // Check if it's a select dropdown
+          const isSelect = await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            return el && el.tagName.toLowerCase() === 'select';
+          }, action.selector);
+          
+          if (isSelect) {
+            // For dropdowns, find option by text and select by value
+            const selectedValue = await page.evaluate((sel, searchText) => {
+              const select = document.querySelector(sel);
+              if (!select) return null;
+              
+              const options = Array.from(select.options);
+              
+              // Log available options for debugging
+              console.log('Available options:', options.map(o => o.text));
+              console.log('Searching for:', searchText);
+              
+              // Try multiple matching strategies
+              let matchingOption = null;
+              
+              // 1. Exact match
+              matchingOption = options.find(opt => opt.text === searchText);
+              
+              // 2. Contains search text
+              if (!matchingOption) {
+                matchingOption = options.find(opt => opt.text.includes(searchText));
+              }
+              
+              // 3. Search text contains option text
+              if (!matchingOption) {
+                matchingOption = options.find(opt => searchText.includes(opt.text));
+              }
+              
+              // 4. For "007 - 10 OR MORE FAMILY UNITS", try partial matches
+              if (!matchingOption && searchText.includes('007')) {
+                matchingOption = options.find(opt => opt.text.includes('007') && opt.text.includes('10 OR MORE'));
+              }
+              
+              // 5. Case-insensitive match
+              if (!matchingOption) {
+                const searchLower = searchText.toLowerCase();
+                matchingOption = options.find(opt => 
+                  opt.text.toLowerCase().includes(searchLower) || 
+                  searchLower.includes(opt.text.toLowerCase())
+                );
+              }
+              
+              if (matchingOption) {
+                console.log('Found matching option:', matchingOption.text);
+                select.value = matchingOption.value;
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                return matchingOption.text + ' (value: ' + matchingOption.value + ')';
+              }
+              
+              console.log('No matching option found');
+              return null;
+            }, action.selector, action.value);
+            
+            if (selectedValue) {
+              logger.info(`✅ Selected dropdown: ${action.selector} = ${selectedValue}`);
+            } else {
+              logger.warn(`⚠️ Could not find option matching "${action.value}" in dropdown ${action.selector}`);
+            }
+          } else {
+            // Regular text input
+            await page.type(action.selector, action.value);
+            logger.info(`✅ Filled: ${action.selector} = ${action.value}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+      } else if (action.action === 'extract') {
+        // Check if we have downloaded data from a previous download action
+        let extracted = null;
+        
+        if (downloadedData && downloadedData.length > 0) {
+          logger.info(`📥 Using ${downloadedData.length} rows from downloaded file`);
+          
+          // Map downloaded data to field schema
+          extracted = downloadedData.map(row => {
+            const mappedRow = {};
+            
+            // Try to map each field in schema to downloaded data columns
+            Object.keys(fieldSchema).forEach(fieldName => {
+              // Try exact match first
+              if (row[fieldName] !== undefined) {
+                mappedRow[fieldName] = row[fieldName];
+              } else {
+                // Try case-insensitive match
+                const matchingKey = Object.keys(row).find(k => k.toLowerCase() === fieldName.toLowerCase());
+                if (matchingKey) {
+                  mappedRow[fieldName] = row[matchingKey];
+                } else {
+                  mappedRow[fieldName] = null;
+                }
+              }
+            });
+            
+            return mappedRow;
+          });
+          
+          logger.info(`✅ Mapped ${extracted.length} rows from downloaded data to field schema`);
+          
+        } else {
+          // Normal screenshot-based extraction
+          logger.info(`📊 Extracting data from page - waiting for table to fully load`);
+          
+          // Wait for table to be visible and fully populated
+          await page.waitForSelector('table, [id*="grid"], [class*="results"], [class*="table"]', { 
+            visible: true, 
+            timeout: 10000 
+          }).catch(() => logger.warn('⚠️ Table selector not found'));
+          
+          // Wait for AJAX/dynamic content to finish loading
+          await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => logger.warn('Network idle timeout'));
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // Take a full page screenshot for AI vision extraction
+          const screenshot = await page.screenshot({ fullPage: true });
+          
+          logger.info(`📸 Screenshot captured, sending to AI for extraction...`);
+          extracted = await extractLeadWithAI(screenshot, sourceName, fieldSchema, false);
+        }
+        
+        if (extracted) {
+          const leadsArray = Array.isArray(extracted) ? extracted : [extracted];
+          
+          // Check if we're extracting the same data as last time (stuck on same page)
+          const currentHash = require('crypto').createHash('md5').update(JSON.stringify(extracted)).digest('hex');
+          if (currentHash === lastExtractedHash) {
+            samePageCount++;
+            logger.warn(`⚠️ Extracted same data as last time (${samePageCount} times) - pagination may be needed`);
+            
+            // If we've extracted the same page 2+ times, force pagination
+            if (samePageCount >= 2) {
+              logger.info(`🔄 Auto-triggering pagination - clicking next page button`);
+              
+              // Try to click page number or Next button
+              const nextClicked = await page.evaluate(() => {
+                const btns = Array.from(document.querySelectorAll('a, button'));
+                
+                // Try to find page 2, 3, 4... (look for next sequential number)
+                const currentPageEl = btns.find(b => b.classList.contains('k-state-selected') || b.classList.contains('active'));
+                if (currentPageEl) {
+                  const currentPageText = currentPageEl.innerText.trim();
+                  const currentPageNum = parseInt(currentPageText);
+                  if (!isNaN(currentPageNum)) {
+                    const nextPageNum = currentPageNum + 1;
+                    const nextPageBtn = btns.find(b => b.innerText.trim() === String(nextPageNum));
+                    if (nextPageBtn && nextPageBtn.offsetParent) {
+                      nextPageBtn.click();
+                      return { success: true, page: nextPageNum };
+                    }
+                  }
+                }
+                
+                // Fallback: Try clicking "2" if we're on page 1
+                const page2 = btns.find(b => b.innerText.trim() === '2' && b.offsetParent && !b.disabled);
+                if (page2) {
+                  page2.click();
+                  return { success: true, page: 2 };
+                }
+                
+                // Fallback: Click Next button
+                const next = btns.find(b => {
+                  const t = (b.innerText || '').toLowerCase().trim();
+                  return (t === 'next' || t === '›' || t === '>') && b.offsetParent && !b.disabled;
+                });
+                if (next) {
+                  next.click();
+                  return { success: true, page: 'next' };
+                }
+                
+                return { success: false };
+              });
+              
+              if (nextClicked.success) {
+                logger.info(`➡️ Clicked pagination button (page ${nextClicked.page})`);
+                
+                // Wait for new page to load
+                await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => logger.warn('Network idle timeout'));
+                await page.waitForSelector('table, [id*="grid"], [class*="results"]', { visible: true, timeout: 10000 }).catch(() => {});
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                // Reset counter and hash since we're on a new page
+                samePageCount = 0;
+                lastExtractedHash = null;
+                
+                logger.info(`✅ New page loaded, continuing extraction...`);
+                continue; // Skip the rest and go to next iteration
+              } else {
+                logger.info(`✓ No more pages found - pagination complete`);
+                break; // Exit loop, we're done
+              }
+            }
+          } else {
+            // Different data, reset counter
+            samePageCount = 0;
+            lastExtractedHash = currentHash;
+          }
+          
+          // Insert leads IMMEDIATELY into database
+          for (const leadData of leadsArray) {
+            const wasInserted = await insertLeadIfNew({
+              raw: JSON.stringify(leadData),
+              sourceName: sourceName,
+              lead: leadData,
+              userId: userId,
+              sourceId: sourceId,
+              extractedData: leadData
+            });
+            
+            if (wasInserted) {
+              logger.info(`✅ Inserted lead: ${leadData.number || leadData.permit_number || leadData.name || 'unknown'}`);
+            }
+          }
+          
+          extractedData.push(...leadsArray);
+          logger.info(`✅ Extracted and inserted ${leadsArray.length} leads from screenshot`);
+        } else {
+          logger.warn(`⚠️ No data extracted from screenshot`);
+        }
+        
+      } else if (action.action === 'nextPage') {
+        // Validate selector exists before clicking
+        const elementExists = await page.$(action.selector);
+        if (!elementExists) {
+          logger.error(`❌ Next page selector not found: ${action.selector}`);
+          logger.warn(`⚠️ No more pages or AI hallucinated selector - treating as done`);
+          break; // Exit AI loop if no pagination found
+        } else {
+          await page.click(action.selector);
+          logger.info(`➡️ Navigating to next page: ${action.selector}`);
+          
+          // Wait for new page to load
+          await page.waitForNetworkIdle({ idleTime: 500, timeout: 15000 }).catch(() => logger.warn('Network idle timeout'));
+          
+          // Wait for table to appear on new page
+          await page.waitForSelector('table, [id*="grid"], [class*="results"]', { 
+            visible: true, 
+            timeout: 10000 
+          }).catch(() => logger.warn('⚠️ Results not found on new page'));
+          
+          // Additional wait for data to populate
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          logger.info(`✅ New page loaded and ready`);
+        }
+        
+      } else if (action.action === 'done') {
+        logger.info(`✅ AI navigation complete: ${action.reasoning}`);
+        
+        // After AI finishes, check if there are more pages to scrape
+        logger.info(`🔍 Checking for pagination...`);
+        let pageNum = 1;
+        let hasMorePages = true;
+        
+        while (hasMorePages && pageNum <= 50) {
+          logger.info(`📄 Checking page ${pageNum} for Next button...`);
+          
+          // Puppeteer: Check for Next button or page number link
+          const nextFound = await page.evaluate((targetPage) => {
+            // First try to find page number link (2, 3, 4, etc.)
+            const btns = Array.from(document.querySelectorAll('a, button, input'));
+            const pageLink = btns.find(b => {
+              const t = (b.innerText || b.value || '').trim();
+              return t === String(targetPage) && b.offsetParent && !b.disabled;
+            });
+            
+            if (pageLink) {
+              return { found: true, type: 'pageNumber', page: targetPage };
+            }
+            
+            // Fallback to Next button
+            const next = btns.find(b => {
+              const t = (b.innerText || b.value || '').toLowerCase().trim();
+              return (t === 'next' || t === '>' || t === '›' || t === '→') && b.offsetParent && !b.disabled;
+            });
+            
+            return next ? { found: true, type: 'next' } : { found: false };
+          }, pageNum + 1);
+          
+          if (nextFound.found) {
+            logger.info(`➡️ Found ${nextFound.type === 'pageNumber' ? `page ${pageNum + 1} link` : 'Next button'}, clicking...`);
+            
+            // Click Next or page number
+            await page.evaluate((targetPage) => {
+              const btns = Array.from(document.querySelectorAll('a, button, input'));
+              
+              // Try page number first
+              const pageLink = btns.find(b => {
+                const t = (b.innerText || b.value || '').trim();
+                return t === String(targetPage);
+              });
+              
+              if (pageLink) {
+                pageLink.click();
+                return;
+              }
+              
+              // Fallback to Next button
+              const next = btns.find(b => {
+                const t = (b.innerText || b.value || '').toLowerCase().trim();
+                return t === 'next' || t === '>' || t === '›' || t === '→';
+              });
+              if (next) next.click();
+            }, pageNum + 1);
+            
+            // Wait for page to load
+            await new Promise(r => setTimeout(r, 5000));
+            
+            // Take screenshot and extract with AI
+            logger.info(`📸 Taking screenshot of page ${pageNum + 1}...`);
+            const pageScreenshot = await page.screenshot({ fullPage: true });
+            
+            logger.info(`🤖 AI extracting from page ${pageNum + 1}...`);
+            const pageExtracted = await extractLeadWithAI(
+              pageScreenshot.toString('base64'),
+              sourceName,
+              fieldSchema,
+              true, // isScreenshot
+              'image/png'
+            );
+            
+            if (pageExtracted && pageExtracted.length > 0) {
+              const leadsArray = Array.isArray(pageExtracted) ? pageExtracted : [pageExtracted];
+              
+              // Insert leads IMMEDIATELY into database
+              for (const leadData of leadsArray) {
+                const wasInserted = await insertLeadIfNew({
+                  raw: JSON.stringify(leadData),
+                  sourceName: sourceName,
+                  lead: leadData,
+                  userId: userId,
+                  sourceId: sourceId,
+                  extractedData: leadData
+                });
+                
+                if (wasInserted) {
+                  logger.info(`✅ Inserted lead from page ${pageNum + 1}: ${leadData.number || leadData.permit_number || 'unknown'}`);
+                }
+              }
+              
+              extractedData.push(...leadsArray);
+              logger.info(`✅ Extracted and inserted ${leadsArray.length} leads from page ${pageNum + 1}`);
+            }
+            
+            pageNum++;
+          } else {
+            logger.info(`✓ No more Next button - reached end`);
+            hasMorePages = false;
+          }
+        }
+        
+        break;
+      }
+    }
+    
+    logger.info(`🎉 AI navigation finished. Extracted ${extractedData.length} total leads`);
+    return extractedData;
+    
+  } catch (error) {
+    logger.error(`❌ AI navigation failed: ${error.message}`);
+    return null;
+  }
+}
+
+// === REMAP NUMERIC KEYS TO FIELD NAMES ===
+function remapNumericKeysToFieldNames(data, fieldSchema) {
+  if (!data || !fieldSchema) return data;
+  
+  // Get field names in order (assuming fieldSchema is array or object)
+  const fieldNames = Array.isArray(fieldSchema) 
+    ? fieldSchema.map(f => f.name) 
+    : Object.keys(fieldSchema);
+  
+  // Check if data has numeric keys like "0", "1", "2"
+  const hasNumericKeys = (obj) => {
+    const keys = Object.keys(obj);
+    return keys.some(k => /^\d+$/.test(k));
+  };
+  
+  // Remap function
+  const remapObject = (obj) => {
+    if (!hasNumericKeys(obj)) return obj; // Already has proper field names
+    
+    const remapped = {};
+    for (let i = 0; i < fieldNames.length; i++) {
+      const numericKey = String(i);
+      if (obj.hasOwnProperty(numericKey)) {
+        remapped[fieldNames[i]] = obj[numericKey];
+      }
+    }
+    
+    // Keep any non-numeric keys
+    for (const [key, value] of Object.entries(obj)) {
+      if (!/^\d+$/.test(key)) {
+        remapped[key] = value;
+      }
+    }
+    
+    return remapped;
+  };
+  
+  // Handle array of objects or single object
+  if (Array.isArray(data)) {
+    return data.map(item => remapObject(item));
+  } else {
+    return remapObject(data);
+  }
+}
+
 // === AI EXTRACTION WITH GOOGLE GEMINI VISION ===
 async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry = false) {
   if (!geminiModel) {
@@ -365,11 +1232,35 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
 REQUIRED JSON FIELDS (use EXACTLY these keys, no modifications):
 ${fieldDescriptions}
 
+FIELD MATCHING INSTRUCTIONS:
+🔍 Look CAREFULLY at the table column headers in the screenshot
+🔍 Headers may be abbreviated or truncated (e.g., "Contr." = Contractor, "Val..." = Valuation)
+🔍 Match field names by semantic meaning, not exact spelling
+🔍 Extract data from matching columns for ALL visible rows
+🔍 DO NOT extract by column position - match by HEADER NAME
+
+COLUMN HEADER MATCHING EXAMPLES:
+- "number" field → Match headers: "Number", "Permit Number", "Permit #", "Num", "#"
+- "type" field → Match headers: "Type", "Permit Type", "Category"
+- "valuation" field → Match headers: "Valuation", "Value", "Val", "Amount", "Cost", "Project Value"
+- "contractor" field → Match headers: "Contractor", "Contr.", "Contractor Name", "Builder"
+- "contractor_phone" field → Match headers: "Contr. Phone", "Phone", "Contact", "Contractor Phone"
+- "owner" field → Match headers: "Owner", "Owner Name", "Property Owner"
+- "description" field → Match headers: "Description", "Desc", "Work Description", "Project Description"
+
+IMPORTANT FOR PHOENIX PERMITS:
+- Table may have abbreviated column headers due to space constraints
+- "Contr." means Contractor
+- "Val..." or "Valuation" means project value
+- Read the FIRST ROW of the table as column headers
+- Then extract data from ALL subsequent rows
+
 CRITICAL RULES:
 ✅ CORRECT field names: ${fieldDescriptions}
 ❌ WRONG - DO NOT concatenate or modify field names
 ❌ DO NOT add descriptions to field names
 ❌ DO NOT use underscores to join field name + description
+❌ DO NOT extract by column position - ALWAYS match by header name
 
 EXAMPLE OF CORRECT OUTPUT:
 [
@@ -389,11 +1280,14 @@ EXAMPLE OF WRONG OUTPUT (DO NOT DO THIS):
 ]
 
 EXTRACTION INSTRUCTIONS:
-1. Extract ALL visible records from the screenshot (tables, lists, cards)
-2. If you see 25 records, extract ALL 25 - do not stop early
-3. For each record, use ONLY the field names listed above
-4. Put null for missing values
-5. Return a JSON array if multiple records, JSON object if single record
+1. Read the table/list column headers in the screenshot
+2. For each required field, find the matching column header by semantic meaning
+3. Extract data from that column for all visible records
+4. Extract ALL visible records from the screenshot (tables, lists, cards)
+5. If you see 25 records, extract ALL 25 - do not stop early
+6. For each record, use ONLY the field names listed above
+7. Put null for missing values
+8. Return a JSON array if multiple records, JSON object if single record
 
 OUTPUT REQUIREMENTS:
 ⚠️ Return ONLY valid JSON - no explanations, no markdown, no text
@@ -549,19 +1443,30 @@ ${truncatedText}`;
     };
     const extracted = safeParse(cleanedText);
     
+    // Fix numeric keys if AI returned {"0": "value", "1": "value"} instead of proper field names
+    const fixedExtracted = remapNumericKeysToFieldNames(extracted, fieldSchema);
+    
     // Validate extracted data
-    const validation = validateExtractedFields(extracted, sourceName, fieldSchema);
+    const validation = validateExtractedFields(fixedExtracted, sourceName, fieldSchema);
     
     if (validation.isValid) {
       logger.info(`✨ AI extracted lead from ${sourceName} (confidence: ${validation.confidence}%) ${isScreenshot ? '[VISION]' : '[TEXT]'}`);
-      return { ...extracted, _aiConfidence: validation.confidence };
+      // If extracted is an array, add confidence to each item and return the array
+      if (Array.isArray(fixedExtracted)) {
+        return fixedExtracted.map(item => ({ ...item, _aiConfidence: validation.confidence }));
+      }
+      return { ...fixedExtracted, _aiConfidence: validation.confidence };
     } else if (!isRetry) {
       // Try one more time with validation feedback
       logger.warn(`⚠️ First extraction had issues, retrying... ${validation.issues.join(', ')}`);
       return await extractLeadWithAI(input, sourceName, fieldSchema, true);
     } else {
       logger.warn(`⚠️ AI extraction validation failed after retry for ${sourceName}`);
-      return { ...extracted, _aiConfidence: validation.confidence, _validationIssues: validation.issues };
+      // If extracted is an array, add confidence to each item
+      if (Array.isArray(fixedExtracted)) {
+        return fixedExtracted.map(item => ({ ...item, _aiConfidence: validation.confidence, _validationIssues: validation.issues }));
+      }
+      return { ...fixedExtracted, _aiConfidence: validation.confidence, _validationIssues: validation.issues };
     }
     
   } catch (error) {
@@ -737,7 +1642,11 @@ function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedDat
     
     // Generate hash for this source-specific table
     const hash = crypto.createHash('md5').update(`${rawText}${sourceId}`).digest('hex');
-    values.hash = hash;
+    if (columns.includes('_hash')) {
+      values._hash = hash;
+    } else if (columns.includes('hash')) {
+      values.hash = hash;
+    }
     
     // Build INSERT statement
     const columnNames = Object.keys(values).join(', ');
@@ -1028,29 +1937,6 @@ try {
   logger.error('Error migrating users table: ' + err.message);
 }
 
-// Create default admin user if no users exist
-try {
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get();
-  if (userCount.count === 0) {
-    logger.info('No users found - creating default admin user');
-    const bcrypt = require('bcryptjs');
-    const defaultPassword = 'admin123'; // Change this in production!
-    const hash = bcrypt.hashSync(defaultPassword, 10);
-    db.prepare('INSERT INTO users (username, email, password_hash, role, created_at, email_verified) VALUES (?, ?, ?, ?, ?, ?)').run(
-      'admin',
-      'admin@shiimanleads.com',
-      hash,
-      'admin',
-      new Date().toISOString(),
-      1
-    );
-    logger.info('✅ Created default admin user (username: admin, password: admin123)');
-    logger.warn('⚠️  IMPORTANT: Change the default admin password immediately!');
-  }
-} catch (err) {
-  logger.error('Error creating default admin user: ' + err.message);
-}
-
 // Add columns to existing leads table if missing
 try {
   const leadColumns = db.prepare("PRAGMA table_info(leads)").all();
@@ -1219,6 +2105,13 @@ async function scrapeForUser(userId, userSources) {
         source.usePuppeteer = true;
         logger.info(`Source ${source.name} configured with method: puppeteer`);
       }
+      
+      // Check for AI prompt and log it
+      if (source.aiPrompt) {
+        logger.info(`🤖 AI PROMPT DETECTED: "${source.aiPrompt}"`);
+      } else {
+        logger.info(`ℹ️  No AI prompt found for this source`);
+      }
 
       // If source explicitly requests Puppeteer (dynamic rendering / JS required)
       if (source.usePuppeteer === true) {
@@ -1239,7 +2132,10 @@ async function scrapeForUser(userId, userSources) {
           
           // Add proxy if enabled (extract host:port only, no protocol or credentials)
           // Allow per-source proxy override with useProxy flag (defaults to true)
+          // requireProxy flag prevents fallback to direct connection if proxy fails
           const shouldUseProxy = PROXY_ENABLED && (source.useProxy !== false);
+          const requireProxy = source.requireProxy === true; // If true, never retry without proxy
+          
           if (shouldUseProxy) {
             const proxyMatch = PROXY_URL.match(/@?([^@\/]+:\d+)/);
             if (proxyMatch) {
@@ -1247,6 +2143,9 @@ async function scrapeForUser(userId, userSources) {
               launchOptions.args.push(`--proxy-server=http://${proxyHostPort}`);
               launchOptions.args.push('--proxy-bypass-list=<-loopback>');
               logger.info(`🌐 Puppeteer using proxy: http://${proxyHostPort}`);
+              if (requireProxy) {
+                logger.info(`🔒 Proxy REQUIRED - will not retry without proxy if it fails`);
+              }
             }
           } else if (PROXY_ENABLED && source.useProxy === false) {
             logger.info(`⚠️ Proxy disabled for this source (source.useProxy=false)`);
@@ -1301,10 +2200,268 @@ async function scrapeForUser(userId, userSources) {
           
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
           
-          const navOpts = { waitUntil: 'domcontentloaded', timeout: 90000 };
-          await page.goto(source.url, navOpts);
-          logger.info(`Puppeteer loaded page: ${source.url}`);
+          const navOpts = { waitUntil: 'domcontentloaded', timeout: 120000 }; // Increased to 120s
           
+          // === AI AUTONOMOUS MODE ===
+          // If source has aiPrompt, use AI to navigate and extract automatically BEFORE loading the page
+          if (source.aiPrompt && source.aiPrompt.trim()) {
+            logger.info(`🤖 AI AUTONOMOUS MODE enabled: "${source.aiPrompt}"`);
+            
+            // Load the page with proxy rotation for failures
+            let pageLoaded = false;
+            let proxyIndex = 0;
+            const maxProxyAttempts = shouldUseProxy ? PROXY_URLS.length : 1;
+            const allowDirectConnection = source.allowDirectConnection === true; // Explicit opt-in required
+            
+            while (!pageLoaded && proxyIndex <= maxProxyAttempts) {
+              try {
+                await page.goto(source.url, navOpts);
+                pageLoaded = true;
+                logger.info(`Puppeteer loaded page: ${source.url}`);
+              } catch (gotoError) {
+                
+                // Check if it's a proxy tunnel error
+                if (gotoError.message.includes('ERR_TUNNEL_CONNECTION_FAILED')) {
+                  logger.warn(`⚠️ Proxy tunnel failed: ${gotoError.message}`);
+                  
+                  // Try next proxy in rotation
+                  proxyIndex++;
+                  
+                  if (proxyIndex < maxProxyAttempts && shouldUseProxy) {
+                    // Try next proxy
+                    logger.info(`🔄 Trying fallback proxy ${proxyIndex + 1}/${PROXY_URLS.length}...`);
+                    
+                    if (browser) await browser.close();
+                    
+                    // Relaunch with next proxy
+                    const nextProxyURL = PROXY_URLS[proxyIndex];
+                    const proxyMatch = nextProxyURL.match(/@?([^@\/]+:\d+)/);
+                    
+                    const launchOptionsNextProxy = {
+                      headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
+                      args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--ignore-certificate-errors',
+                        '--ignore-certificate-errors-spki-list',
+                        `--proxy-server=http://${proxyMatch[1]}`,
+                        '--proxy-bypass-list=<-loopback>'
+                      ]
+                    };
+                    
+                    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+                      launchOptionsNextProxy.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+                    }
+                    
+                    browser = await puppeteer.launch(launchOptionsNextProxy);
+                    page = await browser.newPage();
+                    await page.setViewport({ width: 2560, height: 1440 });
+                    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                    
+                    // Authenticate next proxy
+                    if (nextProxyURL.includes('@')) {
+                      const proxyAuth = nextProxyURL.match(/:\/\/(.+):(.+)@/);
+                      if (proxyAuth) {
+                        await page.authenticate({
+                          username: proxyAuth[1],
+                          password: proxyAuth[2]
+                        });
+                      }
+                    }
+                    
+                    // Apply stealth again
+                    await page.evaluateOnNewDocument(() => {
+                      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                      const originalQuery = window.navigator.permissions.query;
+                      window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                          Promise.resolve({ state: Notification.permission }) :
+                          originalQuery(parameters)
+                      );
+                      window.chrome = { runtime: {} };
+                    });
+                    
+                    logger.info(`🌐 Retrying with fallback proxy`);
+                    
+                  } else if (allowDirectConnection) {
+                    // Last resort: try without proxy if allowed (only if requireProxy is false)
+                    logger.info(`🔄 All proxies failed, trying direct connection (source allows it)...`);
+                    
+                    if (browser) await browser.close();
+                    
+                    // Relaunch without proxy
+                    const launchOptionsNoProxy = {
+                      headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
+                      args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--ignore-certificate-errors',
+                        '--ignore-certificate-errors-spki-list'
+                      ]
+                    };
+                    
+                    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+                      launchOptionsNoProxy.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+                    }
+                    
+                    browser = await puppeteer.launch(launchOptionsNoProxy);
+                    page = await browser.newPage();
+                    await page.setViewport({ width: 2560, height: 1440 });
+                    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                    
+                    // Apply stealth again
+                    await page.evaluateOnNewDocument(() => {
+                      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                      const originalQuery = window.navigator.permissions.query;
+                      window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                          Promise.resolve({ state: Notification.permission }) :
+                          originalQuery(parameters)
+                      );
+                      window.chrome = { runtime: {} };
+                    });
+                    
+                    logger.info(`🌐 Retrying page load without proxy`);
+                  } else {
+                    throw gotoError; // Give up
+                  }
+                } else {
+                  // Other error, throw immediately
+                  throw gotoError;
+                }
+              }
+            }
+            
+            if (!pageLoaded) {
+              if (requireProxy) {
+                throw new Error(`All ${PROXY_URLS.length} proxy(ies) failed and proxy is required - cannot expose real IP`);
+              } else {
+                throw new Error('Failed to load page after all proxy attempts');
+              }
+            }
+            
+            const aiExtractedData = await aiNavigateAndExtract(page, source.aiPrompt, source.name, source.fieldSchema || {}, userId, source._sourceId || source.id);
+            
+            if (aiExtractedData && aiExtractedData.length > 0) {
+              logger.info(`✅ AI extracted ${aiExtractedData.length} leads`);
+              
+              // Process each lead extracted by AI
+              for (const leadData of aiExtractedData) {
+                const wasInserted = await insertLeadIfNew({
+                  raw: JSON.stringify(leadData),
+                  sourceName: source.name,
+                  lead: leadData,
+                  userId: userId,
+                  sourceId: source._sourceId || source.id,
+                  extractedData: leadData
+                });
+                
+                if (wasInserted) {
+                  newLeads++;
+                  logger.info(`✅ New lead from AI: ${leadData.permit_number || leadData.address || 'unknown'}`);
+                }
+              }
+              
+              // Close browser and skip normal processing
+              if (browser) await browser.close();
+              await updateSourceStatus(source._sourceId || source.id, 'success', new Date());
+              await updateProgress(userId, { newLeads });
+              logger.info(`🎉 AI autonomous scraping complete for ${source.name}: ${newLeads} new leads`);
+              continue; // Skip to next source
+            } else {
+              logger.warn(`⚠️ AI navigation returned no data, falling back to normal scraping`);
+            }
+          } else {
+            // Normal flow - load page for non-AI sources with retry logic
+            let pageLoaded = false;
+            let retryAttempt = 0;
+            const maxRetries = 2;
+            
+            while (!pageLoaded && retryAttempt < maxRetries) {
+              try {
+                await page.goto(source.url, navOpts);
+                pageLoaded = true;
+                logger.info(`Puppeteer loaded page: ${source.url}`);
+              } catch (gotoError) {
+                retryAttempt++;
+                
+                // Check if it's a proxy tunnel error
+                if (gotoError.message.includes('ERR_TUNNEL_CONNECTION_FAILED')) {
+                  logger.warn(`⚠️ Proxy tunnel failed (attempt ${retryAttempt}/${maxRetries}): ${gotoError.message}`);
+                  
+                  // If proxy is required, do NOT retry without it
+                  if (requireProxy) {
+                    logger.error(`🚫 Proxy is REQUIRED for this source - cannot retry without proxy`);
+                    throw new Error('Proxy tunnel failed and proxy is required for this source');
+                  }
+                  
+                  if (retryAttempt < maxRetries && shouldUseProxy) {
+                    // Retry without proxy by launching new browser
+                    logger.info(`🔄 Retrying without proxy...`);
+                    
+                    if (browser) await browser.close();
+                    
+                    // Relaunch without proxy
+                    const launchOptionsNoProxy = {
+                      headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
+                      args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-blink-features=AutomationControlled',
+                        '--disable-dev-shm-usage',
+                        '--ignore-certificate-errors',
+                        '--ignore-certificate-errors-spki-list'
+                      ]
+                    };
+                    
+                    if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+                      launchOptionsNoProxy.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+                    }
+                    
+                    browser = await puppeteer.launch(launchOptionsNoProxy);
+                    page = await browser.newPage();
+                    await page.setViewport({ width: 2560, height: 1440 });
+                    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+                    
+                    // Apply stealth again
+                    await page.evaluateOnNewDocument(() => {
+                      Object.defineProperty(navigator, 'webdriver', { get: () => false });
+                      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+                      const originalQuery = window.navigator.permissions.query;
+                      window.navigator.permissions.query = (parameters) => (
+                        parameters.name === 'notifications' ?
+                          Promise.resolve({ state: Notification.permission }) :
+                          originalQuery(parameters)
+                      );
+                      window.chrome = { runtime: {} };
+                    });
+                    
+                    logger.info(`🌐 Retrying page load without proxy`);
+                  } else {
+                    throw gotoError; // Give up
+                  }
+                } else {
+                  // Other error, throw immediately
+                  throw gotoError;
+                }
+              }
+            }
+            
+            if (!pageLoaded) {
+              throw new Error('Failed to load page after all retry attempts');
+            }
+          }
+          
+          // === NORMAL SCRAPING FLOW CONTINUES HERE ===
           // === BLOCK DETECTION ===
           const pageContent = await page.content();
           const pageTitle = await page.title();
@@ -3014,15 +4171,21 @@ function startServer() {
   app.post('/signup', async (req, res) => {
     const { username, email, password, confirmPassword } = req.body || {};
     try {
-      if (!username || !email || !password) {
+      // Trim inputs to remove whitespace
+      const trimmedUsername = String(username || '').trim();
+      const trimmedEmail = String(email || '').trim().toLowerCase();
+      const trimmedPassword = String(password || '').trim();
+      const trimmedConfirmPassword = String(confirmPassword || '').trim();
+      
+      if (!trimmedUsername || !trimmedEmail || !trimmedPassword) {
         return res.status(400).json({ error: 'All fields required' });
       }
-      if (password !== confirmPassword) {
+      if (trimmedPassword !== trimmedConfirmPassword) {
         return res.status(400).json({ error: 'Passwords do not match' });
       }
       
       // Check if user exists
-      const existing = await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [username, email]);
+      const existing = await dbGet('SELECT * FROM users WHERE username = ? OR email = ?', [trimmedUsername, trimmedEmail]);
       if (existing) {
         return res.status(400).json({ error: 'Username or email already exists' });
       }
@@ -3031,9 +4194,9 @@ function startServer() {
       const verificationToken = crypto.randomBytes(32).toString('hex');
       
       // Create user
-      const hash = await bcrypt.hash(password, 10);
+      const hash = await bcrypt.hash(trimmedPassword, 10);
       await dbRun('INSERT INTO users (username, email, password_hash, role, created_at, email_verified, verification_token) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-        [username, email, hash, 'client', new Date().toISOString(), 0, verificationToken]);
+        [trimmedUsername, trimmedEmail, hash, 'client', new Date().toISOString(), 0, verificationToken]);
       
       // Send verification email if SMTP is configured
       const verifyLink = `${req.protocol}://${req.get('host')}/verify-email?token=${verificationToken}`;

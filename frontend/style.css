@@ -473,6 +473,20 @@ gap: 6rem;
   font-size: 1rem;
   transition: all 0.2s;
   font-family: inherit;
+  color: #111827 !important;
+  background-color: white !important;
+}
+
+select.form-select {
+  color: #111827 !important;
+  background-color: white !important;
+}
+
+select.form-select option,
+.form-select option {
+  color: #111827 !important;
+  background-color: white !important;
+  padding: 0.5rem;
 }
 
 .form-input:focus,
