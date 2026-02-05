@@ -24,20 +24,25 @@ RUN apt-get update && apt-get install -y \
     && rm google-chrome-stable_current_amd64.deb \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory to backend
+# Set working directory
+WORKDIR /app
+
+# Copy backend package files
+COPY backend/package*.json ./backend/
+
+# Install backend dependencies
 WORKDIR /app/backend
-
-# Copy package files
-COPY backend/package*.json ./
-
-# Install dependencies
 RUN npm ci --only=production
 
 # Copy backend code
 COPY backend/ ./
 
-# Create required directories (Railway volume will mount /data)
-RUN mkdir -p logs output data
+# Copy frontend code
+WORKDIR /app
+COPY frontend/ ./frontend/
+
+# Create required directories
+RUN mkdir -p backend/logs backend/output backend/data
 
 # Set Puppeteer environment variables
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
@@ -47,4 +52,5 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 EXPOSE 3000
 
 # Start the application
+WORKDIR /app/backend
 CMD ["node", "index.js"]
