@@ -2125,8 +2125,13 @@ async function scrapeForUser(userId, userSources) {
               '--disable-setuid-sandbox',
               '--disable-blink-features=AutomationControlled',
               '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--disable-software-rasterizer',
+              '--disable-extensions',
               '--ignore-certificate-errors',
-              '--ignore-certificate-errors-spki-list'
+              '--ignore-certificate-errors-spki-list',
+              '--single-process', // Critical for low-memory environments
+              '--no-zygote' // Reduce memory overhead
             ]
           };
           
@@ -3158,7 +3163,11 @@ async function scrapeForUser(userId, userSources) {
           data = await page.content();
           usedPuppeteer = true;
         } catch (e) {
-          logger.error(`Puppeteer failed for ${source.name}: ${e.message} – falling back to axios`);
+          logger.error(`Puppeteer failed for ${source.name}: ${e.message}`);
+          logger.error(`Error stack: ${e.stack}`);
+          logger.error(`PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || 'not set'}`);
+          logger.error(`NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+          logger.error(`Falling back to axios`);
         } finally {
           if (page) {
             try {
