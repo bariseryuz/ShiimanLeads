@@ -201,6 +201,23 @@ if (!fs.existsSync('logs')) fs.mkdirSync('logs');
 if (!fs.existsSync('output')) fs.mkdirSync('output');
 if (!fs.existsSync('data')) fs.mkdirSync('data');
 
+// ============================================
+// SCREENSHOT DIRECTORY CONFIGURATION
+// ============================================
+const isProduction = process.env.NODE_ENV === 'production';
+
+const SCREENSHOT_DIR = isProduction
+  ? '/app/backend/data/screenshots'  // Railway: Volume (persistent)
+  : path.join(__dirname, 'output');   // Local: backend/output
+
+// Ensure directory exists
+if (!fs.existsSync(SCREENSHOT_DIR)) {
+  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+  console.log(`✅ Screenshots directory created: ${SCREENSHOT_DIR}`);
+} else {
+  console.log(`📁 Screenshots directory: ${SCREENSHOT_DIR}`);
+}
+
 // === HELPERS ===
 function normalizeText(value) {
   if (value == null) return '';
@@ -482,7 +499,7 @@ async function aiNavigateAndExtract(page, userPrompt, sourceName, fieldSchema = 
       logger.info(`📸 Screenshot captured (${Math.round(screenshot.length / 1024)}KB)`);
       
       // Save screenshot to disk for debugging
-      const screenshotPath = path.join(__dirname, 'output', `ai-nav-${sourceName.replace(/[^a-z0-9]/gi, '-')}-step${currentStep}.png`);
+      const screenshotPath = path.join(SCREENSHOT_DIR, `ai-nav-${sourceName.replace(/[^a-z0-9]/gi, '-')}-step${currentStep}.png`);
       fs.writeFileSync(screenshotPath, screenshot);
       logger.info(`💾 Screenshot saved: ${screenshotPath}`);
       
@@ -3007,6 +3024,7 @@ async function scrapeForUser(userId, userSources) {
                 // Expand all scrollable containers to show full content
                 logger.info(`🔧 Expanding scrollable containers to show full content...`);
                 await page.evaluate(() => {
+
                   // Remove overflow restrictions on all elements
                   const allElements = document.querySelectorAll('*');
                   allElements.forEach(el => {
@@ -3042,7 +3060,7 @@ async function scrapeForUser(userId, userSources) {
                 
                 // Save screenshot to disk for debugging with timestamp
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-                const screenshotPath = path.join(__dirname, 'output', `ai-screenshot-${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`);
+                const screenshotPath = path.join(SCREENSHOT_DIR, `ai-screenshot-${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`);
                 fs.writeFileSync(screenshotPath, screenshot);
                 logger.info(`💾 Screenshot saved to: ${screenshotPath}`);
                 
