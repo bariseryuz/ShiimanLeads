@@ -1680,6 +1680,10 @@
           
           if (!button) return;
           
+          // Prevent event from bubbling up and triggering again
+          e.stopPropagation();
+          e.preventDefault();
+          
           const action = button.dataset.action;
           const id = parseInt(button.dataset.id);
           const name = button.dataset.name;
