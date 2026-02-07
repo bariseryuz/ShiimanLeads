@@ -957,9 +957,9 @@
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
             </div>
             <div class="source-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
-              <button class="btn-small" onclick="editSource(${source.id})"><img src="icons/edit.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"> Edit</button>
-              <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/pull.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"> Scrape</button>
-              <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/trash.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;"> Delete</button>
+              <button class="btn-small" onclick="editSource(${source.id})"><img src="icons/edit.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Edit</button>
+              <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/pull.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Scrape</button>
+              <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/trash.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Delete</button>
             </div>
           </div>
         `).join('');
@@ -1674,9 +1674,11 @@
       
       if (sourcesContainer) {
         sourcesContainer.addEventListener('click', async (e) => {
-          console.log('Click detected on sourcesContainer');
-          const button = e.target.closest('[data-action]');
-          console.log('Button found:', button);
+          console.log('Click detected, target:', e.target.tagName, e.target.className);
+          
+          // Find the button - check the target itself and traverse up
+          const button = e.target.closest('button[data-action]');
+          console.log('Button found:', button, 'action:', button?.dataset?.action);
           
           if (!button) return;
           
@@ -1688,7 +1690,7 @@
           const id = parseInt(button.dataset.id);
           const name = button.dataset.name;
           
-          console.log('Button clicked:', action, 'for source:', id, name);
+          console.log('Executing action:', action, 'for source:', id, name);
           
           if (action === 'delete') {
             await deleteSource(id, name);
