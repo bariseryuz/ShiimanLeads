@@ -2407,6 +2407,8 @@ async function scrapeForUser(userId, userSources) {
           const shouldUseProxy = PROXY_ENABLED && (source.useProxy !== false);
           const requireProxy = source.requireProxy === true; // If true, never retry without proxy
           
+          logger.info(`🔍 Proxy check for ${source.name}: PROXY_ENABLED=${PROXY_ENABLED}, source.useProxy=${source.useProxy}, shouldUseProxy=${shouldUseProxy}`);
+          
           if (shouldUseProxy) {
             const proxyMatch = PROXY_URL.match(/@?([^@\/]+:\d+)/);
             if (proxyMatch) {

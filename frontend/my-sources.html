@@ -1026,7 +1026,9 @@
         document.getElementById('aiPrompt').value = source.data.aiPrompt || '';
         
         // Set proxy checkbox (default to true if not specified)
-        document.getElementById('useProxy').checked = source.data.useProxy !== false;
+        const useProxyValue = source.data.useProxy !== false;
+        document.getElementById('useProxy').checked = useProxyValue;
+        console.log('📖 Loaded source proxy setting:', source.data.useProxy, 'setting checkbox to:', useProxyValue);
         
         document.getElementById('sourceModal').classList.add('show');
       } catch (error) {
@@ -1294,7 +1296,9 @@
       }
       
       // Add proxy configuration
-      sourceData.useProxy = document.getElementById('useProxy').checked;
+      const useProxyCheckbox = document.getElementById('useProxy');
+      sourceData.useProxy = useProxyCheckbox.checked;
+      console.log('💾 Saving source with useProxy:', sourceData.useProxy, 'checkbox checked:', useProxyCheckbox.checked);
       
       // Add fieldSchema if provided
       const naturalFieldsInput = document.getElementById('naturalFields').value.trim();
