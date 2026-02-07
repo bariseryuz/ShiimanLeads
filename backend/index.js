@@ -155,7 +155,7 @@ async function captureEntirePage(page) {
     height: Math.min(height, 10000)
   });
 
-  await page.waitForTimeout(1500);
+  await new Promise(resolve => setTimeout(resolve, 1500));
 
   return await page.screenshot({ fullPage: true });
 }
