@@ -2509,7 +2509,7 @@ async function scrapeForUser(userId, userSources) {
             let pageLoaded = false;
             let proxyIndex = 0;
             const maxProxyAttempts = shouldUseProxy ? PROXY_URLS.length : 1;
-            const allowDirectConnection = source.allowDirectConnection === true; // Explicit opt-in required
+            const allowDirectConnection = source.allowDirectConnection !== false; // Default to true (allow fallback)
             
             while (!pageLoaded && proxyIndex <= maxProxyAttempts) {
               try {
