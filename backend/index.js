@@ -5959,12 +5959,20 @@ function startServer() {
       const seenCount = await dbGet('SELECT COUNT(*) as count FROM seen WHERE user_id = ?', [userId]);
       await dbRun('DELETE FROM seen WHERE user_id = ?', [userId]);
       
-      logger.info(`🗑️ User ${userId} cleared ${totalLeadsDeleted} leads from ${userSources.length} source tables and ${seenCount.count} seen hashes`);
+      // CRITICAL: Also delete from unified leads table
+      const unifiedLeadsCount = await dbGet('SELECT COUNT(*) as count FROM leads WHERE user_id = ?', [userId]);
+      await dbRun('DELETE FROM leads WHERE user_id = ?', [userId]);
+      
+      logger.info(`🗑️ User ${userId} cleared:`);
+      logger.info(`   - ${totalLeadsDeleted} leads from ${userSources.length} source-specific tables`);
+      logger.info(`   - ${unifiedLeadsCount.count} leads from unified leads table`);
+      logger.info(`   - ${seenCount.count} seen hashes from deduplication table`);
       
       res.json({ 
         success: true, 
         deleted: {
-          leads: totalLeadsDeleted,
+          sourceTableLeads: totalLeadsDeleted,
+          unifiedLeads: unifiedLeadsCount.count,
           seen: seenCount.count,
           sourceTables: userSources.length
         }
