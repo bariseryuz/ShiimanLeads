@@ -1593,60 +1593,207 @@ async function createNotification(userId, type, message) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// PERMIT-BASED HASH GENERATION (Cross-Source Deduplication)
+// ═══════════════════════════════════════════════════════════════════
+function generateLeadHash(leadData, userId) {
+  // Extract permit number (try multiple field names)
+  const permitNumber = (
+    leadData.permit_number || 
+    leadData.permitNumber || 
+    leadData['Permit Number'] ||
+    leadData.permit_no ||
+    leadData.number ||
+    ''
+  ).toString().trim().toUpperCase();
+  
+  if (!permitNumber) {
+    // Fallback: use company + address if no permit number
+    const fallback = [
+      (leadData.company_name || leadData.contractor_name || '').trim(),
+      (leadData.address || '').trim(),
+      (leadData.value || '').toString()
+    ].filter(Boolean).join('-').toLowerCase();
+    
+    if (!fallback) {
+      // Last resort: use raw JSON
+      return crypto.createHash('sha256')
+        .update(JSON.stringify(leadData) + userId)
+        .digest('hex');
+    }
+    
+    return crypto.createHash('sha256')
+      .update(`${fallback}-${userId}`)
+      .digest('hex');
+  }
+  
+  // Hash based on permit number + userId (cross-source deduplication)
+  const hashInput = `${permitNumber}-${userId}`;
+  return crypto.createHash('sha256').update(hashInput).digest('hex');
+}
+
 async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, extractedData = null, sourceId = null }) {
   if (!sourceId) {
     logger.warn(`No sourceId provided - skipping lead insertion`);
     return false;
   }
 
-  // Compute hash for deduplication
-  const hashInput = `${raw}${hashSalt}${sourceId}`;
-  const hash = crypto.createHash('md5').update(hashInput).digest('hex');
+  // Use extractedData if available, otherwise fall back to lead
+  const leadData = extractedData || lead;
+  
+  // Extract permit number (try multiple field names)
+  const permitNumber = (
+    leadData.permit_number || 
+    leadData.permitNumber || 
+    leadData['Permit Number'] ||
+    leadData.permit_no ||
+    leadData.number ||
+    ''
+  ).toString().trim();
+  
+  if (!permitNumber) {
+    logger.warn('⚠️ Lead has no permit number, skipping');
+    return false;
+  }
+
+  // Generate stable hash based on permit number
+  const hash = generateLeadHash(leadData, userId);
 
   try {
     const tx = db.transaction(() => {
-      // Check seen first to avoid re-processing
-      const seenRow = db.prepare(`SELECT hash FROM seen WHERE hash = ? AND user_id = ?`).get(hash, userId);
-      if (seenRow) return { inserted: false, reason: 'seen' };
-
-      // Insert into seen table
-      db.prepare(`INSERT INTO seen (hash, user_id) VALUES (?, ?)`).run(hash, userId);
-
-      // Insert ONLY into source-specific table (no generic leads table)
-      const insertedSource = insertIntoSourceTableSync(sourceId, userId, raw, lead, extractedData);
-
-      if (!insertedSource) {
-        return { inserted: false, reason: 'source_insert_failed' };
+      // Check if already seen
+      const seenRow = db.prepare(`
+        SELECT id, seen_count, last_seen 
+        FROM seen 
+        WHERE lead_hash = ? AND user_id = ?
+      `).get(hash, userId);
+      
+      if (seenRow) {
+        // Update seen count and timestamp
+        db.prepare(`
+          UPDATE seen 
+          SET seen_count = seen_count + 1, 
+              last_seen = CURRENT_TIMESTAMP 
+          WHERE id = ?
+        `).run(seenRow.id);
+        
+        logger.info(`♻️ Duplicate: ${permitNumber} (seen ${seenRow.seen_count + 1} times)`);
+        return { inserted: false, reason: 'duplicate', hash, permitNumber };
       }
-
-      // Create outbox row for JSONL persistence
-      const jobId = crypto.randomBytes(8).toString('hex');
-      const payload = JSON.stringify({ 
-        hash, 
-        sourceName, 
-        userId, 
-        sourceId,
-        data: extractedData || lead, 
-        job_id: jobId, 
-        ts: new Date().toISOString() 
-      });
-      db.prepare(`INSERT INTO outbox (source_id, job_id, event_type, payload_json) VALUES (?, ?, ?, ?)`)
-        .run(sourceId, jobId, 'append-jsonl', payload);
-
-      return { inserted: true };
+      
+      // Try to insert into unified leads table
+      try {
+        const insertResult = db.prepare(`
+          INSERT INTO leads (
+            user_id,
+            source_id,
+            hash,
+            permit_number,
+            permit_type,
+            contractor_name,
+            company_name,
+            address,
+            city,
+            state,
+            zip_code,
+            phone,
+            value,
+            description,
+            status,
+            raw_text,
+            date_issued,
+            owner_name,
+            contractor_phone,
+            square_footage,
+            parcel_number,
+            work_description
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          userId,
+          sourceId,
+          hash,
+          permitNumber,
+          leadData.permit_type || leadData.permitType || null,
+          leadData.contractor_name || leadData.contractor || null,
+          leadData.company_name || leadData.companyName || null,
+          leadData.address || null,
+          leadData.city || null,
+          leadData.state || null,
+          leadData.zip_code || leadData.zip || null,
+          leadData.phone || leadData.contractor_phone || null,
+          leadData.value || leadData.construction_cost || null,
+          leadData.description || leadData.work_description || null,
+          leadData.status || 'new',
+          JSON.stringify(leadData),
+          leadData.date_issued || leadData.dateIssued || null,
+          leadData.owner_name || leadData.owner || null,
+          leadData.contractor_phone || null,
+          leadData.square_footage || leadData.squareFootage || null,
+          leadData.parcel_number || leadData.parcelNumber || null,
+          leadData.work_description || leadData.workDescription || null
+        );
+        
+        const leadId = insertResult.lastInsertRowid;
+        
+        // Mark as seen
+        db.prepare(`
+          INSERT INTO seen (lead_hash, user_id, source_id, permit_number)
+          VALUES (?, ?, ?, ?)
+        `).run(hash, userId, sourceId, permitNumber);
+        
+        // Also insert into source-specific table for backwards compatibility
+        insertIntoSourceTableSync(sourceId, userId, raw, lead, extractedData);
+        
+        // Create outbox entry for JSONL export
+        const jobId = crypto.randomBytes(8).toString('hex');
+        const payload = JSON.stringify({
+          leadId,
+          hash,
+          sourceName,
+          userId,
+          sourceId,
+          permitNumber,
+          data: leadData,
+          job_id: jobId,
+          ts: new Date().toISOString()
+        });
+        
+        db.prepare(`
+          INSERT INTO outbox (source_id, job_id, event_type, payload_json)
+          VALUES (?, ?, ?, ?)
+        `).run(sourceId, jobId, 'append-jsonl', payload);
+        
+        logger.info(`✅ NEW LEAD: ${permitNumber} | ${leadData.contractor_name || leadData.company_name || 'N/A'} | $${leadData.value || 0}`);
+        
+        return { 
+          inserted: true, 
+          leadId, 
+          hash, 
+          permitNumber 
+        };
+        
+      } catch (dbError) {
+        if (dbError.message.includes('UNIQUE constraint failed')) {
+          // Permit already exists (caught by unique constraint)
+          logger.info(`♻️ Duplicate (DB): ${permitNumber}`);
+          
+          // Still mark as seen
+          db.prepare(`
+            INSERT OR IGNORE INTO seen (lead_hash, user_id, source_id, permit_number)
+            VALUES (?, ?, ?, ?)
+          `).run(hash, userId, sourceId, permitNumber);
+          
+          return { inserted: false, reason: 'duplicate_db', permitNumber };
+        }
+        throw dbError;
+      }
     });
-
+    
     const result = tx();
-    if (result.inserted) {
-      // Log first few fields from extractedData for visibility
-      const preview = extractedData ? Object.entries(extractedData).slice(0, 3).map(([k,v]) => `${k}=${v}`).join(' | ') : 'N/A';
-      logger.info(`NEW LEAD → ${preview}`);
-      return true;
-    }
-
-    return false;
+    return result.inserted || false;
+    
   } catch (err) {
-    logger.error(`Failed to insert lead: ${err.message}`);
+    logger.error(`❌ Failed to insert lead: ${err.message}`);
     return false;
   }
 }
@@ -1860,14 +2007,41 @@ try {
   logger.warn('Could not fix source 7:', fixErr.message);
 }
 
+// ============================================
+// UNIFIED LEADS TABLE + PERMIT-BASED DEDUPLICATION
+// ============================================
+
+// Drop old seen table if it exists (will be recreated with new schema)
+try {
+  db.exec(`DROP TABLE IF EXISTS seen`);
+} catch (e) {
+  logger.warn('Could not drop old seen table:', e.message);
+}
+
+// Create new seen tracking table with statistics
+db.exec(`CREATE TABLE IF NOT EXISTS seen (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_hash TEXT NOT NULL,
+  user_id INTEGER NOT NULL,
+  source_id INTEGER NOT NULL,
+  permit_number TEXT,
+  first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+  last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+  seen_count INTEGER DEFAULT 1,
+  UNIQUE(lead_hash, user_id)
+)`);
+
+db.exec(`CREATE INDEX IF NOT EXISTS idx_seen_hash ON seen(lead_hash)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_seen_user ON seen(user_id)`);
+
 // Create tables (better-sqlite3 is synchronous)
-db.exec(`CREATE TABLE IF NOT EXISTS seen (hash TEXT, user_id INTEGER, PRIMARY KEY(hash, user_id))`);
 db.exec(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
+    source_id INTEGER NOT NULL,
     hash TEXT,
     raw_text TEXT,
-    permit_number TEXT,
+    permit_number TEXT NOT NULL,
     address TEXT,
     value TEXT,
     description TEXT,
@@ -1901,10 +2075,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS leads (
     record_type TEXT,
     project_name TEXT,
     is_new INTEGER DEFAULT 1,
-    UNIQUE(hash, user_id)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, permit_number)
   )`);
 
 // Add missing columns if they don't exist (for existing databases)
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN source_id INTEGER`);
+} catch (err) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
+} catch (err) {
+  // Column already exists
+}
+try {
+  db.exec(`ALTER TABLE leads ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP`);
+} catch (err) {
+  // Column already exists
+}
 const newColumns = [
   'date_issued', 'phone', 'page_url', 'application_date', 'owner_name', 
   'contractor_name', 'contractor_address', 'contractor_city', 'contractor_state',
@@ -1923,6 +2114,9 @@ newColumns.forEach(col => {
 });
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_id)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_permit ON leads(permit_number)`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_contractor ON leads(contractor_name)`);
 db.exec(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
@@ -4362,6 +4556,32 @@ function startServer() {
       stats: {
         leads: leadCount.count,
         seen_hashes: seenCount.count
+      }
+    });
+  });
+
+  // Debug endpoint to check file paths and persistence
+  app.get('/api/debug/paths', (req, res) => {
+    if (!req.session || !req.session.user) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    res.json({
+      environment: process.env.NODE_ENV || 'development',
+      paths: {
+        db: DB_PATH,
+        sessionsDb: SESSIONS_DB_PATH,
+        jsonl: OUTBOX_JSONL,
+        screenshots: SCREENSHOT_DIR
+      },
+      exists: {
+        db: fs.existsSync(DB_PATH),
+        sessionsDb: fs.existsSync(SESSIONS_DB_PATH),
+        jsonlDir: fs.existsSync(path.dirname(OUTBOX_JSONL)),
+        screenshots: fs.existsSync(SCREENSHOT_DIR)
+      },
+      volumeCheck: {
+        dataDir: process.env.NODE_ENV === 'production' ? fs.existsSync('/app/backend/data') : 'N/A (local)'
       }
     });
   });
