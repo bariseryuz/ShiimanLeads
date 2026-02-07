@@ -2801,12 +2801,141 @@ async function scrapeForUser(userId, userSources) {
             logger.info(`Completed puppeteer actions for ${source.name}`);
           }
           
-          // Wait for page to render - optimized timeout for data portals
+          // ============================================
+          // UNIVERSAL WAIT FOR DATA TO LOAD
+          // ============================================
+          logger.info('⏳ Waiting for dynamic content to load...');
+          
+          // Try common data container selectors
+          const dataSelectors = [
+            'table tbody tr',
+            '[data-row-index]',
+            '[role="row"]',
+            '.data-row',
+            '.permit',
+            '.result',
+            'ul li',
+            '.card'
+          ];
+          
+          // Try each selector (short timeout)
+          for (const selector of dataSelectors) {
+            try {
+              await page.waitForSelector(selector, { timeout: 2000 });
+              const count = await page.evaluate((sel) => {
+                return document.querySelectorAll(sel).length;
+              }, selector);
+              
+              if (count > 0) {
+                logger.info(`✅ Found ${count} elements with: ${selector}`);
+                break;
+              }
+            } catch (e) {
+              // Try next selector
+            }
+          }
+          
+          // Wait for network to settle
           try {
             await page.waitForNetworkIdle({ timeout: timings.networkIdleTimeout, idleTime: 1000 });
             logger.info(`✅ Network idle - page loaded`);
           } catch (e) {
             logger.warn(`Network idle timeout - continuing anyway`);
+          }
+          
+          // Wait for initial page render
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Check if page is still loading
+          const stillLoading = await page.evaluate(() => {
+            return document.readyState !== 'complete' ||
+                   document.querySelector('.loading') !== null ||
+                   document.querySelector('.spinner') !== null;
+          });
+          
+          if (stillLoading) {
+            logger.info('🔄 Page still loading, waiting more...');
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
+          
+          // ============================================
+          // VALIDATE CONTENT QUALITY
+          // ============================================
+          let html = await page.content();
+          
+          const hasUsefulContent = (htmlContent) => {
+            if (!htmlContent || htmlContent.length < 1000) {
+              return false;
+            }
+            
+            // Bad signals (page wrapper only)
+            const badSignals = [
+              htmlContent.includes('ace_searchbox') && htmlContent.length < 5000,
+              htmlContent.includes('<!DOCTYPE html>') && htmlContent.length < 2000,
+              htmlContent.split('\n').length < 50
+            ];
+            
+            if (badSignals.some(Boolean)) {
+              return false;
+            }
+            
+            // Good signals (actual data)
+            const permitCount = (htmlContent.match(/permit/gi) || []).length;
+            const dollarCount = (htmlContent.match(/\$[\d,]+/g) || []).length;
+            const phoneCount = (htmlContent.match(/\d{3}[-.)]\d{3}[-.)]\d{4}/g) || []).length;
+            const hasTable = htmlContent.includes('<table');
+            const hasDataRows = htmlContent.includes('data-row');
+            
+            const score = 
+              (permitCount > 5 ? 1 : 0) +
+              (dollarCount > 3 ? 1 : 0) +
+              (phoneCount > 0 ? 1 : 0) +
+              (hasTable ? 1 : 0) +
+              (hasDataRows ? 1 : 0);
+            
+            logger.info(`📊 Content score: ${score}/5 (permits:${permitCount}, $:${dollarCount}, phones:${phoneCount})`);
+            
+            return score >= 2;
+          };
+          
+          if (!hasUsefulContent(html)) {
+            logger.warn('⚠️ Content quality low, waiting longer and scrolling...');
+            
+            // Auto-scroll to trigger lazy loading
+            logger.info('📜 Auto-scrolling to load lazy content...');
+            await page.evaluate(async () => {
+              await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 500;
+                const timer = setInterval(() => {
+                  const scrollHeight = document.body.scrollHeight;
+                  window.scrollBy(0, distance);
+                  totalHeight += distance;
+
+                  if (totalHeight >= scrollHeight) {
+                    clearInterval(timer);
+                    window.scrollTo(0, 0); // Scroll back to top
+                    resolve();
+                  }
+                }, 300);
+              });
+            });
+            logger.info('✅ Scrolling complete');
+            
+            // Wait more
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            
+            // Get HTML again
+            html = await page.content();
+            
+            // Still bad?
+            if (!hasUsefulContent(html)) {
+              logger.error('❌ Content still looks empty after retries - will use screenshot-based extraction');
+            } else {
+              logger.info('✅ Content quality improved after scrolling');
+            }
+          } else {
+            logger.info('✅ Content quality good, proceeding with extraction');
           }
           
           // Additional wait for JavaScript rendering
