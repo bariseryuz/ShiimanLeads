@@ -108,6 +108,7 @@ function getRateLimiter(source) {
 
 // Scraping progress tracking
 const scrapeProgress = new Map(); // userId -> progress object
+const stopFlags = new Map(); // userId -> boolean (true = should stop)
 
 function initProgress(userId, sources) {
   scrapeProgress.set(userId, {
@@ -119,6 +120,7 @@ function initProgress(userId, sources) {
     leadsFound: 0,
     errors: []
   });
+  stopFlags.set(userId, false); // Reset stop flag
 }
 
 function updateProgress(userId, updates) {
@@ -130,6 +132,15 @@ function updateProgress(userId, updates) {
 
 function getProgress(userId) {
   return scrapeProgress.get(userId) || null;
+}
+
+function shouldStopScraping(userId) {
+  return stopFlags.get(userId) === true;
+}
+
+function setShouldStop(userId, value) {
+  stopFlags.set(userId, value);
+  logger.info(`🛑 Stop flag for user ${userId} set to: ${value}`);
 }
 
 // Default timing configuration (can be overridden per source)
@@ -2323,6 +2334,16 @@ async function scrapeForUser(userId, userSources) {
   }
   
   for (const source of SOURCES) {
+    // Check if user requested stop
+    if (shouldStopScraping(userId)) {
+      logger.info(`🛑 Scraping stopped by user ${userId} request`);
+      updateProgress(userId, { 
+        status: 'stopped',
+        currentSource: 'Stopped by user'
+      });
+      break;
+    }
+    
     // Update progress: starting new source
     updateProgress(userId, { currentSource: source.name });
     
@@ -5801,6 +5822,32 @@ function startServer() {
       });
     } catch (e) {
       logger.error(`Manual scrape error: ${e.message}`);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // Stop ongoing scraping for current user
+  app.post('/api/scrape/stop', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id || 1;
+      
+      logger.info(`🛑 Stop request received from user ${userId}`);
+      
+      // Set the stop flag
+      setShouldStop(userId, true);
+      
+      // Update progress to show stopped status
+      updateProgress(userId, { 
+        status: 'stopped',
+        currentSource: 'Stopped by user'
+      });
+      
+      res.json({ 
+        success: true, 
+        message: 'Scraping will stop after current source completes'
+      });
+    } catch (e) {
+      logger.error(`Stop scrape error: ${e.message}`);
       res.status(500).json({ error: e.message });
     }
   });

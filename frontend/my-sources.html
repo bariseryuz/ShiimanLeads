@@ -346,7 +346,12 @@
         </div>
       </div>
       
-      <button class="progress-close-btn" id="progressCloseBtn" onclick="closeProgressModal()">Close</button>
+      <div style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+        <button class="progress-close-btn" id="progressStopBtn" onclick="stopScraping()" style="background: #ef4444; flex: 1;">
+          🛑 Stop Scraping
+        </button>
+        <button class="progress-close-btn" id="progressCloseBtn" onclick="closeProgressModal()" style="flex: 1;">Close</button>
+      </div>
     </div>
   </div>
 
@@ -1465,6 +1470,38 @@
         progressInterval = null;
       }
       loadSources(); // Refresh sources list
+    }
+
+    async function stopScraping() {
+      if (!confirm('⚠️ Are you sure you want to stop the scraping process?')) {
+        return;
+      }
+      
+      try {
+        document.getElementById('progressStopBtn').textContent = '⏳ Stopping...';
+        document.getElementById('progressStopBtn').disabled = true;
+        
+        const response = await fetch('/api/scrape/stop', {
+          method: 'POST',
+          credentials: 'include'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          document.getElementById('progressStatus').textContent = '🛑 Scraping stopped by user';
+          document.getElementById('progressTitle').textContent = 'Stopped';
+          alert('✅ Scraping stopped successfully');
+        } else {
+          alert('⚠️ Failed to stop scraping: ' + (data.error || 'Unknown error'));
+        }
+      } catch (error) {
+        console.error('Error stopping scraping:', error);
+        alert('❌ Failed to stop scraping');
+      } finally {
+        document.getElementById('progressStopBtn').textContent = '🛑 Stop Scraping';
+        document.getElementById('progressStopBtn').disabled = false;
+      }
     }
 
     async function updateProgress() {
