@@ -4748,6 +4748,11 @@ function startServer() {
       },
       volumeCheck: {
         dataDir: process.env.NODE_ENV === 'production' ? fs.existsSync('/app/backend/data') : 'N/A (local)'
+      },
+      proxy: {
+        enabled: PROXY_ENABLED,
+        proxyCount: PROXY_URLS.length,
+        primaryProxy: PROXY_ENABLED ? PROXY_URL.replace(/:\/\/.*@/, '://***@') : 'N/A'
       }
     });
   });

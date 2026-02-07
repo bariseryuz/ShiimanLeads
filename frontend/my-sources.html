@@ -980,6 +980,11 @@
       document.getElementById('sourceForm').reset();
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'html';
+      
+      // Set proxy to enabled by default
+      document.getElementById('useProxy').checked = true;
+      console.log('🌐 Proxy checkbox initialized to: true (default)');
+      
       document.getElementById('sourceModal').classList.add('show');
     }
 
@@ -1709,6 +1714,19 @@
       await loadSources();
       initializeUserInfo();
       
+      // Set up proxy checkbox event listener
+      const proxyCheckbox = document.getElementById('useProxy');
+      if (proxyCheckbox) {
+        proxyCheckbox.addEventListener('change', (e) => {
+          const isChecked = e.target.checked;
+          console.log('🌐 Proxy checkbox changed to:', isChecked);
+          console.log('🌐 Will save with useProxy =', isChecked);
+        });
+        console.log('✅ Proxy checkbox event listener attached');
+      } else {
+        console.warn('⚠️ useProxy checkbox not found');
+      }
+      
       // Set up event delegation for all action buttons
       const sourcesContainer = document.getElementById('sourcesContainer');
       console.log('sourcesContainer found:', !!sourcesContainer);
@@ -1716,28 +1734,46 @@
       if (sourcesContainer) {
         sourcesContainer.addEventListener('click', async (e) => {
           console.log('Click detected, target:', e.target.tagName, e.target.className);
-          console.log('Target attributes:', e.target.getAttribute('data-action'), e.target.dataset?.action);
+          console.log('Target has data-action?:', e.target.hasAttribute?.('data-action'));
+          console.log('Target data-action value:', e.target.getAttribute?.('data-action'));
           
-          // Find the button - check if target is already a button with data-action
+          // Find the button - more robust approach
           let button = null;
-          if (e.target.tagName === 'BUTTON' && e.target.hasAttribute('data-action')) {
-            button = e.target;
+          
+          // Check if we clicked directly on a button with data-action
+          if (e.target.tagName === 'BUTTON') {
+            if (e.target.hasAttribute('data-action')) {
+              button = e.target;
+              console.log('✅ Clicked directly on action button');
+            } else {
+              console.log('⚠️ Clicked on button but no data-action (probably Edit button)');
+            }
           } else {
-            // Otherwise, traverse up to find parent button
+            // Clicked on something inside a button (like icon)
             button = e.target.closest('button[data-action]');
+            if (button) {
+              console.log('✅ Found parent action button via closest()');
+            } else {
+              console.log('❌ No action button found');
+            }
           }
           
-          console.log('Button found:', button, 'action:', button?.dataset?.action, 'id:', button?.dataset?.id);
+          console.log('Final button:', button);
+          console.log('Button action:', button?.getAttribute('data-action'));
+          console.log('Button id:', button?.getAttribute('data-id'));
           
-          if (!button) return;
+          if (!button) {
+            console.log('No action button - ignoring click');
+            return;
+          }
           
           // Prevent event from bubbling up and triggering again
           e.stopPropagation();
           e.preventDefault();
           
-          const action = button.dataset.action;
-          const id = parseInt(button.dataset.id);
-          const name = button.dataset.name;
+          const action = button.getAttribute('data-action');
+          const id = parseInt(button.getAttribute('data-id'));
+          const name = button.getAttribute('data-name');
           
           console.log('Executing action:', action, 'for source:', id, name);
           
