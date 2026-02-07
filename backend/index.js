@@ -2379,11 +2379,15 @@ async function scrapeForUser(userId, userSources) {
       let screenshotBuffer = null; // Store screenshot for AI vision
       let newLeads = 0; // Track new leads for this source
 
-      // Auto-detect Nashville-style URLs and enable table extraction
-      if (source.url && source.url.includes('data.nashville.gov') && source.url.includes('showTable=true')) {
+      // Auto-detect Nashville-style URLs and enable table extraction (only if NO AI prompt)
+      if (source.url && source.url.includes('data.nashville.gov') && source.url.includes('showTable=true') && !source.aiPrompt) {
         source.usePuppeteer = true;
         source.extractTable = true;
         logger.info(`Auto-detected Nashville table view - enabling Puppeteer + table extraction`);
+      } else if (source.url && source.url.includes('data.nashville.gov') && source.aiPrompt) {
+        logger.info(`🤖 AI prompt provided - will use AI vision instead of table extraction`);
+        source.usePuppeteer = true;
+        source.extractTable = false; // Disable table extraction when AI prompt exists
       }
 
       // Convert method: "puppeteer" to usePuppeteer flag
