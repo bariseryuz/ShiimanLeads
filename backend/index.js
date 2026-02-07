@@ -2406,7 +2406,7 @@ async function scrapeForUser(userId, userSources) {
         try {
           const launchOptions = {
             headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
-            protocolTimeout: 180000, // ✅ 3 minutes for slow connections
+            protocolTimeout: 300000, // ✅ 5 minutes for slow connections and scrolling
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
@@ -3045,7 +3045,7 @@ async function scrapeForUser(userId, userSources) {
               let currentRowCount = 0;
               let noChangeCount = 0;
               let scrollAttempts = 0;
-              const maxScrollAttempts = 300;
+              const maxScrollAttempts = 50; // Reduced from 300 to prevent 3-minute timeouts
               
               // Find the actual scrollable container (ArcGIS Hub uses specific containers)
               const isScrollable = (el) => {
