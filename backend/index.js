@@ -143,6 +143,23 @@ const DEFAULT_TIMINGS = {
   aiNavigationWait: 2000         // Wait between AI navigation steps
 };
 
+// Capture entire page screenshot - handles lazy loading
+async function captureEntirePage(page) {
+  const { width, height } = await page.evaluate(() => ({
+    width: Math.max(document.body.scrollWidth, document.documentElement.scrollWidth),
+    height: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+  }));
+
+  await page.setViewport({
+    width: Math.min(width, 5000),
+    height: Math.min(height, 10000)
+  });
+
+  await page.waitForTimeout(1500);
+
+  return await page.screenshot({ fullPage: true });
+}
+
 // Initialize Google Gemini client
 let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
@@ -908,8 +925,8 @@ Current step: ${currentStep}/${maxSteps}`;
           await page.waitForNetworkIdle({ idleTime: 500, timeout: 10000 }).catch(() => logger.warn('Network idle timeout'));
           await new Promise(resolve => setTimeout(resolve, 2000));
           
-          // Take a full page screenshot for AI vision extraction
-          const screenshot = await page.screenshot({ fullPage: true });
+          // Take a full page screenshot for AI vision extraction (handles lazy loading)
+          const screenshot = await captureEntirePage(page);
           
           logger.info(`📸 Screenshot captured, sending to AI for extraction...`);
           extracted = await extractLeadWithAI(screenshot, sourceName, fieldSchema, false);
@@ -1101,9 +1118,9 @@ Current step: ${currentStep}/${maxSteps}`;
             // Wait for page to load
             await new Promise(r => setTimeout(r, 5000));
             
-            // Take screenshot and extract with AI
+            // Take screenshot and extract with AI (handles lazy loading)
             logger.info(`📸 Taking screenshot of page ${pageNum + 1}...`);
-            const pageScreenshot = await page.screenshot({ fullPage: true });
+            const pageScreenshot = await captureEntirePage(page);
             
             logger.info(`🤖 AI extracting from page ${pageNum + 1}...`);
             const pageExtracted = await extractLeadWithAI(
@@ -3019,12 +3036,8 @@ async function scrapeForUser(userId, userSources) {
                 await page.evaluate(() => window.scrollTo(0, 0));
                 await new Promise(resolve => setTimeout(resolve, timings.betweenScrollWait));
                 
-                logger.info(`📸 Capturing high-quality screenshot for page ${pageNumber}...`);
-                const screenshot = await page.screenshot({ 
-                  fullPage: true,
-                  type: 'png',
-                  captureBeyondViewport: true
-                });
+                logger.info(`📸 Capturing high-quality screenshot for page ${pageNumber} (handles lazy loading)...`);
+                const screenshot = await captureEntirePage(page);
                 logger.info(`✅ Screenshot ${pageNumber} captured (${(screenshot.length / 1024).toFixed(0)} KB)`);
                 
                 // Save screenshot to disk for debugging with timestamp
@@ -4879,7 +4892,7 @@ function startServer() {
       try {
         await page.evaluate(async () => { window.scrollTo(0, document.body.scrollHeight); await new Promise(r => setTimeout(r, 1000)); });
       } catch {}
-      const screenshot = await page.screenshot({ type: 'png', fullPage: true });
+      const screenshot = await captureEntirePage(page);
       const rawText = await page.evaluate(() => document.body.innerText || document.body.textContent || '');
       await browser.close();
 
