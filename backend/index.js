@@ -166,7 +166,40 @@ async function captureEntirePage(page, options = {}) {
 
   logger.info(`📸 Starting full page capture (maxScrolls: ${maxScrolls})...`);
 
-  // Step 1: Auto-scroll to trigger lazy-loaded content
+  // Step 1: Scroll horizontally to reveal all columns
+  logger.info(`↔️ Scrolling horizontally to reveal all table columns...`);
+  
+  let lastWidth = 0;
+  let horizontalScrollAttempts = 0;
+  const maxHorizontalScrolls = 5;
+  
+  while (horizontalScrollAttempts < maxHorizontalScrolls) {
+    const currentWidth = await page.evaluate(() => document.body.scrollWidth);
+    
+    if (currentWidth === lastWidth) {
+      logger.info(`✅ Reached right edge after ${horizontalScrollAttempts} horizontal scrolls`);
+      break;
+    }
+    
+    lastWidth = currentWidth;
+    horizontalScrollAttempts++;
+    
+    // Scroll to the right
+    await page.evaluate(() => {
+      window.scrollTo(document.body.scrollWidth, 0);
+    });
+    
+    logger.info(`➡️ Horizontal scroll ${horizontalScrollAttempts}/${maxHorizontalScrolls} - Width: ${currentWidth}px`);
+    await new Promise(resolve => setTimeout(resolve, scrollDelay));
+  }
+  
+  // Scroll back to left
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  // Step 2: Auto-scroll vertically to reveal all rows
+  logger.info(`↕️ Scrolling vertically to reveal all table rows...`);
+  
   let lastHeight = 0;
   let scrollAttempts = 0;
   
@@ -176,7 +209,7 @@ async function captureEntirePage(page, options = {}) {
     
     // If height hasn't changed, we've reached the end
     if (currentHeight === lastHeight) {
-      logger.info(`✅ Reached end of page after ${scrollAttempts} scrolls`);
+      logger.info(`✅ Reached bottom after ${scrollAttempts} vertical scrolls`);
       break;
     }
     
@@ -188,17 +221,17 @@ async function captureEntirePage(page, options = {}) {
       window.scrollTo(0, document.body.scrollHeight);
     });
     
-    logger.info(`📜 Scroll ${scrollAttempts}/${maxScrolls} - Height: ${currentHeight}px`);
+    logger.info(`⬇️ Vertical scroll ${scrollAttempts}/${maxScrolls} - Height: ${currentHeight}px`);
     
     // Wait for content to load
     await new Promise(resolve => setTimeout(resolve, scrollDelay));
   }
 
-  // Step 2: Scroll back to top for clean screenshot
+  // Step 3: Scroll back to top-left corner for clean screenshot
   await page.evaluate(() => window.scrollTo(0, 0));
   await new Promise(resolve => setTimeout(resolve, 500));
 
-  // Step 3: Calculate full dimensions
+  // Step 4: Calculate full dimensions (including scrollable areas)
   const dimensions = await page.evaluate(() => ({
     width: Math.max(
       document.body.scrollWidth,
@@ -214,10 +247,10 @@ async function captureEntirePage(page, options = {}) {
     )
   }));
 
-  logger.info(`📐 Page dimensions: ${dimensions.width}x${dimensions.height}px`);
+  logger.info(`📐 Full page dimensions: ${dimensions.width}x${dimensions.height}px`);
 
-  // Step 4: Set viewport to capture full content (with safety limits)
-  const maxWidth = 5000;   // Safety limit for width
+  // Step 5: Set viewport to capture full content (with safety limits)
+  const maxWidth = 20000;  // Increased for wide tables
   const maxHeight = 50000; // Increased limit for very long pages
 
   await page.setViewport({
@@ -225,10 +258,10 @@ async function captureEntirePage(page, options = {}) {
     height: Math.min(dimensions.height, maxHeight)
   });
 
-  // Step 5: Final wait for any animations/rendering
+  // Step 6: Final wait for any animations/rendering
   await new Promise(resolve => setTimeout(resolve, loadWaitTime));
 
-  // Step 6: Take screenshot
+  // Step 7: Take screenshot
   logger.info(`📸 Capturing screenshot...`);
   const screenshot = await page.screenshot({ 
     fullPage: useFullPage,
