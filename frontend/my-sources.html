@@ -1675,10 +1675,18 @@
       if (sourcesContainer) {
         sourcesContainer.addEventListener('click', async (e) => {
           console.log('Click detected, target:', e.target.tagName, e.target.className);
+          console.log('Target attributes:', e.target.getAttribute('data-action'), e.target.dataset?.action);
           
-          // Find the button - check the target itself and traverse up
-          const button = e.target.closest('button[data-action]');
-          console.log('Button found:', button, 'action:', button?.dataset?.action);
+          // Find the button - check if target is already a button with data-action
+          let button = null;
+          if (e.target.tagName === 'BUTTON' && e.target.hasAttribute('data-action')) {
+            button = e.target;
+          } else {
+            // Otherwise, traverse up to find parent button
+            button = e.target.closest('button[data-action]');
+          }
+          
+          console.log('Button found:', button, 'action:', button?.dataset?.action, 'id:', button?.dataset?.id);
           
           if (!button) return;
           
