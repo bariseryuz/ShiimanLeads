@@ -1248,10 +1248,19 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
     let prompt = '';
     let content = [];
 
-    // Build field schema prompt - MUST be provided, no defaults
+    // Build field schema prompt with defaults if missing
     if (!fieldSchema || Object.keys(fieldSchema).length === 0) {
-      logger.error(`❌ No fieldSchema provided for ${sourceName} - cannot extract without knowing what fields to look for`);
-      return null;
+      logger.warn(`⚠️ No fieldSchema provided for ${sourceName}, using default schema`);
+      fieldSchema = {
+        permit_number: { required: true },
+        address: { required: false },
+        construction_cost: { required: false },
+        contractor_name: { required: false },
+        company_name: { required: false },
+        phone: { required: false },
+        date_issued: { required: false },
+        permit_type: { required: false }
+      };
     }
 
     const schemaFields = fieldSchema;
@@ -2376,6 +2385,7 @@ async function scrapeForUser(userId, userSources) {
         try {
           const launchOptions = {
             headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
+            protocolTimeout: 180000, // ✅ 3 minutes for slow connections
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
@@ -2420,6 +2430,10 @@ async function scrapeForUser(userId, userSources) {
           
           browser = await puppeteer.launch(launchOptions);
           page = await browser.newPage();
+          
+          // ✅ Set page timeouts
+          page.setDefaultTimeout(90000); // 90 seconds
+          page.setDefaultNavigationTimeout(90000); // 90 seconds
           
           // Set viewport to ultra-wide resolution to capture wide tables
           await page.setViewport({ width: 2560, height: 1440 });
@@ -5563,9 +5577,12 @@ function startServer() {
         // For HTML sources, use Puppeteer to get sample
         const browser = await puppeteer.launch({
           headless: true,
+          protocolTimeout: 180000,
           args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         });
         const page = await browser.newPage();
+        page.setDefaultTimeout(90000);
+        page.setDefaultNavigationTimeout(90000);
         await page.goto(sourceConfig.url, { waitUntil: 'networkidle2', timeout: 30000 });
         
         const selector = sourceConfig.selector || 'table tr, .result, .item';
