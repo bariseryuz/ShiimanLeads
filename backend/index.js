@@ -155,20 +155,89 @@ const DEFAULT_TIMINGS = {
 };
 
 // Capture entire page screenshot - handles lazy loading
-async function captureEntirePage(page) {
-  const { width, height } = await page.evaluate(() => ({
-    width: Math.max(document.body.scrollWidth, document.documentElement.scrollWidth),
-    height: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+// Capture entire page screenshot with intelligent scrolling to reveal all content
+async function captureEntirePage(page, options = {}) {
+  const {
+    maxScrolls = 10,        // Maximum scroll attempts
+    scrollDelay = 1000,      // Wait between scrolls
+    loadWaitTime = 2000,     // Wait for content to load after scrolling
+    useFullPage = true       // Use fullPage screenshot vs manual stitching
+  } = options;
+
+  logger.info(`📸 Starting full page capture (maxScrolls: ${maxScrolls})...`);
+
+  // Step 1: Auto-scroll to trigger lazy-loaded content
+  let lastHeight = 0;
+  let scrollAttempts = 0;
+  
+  while (scrollAttempts < maxScrolls) {
+    // Get current scroll height
+    const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+    
+    // If height hasn't changed, we've reached the end
+    if (currentHeight === lastHeight) {
+      logger.info(`✅ Reached end of page after ${scrollAttempts} scrolls`);
+      break;
+    }
+    
+    lastHeight = currentHeight;
+    scrollAttempts++;
+    
+    // Scroll to bottom to trigger lazy loading
+    await page.evaluate(() => {
+      window.scrollTo(0, document.body.scrollHeight);
+    });
+    
+    logger.info(`📜 Scroll ${scrollAttempts}/${maxScrolls} - Height: ${currentHeight}px`);
+    
+    // Wait for content to load
+    await new Promise(resolve => setTimeout(resolve, scrollDelay));
+  }
+
+  // Step 2: Scroll back to top for clean screenshot
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  // Step 3: Calculate full dimensions
+  const dimensions = await page.evaluate(() => ({
+    width: Math.max(
+      document.body.scrollWidth,
+      document.documentElement.scrollWidth,
+      document.body.offsetWidth,
+      document.documentElement.offsetWidth
+    ),
+    height: Math.max(
+      document.body.scrollHeight,
+      document.documentElement.scrollHeight,
+      document.body.offsetHeight,
+      document.documentElement.offsetHeight
+    )
   }));
 
+  logger.info(`📐 Page dimensions: ${dimensions.width}x${dimensions.height}px`);
+
+  // Step 4: Set viewport to capture full content (with safety limits)
+  const maxWidth = 5000;   // Safety limit for width
+  const maxHeight = 50000; // Increased limit for very long pages
+
   await page.setViewport({
-    width: Math.min(width, 5000),
-    height: Math.min(height, 10000)
+    width: Math.min(dimensions.width, maxWidth),
+    height: Math.min(dimensions.height, maxHeight)
   });
 
-  await new Promise(resolve => setTimeout(resolve, 1500));
+  // Step 5: Final wait for any animations/rendering
+  await new Promise(resolve => setTimeout(resolve, loadWaitTime));
 
-  return await page.screenshot({ fullPage: true });
+  // Step 6: Take screenshot
+  logger.info(`📸 Capturing screenshot...`);
+  const screenshot = await page.screenshot({ 
+    fullPage: useFullPage,
+    type: 'png'
+  });
+
+  logger.info(`✅ Screenshot captured: ${Math.round(screenshot.length / 1024)}KB`);
+  
+  return screenshot;
 }
 
 // Initialize Google Gemini client
