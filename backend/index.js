@@ -2652,7 +2652,7 @@ async function scrapeForUser(userId, userSources) {
             
             // Auto-scroll to load all lazy-loaded data
             logger.info(`Auto-scrolling to load all data...`);
-            const totalRows = await page.evaluate(async (preferredScrollSelector) => {
+            const totalRows = await page.evaluate(async (preferredScrollSelector, timingsParam) => {
               let previousRowCount = 0;
               let currentRowCount = 0;
               let noChangeCount = 0;
@@ -2723,7 +2723,7 @@ async function scrapeForUser(userId, userSources) {
                   const text = (btn.textContent || '').toLowerCase();
                   if ((text.includes('load') || text.includes('show') || text.includes('more')) && btn.offsetParent !== null) {
                     btn.click();
-                    await new Promise(resolve => setTimeout(resolve, timings.betweenScrollWait));
+                    await new Promise(resolve => setTimeout(resolve, timingsParam.betweenScrollWait));
                     break;
                   }
                 }
@@ -2743,7 +2743,7 @@ async function scrapeForUser(userId, userSources) {
                   doWheel(window);
                 }
                 
-                await new Promise(resolve => setTimeout(resolve, timings.betweenScrollWait));
+                await new Promise(resolve => setTimeout(resolve, timingsParam.betweenScrollWait));
                 
                 // Count current items using multiple common patterns (tables, grids, lists)
                 const countItems = () => {
@@ -2803,7 +2803,7 @@ async function scrapeForUser(userId, userSources) {
               }
 
               return currentRowCount;
-            }, source.puppeteerConfig?.scrollSelector || null);
+            }, source.puppeteerConfig?.scrollSelector || null, timings);
             logger.info(`Finished auto-scrolling - loaded ${totalRows} total rows`);
             
             // Use pre-extracted tableData if available, otherwise extract now
