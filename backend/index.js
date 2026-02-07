@@ -5650,6 +5650,121 @@ function startServer() {
     res.sendFile(path.join(__dirname, '../frontend/admin-sources.html'));
   });
 
+  // ============================================
+  // SCREENSHOT VIEWER API
+  // ============================================
+  
+  // Middleware to check authentication
+  function requireAuth(req, res, next) {
+    if (!req.session || !req.session.userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+  }
+  
+  // List all screenshots
+  app.get('/api/screenshots', requireAuth, (req, res) => {
+    try {
+      const files = fs.readdirSync(SCREENSHOT_DIR)
+        .filter(file => file.endsWith('.png') || file.endsWith('.jpg'))
+        .map(file => {
+          const filepath = path.join(SCREENSHOT_DIR, file);
+          const stats = fs.statSync(filepath);
+          return {
+            filename: file,
+            url: `/api/screenshots/view/${encodeURIComponent(file)}`,
+            downloadUrl: `/api/screenshots/download/${encodeURIComponent(file)}`,
+            size: stats.size,
+            sizeFormatted: `${(stats.size / 1024 / 1024).toFixed(2)} MB`,
+            created: stats.birthtime,
+            modified: stats.mtime
+          };
+        })
+        .sort((a, b) => b.created - a.created);
+  
+      res.json({
+        success: true,
+        count: files.length,
+        directory: SCREENSHOT_DIR,
+        screenshots: files
+      });
+    } catch (error) {
+      console.error('Error reading screenshots:', error);
+      res.status(500).json({ error: 'Failed to load screenshots' });
+    }
+  });
+  
+  // View specific screenshot
+  app.get('/api/screenshots/view/:filename', requireAuth, (req, res) => {
+    try {
+      const filename = decodeURIComponent(req.params.filename);
+      
+      // Security: prevent directory traversal attacks
+      if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+        return res.status(400).send('Invalid filename');
+      }
+      
+      const filepath = path.join(SCREENSHOT_DIR, filename);
+      
+      if (!fs.existsSync(filepath)) {
+        return res.status(404).send('Screenshot not found');
+      }
+      
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.sendFile(filepath);
+    } catch (error) {
+      console.error('Error serving screenshot:', error);
+      res.status(500).send('Error loading screenshot');
+    }
+  });
+  
+  // Download screenshot
+  app.get('/api/screenshots/download/:filename', requireAuth, (req, res) => {
+    try {
+      const filename = decodeURIComponent(req.params.filename);
+      
+      if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+        return res.status(400).send('Invalid filename');
+      }
+      
+      const filepath = path.join(SCREENSHOT_DIR, filename);
+      
+      if (!fs.existsSync(filepath)) {
+        return res.status(404).send('Screenshot not found');
+      }
+      
+      res.download(filepath);
+    } catch (error) {
+      console.error('Error downloading screenshot:', error);
+      res.status(500).send('Error downloading screenshot');
+    }
+  });
+  
+  // Delete screenshot (optional)
+  app.delete('/api/screenshots/:filename', requireAuth, (req, res) => {
+    try {
+      const filename = decodeURIComponent(req.params.filename);
+      
+      if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+        return res.status(400).json({ error: 'Invalid filename' });
+      }
+      
+      const filepath = path.join(SCREENSHOT_DIR, filename);
+      
+      if (!fs.existsSync(filepath)) {
+        return res.status(404).json({ error: 'Screenshot not found' });
+      }
+      
+      fs.unlinkSync(filepath);
+      console.log(`🗑️ Deleted screenshot: ${filename}`);
+      res.json({ success: true, message: 'Screenshot deleted' });
+    } catch (error) {
+      console.error('Error deleting screenshot:', error);
+      res.status(500).json({ error: 'Failed to delete screenshot' });
+    }
+  });
+
   // Landing page – serve index.html
   app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/index.html'));
