@@ -1320,8 +1320,9 @@ EXTRACTION INSTRUCTIONS:
 4. Extract ALL visible records from the screenshot (tables, lists, cards)
 5. If you see 25 records, extract ALL 25 - do not stop early
 6. For each record, use ONLY the field names listed above
-7. Put null for missing values
-8. Return a JSON array if multiple records, JSON object if single record
+7. If a field is missing or empty, use empty string "" NOT null
+8. Remove any commas from numbers (e.g., "178,132" → "178132")
+9. Return a JSON array if multiple records, JSON object if single record
 
 OUTPUT REQUIREMENTS:
 ⚠️ Return ONLY valid JSON - no explanations, no markdown, no text
@@ -1329,6 +1330,25 @@ OUTPUT REQUIREMENTS:
 ⚠️ Use the EXACT field names shown above - do not modify them
 ⚠️ NO CODE BLOCKS (no triple backticks)
 ⚠️ NO COMMENTS OR NOTES
+⚠️ Use "" for empty fields, NOT null
+
+EXAMPLE OUTPUT:
+[
+  {
+    "permit_number": "2020006147",
+    "address": "123 Main St",
+    "value": "178132",
+    "contractor_name": "ABC Construction",
+    "contractor_phone": "615-579-8486"
+  },
+  {
+    "permit_number": "2020006148",
+    "address": "456 Oak Ave",
+    "value": "",
+    "contractor_name": "XYZ Builders",
+    "contractor_phone": ""
+  }
+]
 
 ${isRetry ? '\n⚠️ RETRY: Previous extraction failed validation. Double-check field assignments. Read table headers carefully!' : ''}`;
 
@@ -1463,15 +1483,23 @@ ${truncatedText}`;
       }
       try {
         let t = txt;
+        // Fix trailing commas (common AI mistake)
+        t = t.replace(/,\s*([\]}])/g, '$1');
         // Replace single quotes around keys/strings with double quotes carefully
         t = t.replace(/\{\s*'([^']+)'\s*:/g, '{ "$1":');
         t = t.replace(/:\s*'([^']*)'/g, ': "$1"');
-        // Remove trailing commas before closing braces/brackets
-        t = t.replace(/,\s*(\}|\])/g, '$1');
+        // Fix missing quotes on keys (but be careful not to break numbers)
+        t = t.replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+        // Remove any extra text after the final closing bracket
+        const lastBracket = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+        if (lastBracket > 0 && lastBracket < t.length - 1) {
+          t = t.substring(0, lastBracket + 1);
+        }
         logger.info(`🔧 Trying to parse with fixes applied`);
         return JSON.parse(t);
       } catch (e2) {
         logger.error(`❌ Safe parse also failed: ${e2.message}`);
+        logger.error(`Problem text: ${txt.substring(0, 500)}`);
       }
       throw new Error('Invalid JSON returned by AI');
     };
