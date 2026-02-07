@@ -1279,11 +1279,26 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
       .map(([key, desc]) => `"${key}"`)
       .join(', ');
 
+    // Check if this source uses permit_number for deduplication
+    const hasPermitNumber = Object.keys(schemaFields).some(key => 
+      key.toLowerCase().includes('permit') || key.toLowerCase() === 'number'
+    );
+    
+    // Build context-specific critical instruction
+    let criticalInstruction = '';
+    if (hasPermitNumber) {
+      criticalInstruction = `🚨 CRITICAL: ALWAYS extract "permit_number" or similar unique identifier (permit #, ID, number, etc.)
+   This field is MANDATORY for deduplication - without it, the lead will be rejected.
+   Look for: Permit Number, Permit #, Number, ID, Case Number, Application Number
+
+`;
+    }
+
     if (isScreenshot) {
       // Vision-based extraction
       prompt = `Extract data from this screenshot into JSON format.
 
-REQUIRED JSON FIELDS (use EXACTLY these keys, no modifications):
+${criticalInstruction}REQUIRED JSON FIELDS (use EXACTLY these keys, no modifications):
 ${fieldDescriptions}
 
 FIELD MATCHING INSTRUCTIONS:
@@ -1661,7 +1676,11 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
   // Use extractedData if available, otherwise fall back to lead
   const leadData = extractedData || lead;
   
-  // Extract permit number (try multiple field names)
+  // UNIVERSAL UNIQUE ID GENERATION - Works with ANY lead type
+  let uniqueId = '';
+  let idType = '';
+  
+  // Strategy 1: Permit number (construction/building permits)
   const permitNumber = (
     leadData.permit_number || 
     leadData.permitNumber || 
@@ -1671,13 +1690,88 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
     ''
   ).toString().trim();
   
-  if (!permitNumber) {
-    logger.warn('⚠️ Lead has no permit number, skipping');
-    return false;
+  if (permitNumber) {
+    uniqueId = permitNumber;
+    idType = 'permit';
   }
+  
+  // Strategy 2: Address (location-based leads)
+  if (!uniqueId) {
+    const address = (
+      leadData.address || 
+      leadData.adress_details || 
+      leadData.Address || 
+      leadData.location ||
+      leadData.street_address ||
+      ''
+    ).toString().trim();
+    
+    if (address) {
+      uniqueId = `ADDR-${address.substring(0, 50)}`;
+      idType = 'address';
+    }
+  }
+  
+  // Strategy 3: Company/Agent name + phone (business/people leads)
+  if (!uniqueId) {
+    const name = (
+      leadData.company_name ||
+      leadData.contractor_name ||
+      leadData.agent_name ||
+      leadData.name ||
+      leadData.business_name ||
+      ''
+    ).toString().trim();
+    
+    const phone = (
+      leadData.phone ||
+      leadData.contractor_phone ||
+      leadData.contact_phone ||
+      leadData.mobile ||
+      ''
+    ).toString().trim();
+    
+    if (name && phone) {
+      uniqueId = `BIZ-${name.substring(0, 30)}-${phone.replace(/\D/g, '')}`;
+      idType = 'business';
+    } else if (name) {
+      uniqueId = `NAME-${name.substring(0, 50)}`;
+      idType = 'name';
+    }
+  }
+  
+  // Strategy 4: Email or website (company/agent leads)
+  if (!uniqueId) {
+    const contact = (
+      leadData.email ||
+      leadData.website ||
+      leadData.url ||
+      ''
+    ).toString().trim();
+    
+    if (contact) {
+      uniqueId = `CONTACT-${contact.substring(0, 50)}`;
+      idType = 'contact';
+    }
+  }
+  
+  // Strategy 5: Last resort - hash all data
+  if (!uniqueId) {
+    const dataStr = JSON.stringify(leadData);
+    if (dataStr.length > 10) {
+      uniqueId = `HASH-${crypto.createHash('md5').update(dataStr).digest('hex').substring(0, 16)}`;
+      idType = 'hash';
+      logger.warn('⚠️ Using data hash as unique ID (no standard identifiers found)');
+    } else {
+      logger.warn('⚠️ Lead has no usable data, skipping');
+      return false;
+    }
+  }
+  
+  logger.info(`🔑 Unique ID: ${uniqueId} (type: ${idType})`);
 
-  // Generate stable hash based on permit number
-  const hash = generateLeadHash(leadData, userId);
+  // Generate stable hash for deduplication
+  const hash = crypto.createHash('sha256').update(`${uniqueId}-${userId}`).digest('hex');
 
   try {
     const tx = db.transaction(() => {
@@ -1697,7 +1791,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
           WHERE id = ?
         `).run(seenRow.id);
         
-        logger.info(`♻️ Duplicate: ${permitNumber} (seen ${seenRow.seen_count + 1} times)`);
+        logger.info(`♻️ Duplicate: ${uniqueId} (seen ${seenRow.seen_count + 1} times)`);
         return { inserted: false, reason: 'duplicate', hash, permitNumber };
       }
       
@@ -1732,7 +1826,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
           userId,
           sourceId,
           hash,
-          permitNumber,
+          uniqueId,  // Universal unique identifier
           leadData.permit_type || leadData.permitType || null,
           leadData.contractor_name || leadData.contractor || null,
           leadData.company_name || leadData.companyName || null,
