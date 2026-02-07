@@ -2167,6 +2167,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS leads (
     application_date TEXT,
     owner_name TEXT,
     contractor_name TEXT,
+    company_name TEXT,
     contractor_address TEXT,
     contractor_city TEXT,
     contractor_state TEXT,
@@ -2333,6 +2334,10 @@ try {
   if (!leadColumns.find(c => c.name === 'ai_validation_issues')) {
     db.exec("ALTER TABLE leads ADD COLUMN ai_validation_issues TEXT");
     logger.info('Added ai_validation_issues column to leads table');
+  }
+  if (!leadColumns.find(c => c.name === 'company_name')) {
+    db.exec("ALTER TABLE leads ADD COLUMN company_name TEXT");
+    logger.info('Added company_name column to leads table');
   }
   // Ensure unique index on (source_id, canonical_hash)
   try {
