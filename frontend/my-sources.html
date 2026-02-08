@@ -42,6 +42,22 @@
       transition: transform 0.2s;
       border: 1px solid rgba(255, 255, 255, 0.1);
     }
+
+    .source-grid {
+      display: grid;
+      grid-template-columns: minmax(320px, 1.6fr) minmax(260px, 0.9fr);
+      gap: 1.5rem;
+      align-items: start;
+    }
+
+    .source-info {
+      min-width: 0;
+    }
+
+    .source-screenshot-panel {
+      border-left: 1px solid rgba(0, 0, 0, 0.08);
+      padding-left: 1.25rem;
+    }
     
     .source-card:hover {
       transform: translateY(-2px);
@@ -51,7 +67,7 @@
     
     .source-header {
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       align-items: start;
       margin-bottom: 1rem;
     }
@@ -70,16 +86,13 @@
     }
     
     .source-screenshot-container {
-      margin-top: 0.75rem;
-      min-height: 180px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      margin-top: 0.5rem;
+      min-height: 220px;
     }
     
     .screenshot-wrapper {
       width: 100%;
-      height: 180px;
+      height: 220px;
       overflow: hidden;
       border-radius: 4px;
       background: #f3f4f6;
@@ -90,10 +103,135 @@
     
     .source-screenshot-container img {
       width: 100%;
-      height: 180px;
+      height: 220px;
       object-fit: cover;
       cursor: pointer;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .screenshot-carousel {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .screenshot-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: #6b7280;
+      font-weight: 600;
+    }
+
+    .screenshot-date {
+      font-size: 0.75rem;
+      color: #9ca3af;
+      font-weight: 500;
+    }
+
+    .screenshot-slides {
+      position: relative;
+      width: 100%;
+      height: 220px;
+    }
+
+    .screenshot-slide {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .screenshot-slide.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .screenshot-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: #6b7280;
+    }
+
+    .screenshot-thumbs {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+
+    .screenshot-thumb {
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      border-radius: 6px;
+      padding: 0;
+      background: white;
+      cursor: pointer;
+      width: 42px;
+      height: 28px;
+      overflow: hidden;
+      opacity: 0.7;
+      transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .screenshot-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .screenshot-thumb.active {
+      opacity: 1;
+      border-color: #6b7280;
+      transform: translateY(-1px);
+    }
+
+    .screenshot-nav {
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      background: white;
+      border-radius: 6px;
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .screenshot-nav:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .screenshot-count {
+      font-weight: 600;
+    }
+
+    .screenshot-empty {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 0.75rem;
+      background: #f9fafb;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 0.875rem;
+    }
+
+    @media (max-width: 900px) {
+      .source-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .source-screenshot-panel {
+        border-left: none;
+        padding-left: 0;
+        border-top: 1px solid rgba(0, 0, 0, 0.08);
+        padding-top: 1rem;
+      }
     }
     
     .source-screenshot-container img:hover {
@@ -1041,15 +1179,15 @@
         emptyState.style.display = 'none';
         sourcesList.innerHTML = safeSources.map(source => `
           <div class="source-card" data-source-id="${source.id}">
-            <div class="source-header">
-              <div>
-                <div class="source-name">${escapeHtml(source.data.name)}</div>
-                <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
-              </div>
-              <div id="screenshot-${source.id}" class="source-screenshot-container" style="margin-top: 0.75rem;"></div>
-            </div>
-            </div>
-            ${source.data.aiPrompt ? `
+            <div class="source-grid">
+              <div class="source-info">
+                <div class="source-header">
+                  <div>
+                    <div class="source-name">${escapeHtml(source.data.name)}</div>
+                    <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
+                  </div>
+                </div>
+                ${source.data.aiPrompt ? `
               <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(102, 126, 234, 0.1)); border-left: 3px solid #8b5cf6; padding: 0.75rem; margin: 1rem 0; border-radius: 6px;">
                 <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
                   <span style="font-size: 1.25rem;">🤖</span>
@@ -1058,7 +1196,7 @@
                 <div style="color: #666; font-size: 0.813rem; font-style: italic;">"${escapeHtml(source.data.aiPrompt)}"</div>
               </div>
             ` : ''}
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; font-size: 0.875rem; color: var(--gray-600);">
               <div><strong>Type:</strong> ${source.data.aiPrompt ? '🤖 AI Autonomous' : source.data.type === 'json' ? 'REST API' : source.data.useAI ? 'AI Vision' : 'HTML Scraping'}</div>
               ${source.data.type === 'json' ? `<div><strong>Method:</strong> ${source.data.method || 'GET'}</div>` : ''}
               ${source.data.type === 'json' && source.data.jsonPath ? `<div><strong>JSON Path:</strong> ${escapeHtml(source.data.jsonPath)}</div>` : ''}
@@ -1070,11 +1208,16 @@
               ${source.data.displayColumns ? `<div><strong>Display Columns:</strong> ${Array.isArray(source.data.displayColumns) ? source.data.displayColumns.join(', ') : source.data.displayColumns}</div>` : ''}
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
-            </div>
-            <div class="source-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
+                </div>
+                <div class="source-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
               <button class="btn-small" onclick="editSource(${source.id})"><img src="icons/edit.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Edit</button>
               <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/pull.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Scrape</button>
               <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/trash.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Delete</button>
+                </div>
+              </div>
+              <div class="source-screenshot-panel">
+                <div id="screenshot-${source.id}" class="source-screenshot-container"></div>
+              </div>
             </div>
           </div>
         `).join('');
@@ -1100,55 +1243,126 @@
           if (!source || !source.data || !source.data.name) return;
           const sourceName = source.data.name.toLowerCase().replace(/\s+/g, '-');
           
-          // Find the most recent screenshot for this source
-          const screenshot = data.screenshots
+          const screenshots = data.screenshots
             .filter(s => s.filename.toLowerCase().includes(sourceName))
-            .sort((a, b) => new Date(b.created) - new Date(a.created))[0];
-          
-          if (screenshot) {
-            const container = document.getElementById(`screenshot-${source.id}`);
-            if (container) {
-              container.innerHTML = `
-                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem; background: #f9fafb;">
-                  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <span style="font-size: 0.875rem; font-weight: 600; color: #6b7280;">📸 Latest Screenshot</span>
-                    <span style="font-size: 0.75rem; color: #9ca3af;">${new Date(screenshot.created).toLocaleDateString()}</span>
-                  </div>
-                  <div class="screenshot-wrapper">
-                    <img src="${screenshot.url}" 
-                         alt="Screenshot" 
-                         data-lightbox-url="${screenshot.url}"
-                         onclick="openScreenshotLightbox('${screenshot.url}')">
-                  </div>
-                  <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; text-align: center;">
-                    Click to view full size
+            .sort((a, b) => new Date(b.created) - new Date(a.created));
+
+          const container = document.getElementById(`screenshot-${source.id}`);
+          if (!container) return;
+
+          if (screenshots.length > 0) {
+            const slidesHtml = screenshots.map((shot, index) => `
+              <div class="screenshot-slide ${index === 0 ? 'active' : ''}" data-index="${index}" data-created="${shot.created}">
+                <img src="${shot.url}"
+                     alt="Screenshot"
+                     data-lightbox-url="${shot.url}"
+                     onclick="openScreenshotLightbox('${shot.url}')">
+              </div>
+            `).join('');
+
+            const disableNav = screenshots.length <= 1 ? 'disabled' : '';
+
+            const thumbsHtml = screenshots.map((shot, index) => `
+              <button type="button" class="screenshot-thumb ${index === 0 ? 'active' : ''}" data-thumb="${index}" data-id="${source.id}">
+                <img src="${shot.url}" alt="Screenshot thumbnail">
+              </button>
+            `).join('');
+
+            container.innerHTML = `
+              <div class="screenshot-carousel" data-source-id="${source.id}" data-total="${screenshots.length}" data-index="0">
+                <div class="screenshot-meta">
+                  <span>📸 Screenshots</span>
+                  <span class="screenshot-date">${new Date(screenshots[0].created).toLocaleDateString()}</span>
+                </div>
+                <div class="screenshot-wrapper">
+                  <div class="screenshot-slides">
+                    ${slidesHtml}
                   </div>
                 </div>
-              `;
-            }
+                <div class="screenshot-controls">
+                  <button type="button" class="screenshot-nav" data-carousel="prev" data-id="${source.id}" ${disableNav}>Prev</button>
+                  <div class="screenshot-count"><span class="current">1</span> / ${screenshots.length}</div>
+                  <button type="button" class="screenshot-nav" data-carousel="next" data-id="${source.id}" ${disableNav}>Next</button>
+                </div>
+                <div class="screenshot-thumbs">
+                  ${thumbsHtml}
+                </div>
+              </div>
+            `;
           } else {
-            // Add placeholder for sources without screenshots
-            const container = document.getElementById(`screenshot-${source.id}`);
-            if (container) {
-              container.innerHTML = `
-                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem; background: #f9fafb;">
-                  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
-                    <span style="font-size: 0.875rem; font-weight: 600; color: #9ca3af;">📸 Screenshot</span>
-                  </div>
-                  <div class="screenshot-wrapper" style="background: #e5e7eb;">
-                    <span style="color: #9ca3af; font-size: 0.875rem;">No screenshot yet</span>
-                  </div>
-                  <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; text-align: center;">
-                    Run scrape to generate
-                  </div>
+            container.innerHTML = `
+              <div class="screenshot-empty">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">📸 Screenshot</div>
+                <div class="screenshot-wrapper" style="background: #e5e7eb; height: 220px;">
+                  <span style="color: #9ca3af; font-size: 0.875rem;">No screenshot yet</span>
                 </div>
-              `;
-            }
+                <div style="font-size: 0.75rem; margin-top: 0.5rem;">Run scrape to generate</div>
+              </div>
+            `;
           }
         });
       } catch (error) {
         console.error('Error loading screenshots:', error);
       }
+    }
+
+    let activeScreenshotSourceId = null;
+
+    function setActiveScreenshotSource(sourceId) {
+      activeScreenshotSourceId = sourceId;
+    }
+
+    function goToScreenshotIndex(sourceId, index) {
+      const container = document.getElementById(`screenshot-${sourceId}`);
+      const carousel = container?.querySelector('.screenshot-carousel');
+      if (!carousel) return;
+
+      const total = parseInt(carousel.dataset.total || '0', 10);
+      if (total <= 0) return;
+
+      const slides = Array.from(carousel.querySelectorAll('.screenshot-slide'));
+      const thumbs = Array.from(carousel.querySelectorAll('.screenshot-thumb'));
+      const clampedIndex = Math.max(0, Math.min(index, total - 1));
+
+      slides.forEach((slide, i) => {
+        slide.classList.toggle('active', i === clampedIndex);
+      });
+      thumbs.forEach((thumb, i) => {
+        thumb.classList.toggle('active', i === clampedIndex);
+      });
+
+      carousel.dataset.index = String(clampedIndex);
+
+      const dateLabel = carousel.querySelector('.screenshot-date');
+      const countLabel = carousel.querySelector('.screenshot-count .current');
+      const created = slides[clampedIndex]?.getAttribute('data-created');
+
+      if (dateLabel && created) {
+        dateLabel.textContent = new Date(created).toLocaleDateString();
+      }
+      if (countLabel) {
+        countLabel.textContent = String(clampedIndex + 1);
+      }
+    }
+
+    function changeScreenshotSlide(sourceId, direction) {
+      const container = document.getElementById(`screenshot-${sourceId}`);
+      const carousel = container?.querySelector('.screenshot-carousel');
+      if (!carousel) return;
+
+      const total = parseInt(carousel.dataset.total || '0', 10);
+      if (total <= 1) return;
+
+      const slides = Array.from(carousel.querySelectorAll('.screenshot-slide'));
+      let index = parseInt(carousel.dataset.index || '0', 10);
+
+      if (direction === 'next') {
+        index = (index + 1) % total;
+      } else {
+        index = (index - 1 + total) % total;
+      }
+
+      goToScreenshotIndex(sourceId, index);
     }
 
     function openAddModal() {
@@ -1938,7 +2152,37 @@
       console.log('sourcesContainer found:', !!sourcesContainer);
       
       if (sourcesContainer) {
+        sourcesContainer.addEventListener('mouseenter', (e) => {
+          const carousel = e.target.closest?.('.screenshot-carousel');
+          const sourceId = carousel?.getAttribute?.('data-source-id');
+          if (sourceId) {
+            setActiveScreenshotSource(parseInt(sourceId, 10));
+          }
+        }, true);
+
         sourcesContainer.addEventListener('click', async (e) => {
+          const carouselButton = e.target.closest?.('button[data-carousel]');
+          if (carouselButton) {
+            e.preventDefault();
+            e.stopPropagation();
+            const direction = carouselButton.getAttribute('data-carousel');
+            const id = parseInt(carouselButton.getAttribute('data-id'), 10);
+            setActiveScreenshotSource(id);
+            changeScreenshotSlide(id, direction);
+            return;
+          }
+
+          const thumbButton = e.target.closest?.('button[data-thumb]');
+          if (thumbButton) {
+            e.preventDefault();
+            e.stopPropagation();
+            const index = parseInt(thumbButton.getAttribute('data-thumb'), 10);
+            const id = parseInt(thumbButton.getAttribute('data-id'), 10);
+            setActiveScreenshotSource(id);
+            goToScreenshotIndex(id, index);
+            return;
+          }
+
           console.log('Click detected, target:', e.target.tagName, e.target.className);
           console.log('Target has data-action?:', e.target.hasAttribute?.('data-action'));
           console.log('Target data-action value:', e.target.getAttribute?.('data-action'));
@@ -2103,8 +2347,25 @@
       
       // Close on ESC key
       document.addEventListener('keydown', (e) => {
+        const target = e.target;
+        const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
         if (e.key === 'Escape') {
           closeScreenshotLightbox();
+          return;
+        }
+
+        if (isTyping) return;
+
+        if (e.key === 'ArrowRight') {
+          if (activeScreenshotSourceId !== null) {
+            changeScreenshotSlide(activeScreenshotSourceId, 'next');
+          }
+        }
+
+        if (e.key === 'ArrowLeft') {
+          if (activeScreenshotSourceId !== null) {
+            changeScreenshotSlide(activeScreenshotSourceId, 'prev');
+          }
         }
       });
     });
