@@ -291,6 +291,55 @@
       background: white;
       transform: scale(1.1);
     }
+
+    .screenshot-lightbox-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255, 255, 255, 0.8);
+      border: none;
+      border-radius: 4px;
+      width: 44px;
+      height: 44px;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      z-index: 10000;
+    }
+
+    .screenshot-lightbox-prev {
+      left: 10px;
+    }
+
+    .screenshot-lightbox-next {
+      right: 10px;
+    }
+
+    .screenshot-lightbox-nav:hover {
+      background: white;
+    }
+
+    .screenshot-lightbox-nav:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .screenshot-lightbox-counter {
+      position: absolute;
+      bottom: -40px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 0.875rem;
+      font-weight: 600;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
     
     .source-actions {
       display: flex;
@@ -691,7 +740,12 @@
   <div id="screenshotLightbox" class="screenshot-lightbox">
     <div class="screenshot-lightbox-content">
       <button class="screenshot-lightbox-close" onclick="closeScreenshotLightbox()" title="Close (ESC)">×</button>
+      <button class="screenshot-lightbox-nav screenshot-lightbox-prev" id="lightboxPrev" onclick="navigationScreenshotLightbox('prev')" title="Previous (← arrow)">❮</button>
       <img id="lightboxImage" src="" alt="Screenshot">
+      <button class="screenshot-lightbox-nav screenshot-lightbox-next" id="lightboxNext" onclick="navigationScreenshotLightbox('next')" title="Next (→ arrow)">❯</button>
+      <div class="screenshot-lightbox-counter">
+        <span id="lightboxCounter">1 / 1</span>
+      </div>
     </div>
   </div>
 
@@ -1238,6 +1292,11 @@
         const data = await response.json();
         if (!data.screenshots || data.screenshots.length === 0) return;
         
+        // Initialize global screenshot storage
+        if (!window.sourceScreenshots) {
+          window.sourceScreenshots = {};
+        }
+        
         // Group screenshots by source name (extracted from filename)
         sources.forEach(source => {
           if (!source || !source.data || !source.data.name) return;
@@ -1246,6 +1305,11 @@
           const screenshots = data.screenshots
             .filter(s => s.filename.toLowerCase().includes(sourceName))
             .sort((a, b) => new Date(b.created) - new Date(a.created));
+
+          // Store screenshots globally for lightbox access
+          if (screenshots.length > 0) {
+            window.sourceScreenshots[source.id] = screenshots;
+          }
 
           const container = document.getElementById(`screenshot-${source.id}`);
           if (!container) return;
@@ -1258,7 +1322,7 @@
                      alt="Screenshot"
                      data-lazy="${index !== 0 ? shot.url : ''}"
                      data-lightbox-url="${shot.url}"
-                     onclick="openScreenshotLightbox('${shot.url}')">
+                     onclick="openScreenshotLightbox(${source.id}, ${index}, window.sourceScreenshots[${source.id}])">
               </div>
             `).join('');
 
@@ -2333,12 +2397,48 @@
     setTimeout(checkActiveScrapingOnLoad, 500);
 
     // Screenshot lightbox functions
-    function openScreenshotLightbox(imageUrl) {
+    // Store current lightbox state for navigation
+    let lightboxState = { sourceId: null, index: 0, total: 0, screenshots: [] };
+
+    async function openScreenshotLightbox(sourceId, index, allScreenshots) {
+      lightboxState = { sourceId, index, total: allScreenshots.length, screenshots: allScreenshots };
       const lightbox = document.getElementById('screenshotLightbox');
       const lightboxImg = document.getElementById('lightboxImage');
-      lightboxImg.src = imageUrl;
+      const counter = document.getElementById('lightboxCounter');
+      const prevBtn = document.getElementById('lightboxPrev');
+      const nextBtn = document.getElementById('lightboxNext');
+      
+      lightboxImg.src = allScreenshots[index].url;
+      counter.textContent = `${index + 1} / ${allScreenshots.length}`;
+      prevBtn.disabled = index === 0;
+      nextBtn.disabled = index === allScreenshots.length - 1;
+      
       lightbox.classList.add('show');
       document.body.style.overflow = 'hidden';
+    }
+
+    function navigationScreenshotLightbox(direction) {
+      if (!lightboxState.screenshots.length) return;
+      
+      let newIndex = lightboxState.index;
+      if (direction === 'next') {
+        newIndex = Math.min(newIndex + 1, lightboxState.total - 1);
+      } else if (direction === 'prev') {
+        newIndex = Math.max(newIndex - 1, 0);
+      }
+      
+      if (newIndex !== lightboxState.index) {
+        const lightboxImg = document.getElementById('lightboxImage');
+        const counter = document.getElementById('lightboxCounter');
+        const prevBtn = document.getElementById('lightboxPrev');
+        const nextBtn = document.getElementById('lightboxNext');
+        
+        lightboxState.index = newIndex;
+        lightboxImg.src = lightboxState.screenshots[newIndex].url;
+        counter.textContent = `${newIndex + 1} / ${lightboxState.total}`;
+        prevBtn.disabled = newIndex === 0;
+        nextBtn.disabled = newIndex === lightboxState.total - 1;
+      }
     }
 
     function closeScreenshotLightbox() {
