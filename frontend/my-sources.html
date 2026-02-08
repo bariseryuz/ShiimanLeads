@@ -937,7 +937,7 @@
 
     async function loadSources() {
       try {
-        const response = await fetch('/api/my-sources');
+        const response = await fetch('/api/my-sources/mine');
         const data = await response.json();
         
         const sourcesList = document.getElementById('sourcesList');
@@ -1068,7 +1068,7 @@
 
     async function editSource(id) {
       try {
-        const response = await fetch('/api/my-sources');
+        const response = await fetch('/api/my-sources/mine');
         const data = await response.json();
         const source = data.data.find(s => s.id === id);
         
@@ -1218,7 +1218,7 @@
         await saveMappings();
         
         // Get source details for confirmation message
-        const sourcesResponse = await fetch('/api/my-sources');
+        const sourcesResponse = await fetch('/api/my-sources/mine');
         const sourcesData = await sourcesResponse.json();
         const source = sourcesData.data.find(s => s.id === currentMappingSourceId);
         
@@ -1294,7 +1294,7 @@
         });
         
         // Load existing mappings if they exist
-        const sourcesResponse = await fetch('/api/my-sources');
+        const sourcesResponse = await fetch('/api/my-sources/mine');
         const sourcesData = await sourcesResponse.json();
         const source = sourcesData.data.find(s => s.id === sourceId);
         
