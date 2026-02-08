@@ -1251,10 +1251,12 @@
           if (!container) return;
 
           if (screenshots.length > 0) {
+            // LAZY LOAD: Only load active slide initially, use placeholder for others
             const slidesHtml = screenshots.map((shot, index) => `
-              <div class="screenshot-slide ${index === 0 ? 'active' : ''}" data-index="${index}" data-created="${shot.created}">
-                <img src="${shot.url}"
+              <div class="screenshot-slide ${index === 0 ? 'active' : ''}" data-index="${index}" data-created="${shot.created}" data-url="${shot.url}">
+                <img src="${index === 0 ? shot.url : 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22100%25%22 height=%22100%25%22/%3E%3C/svg%3E'}"
                      alt="Screenshot"
+                     data-lazy="${index !== 0 ? shot.url : ''}"
                      data-lightbox-url="${shot.url}"
                      onclick="openScreenshotLightbox('${shot.url}')">
               </div>
@@ -1262,9 +1264,11 @@
 
             const disableNav = screenshots.length <= 1 ? 'disabled' : '';
 
-            const thumbsHtml = screenshots.map((shot, index) => `
+            // Lazy load: Only show first 5 thumbnails to prevent DOM bloat
+            const visibleThumbs = Math.min(5, screenshots.length);
+            const thumbsHtml = screenshots.slice(0, visibleThumbs).map((shot, index) => `
               <button type="button" class="screenshot-thumb ${index === 0 ? 'active' : ''}" data-thumb="${index}" data-id="${source.id}">
-                <img src="${shot.url}" alt="Screenshot thumbnail">
+                <img src="${shot.url}" alt="Thumbnail" loading="lazy" style="max-width: 60px; height: 60px;">
               </button>
             `).join('');
 
@@ -1284,8 +1288,9 @@
                   <div class="screenshot-count"><span class="current">1</span> / ${screenshots.length}</div>
                   <button type="button" class="screenshot-nav" data-carousel="next" data-id="${source.id}" ${disableNav}>Next</button>
                 </div>
-                <div class="screenshot-thumbs">
+                <div class="screenshot-thumbs" style="max-width: 320px; overflow-x: auto;">
                   ${thumbsHtml}
+                  ${screenshots.length > visibleThumbs ? `<span style="font-size: 0.75rem; color: #9ca3af; margin-left: 0.5rem;">+${screenshots.length - visibleThumbs}</span>` : ''}
                 </div>
               </div>
             `;
@@ -1326,6 +1331,14 @@
 
       slides.forEach((slide, i) => {
         slide.classList.toggle('active', i === clampedIndex);
+        // LAZY LOAD: Load image when slide becomes active
+        if (i === clampedIndex) {
+          const img = slide.querySelector('img');
+          if (img && img.dataset.lazy && !img.src.includes(img.dataset.lazy)) {
+            img.src = img.dataset.lazy;
+            delete img.dataset.lazy;
+          }
+        }
       });
       thumbs.forEach((thumb, i) => {
         thumb.classList.toggle('active', i === clampedIndex);
