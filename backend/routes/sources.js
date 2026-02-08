@@ -277,7 +277,8 @@ router.post('/', express.json(), async (req, res) => {
     const userExists = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
     if (!userExists) {
       logger.error(`User ${userId} does not exist - cannot create source`);
-      return res.status(401).json({ error: 'User not found - please log in again' });
+      req.session.destroy(() => {});
+      return res.status(401).json({ error: 'Session expired - please log in again' });
     }
     
     // Store as JSON string
