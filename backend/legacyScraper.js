@@ -145,6 +145,7 @@ async function scrapeForUser(userId, userSources) {
       
       let data;
       let usedPuppeteer = false;
+      let aiExtractionUsed = false;
       let newLeads = 0;
       
       // Puppeteer scraping for dynamic sites
@@ -181,6 +182,7 @@ async function scrapeForUser(userId, userSources) {
           
           // === PAGINATION & FULL SCROLL SUPPORT ===
           if (source.useAI && geminiModel) {
+            aiExtractionUsed = true;
             logger.info(`📸 Starting multi-page AI extraction with full scrolling...`);
             
             let pageNumber = 1;
@@ -351,8 +353,8 @@ async function scrapeForUser(userId, userSources) {
         }
       }
       
-      // Axios scraping for APIs and static sites
-      if (!usedPuppeteer && !data) {
+      // Axios scraping for APIs and static sites (skip if AI extraction already handled it)
+      if (!aiExtractionUsed && !usedPuppeteer && !data) {
         try {
           const response = await axios.get(source.url, {
             timeout: 30000,
@@ -437,8 +439,9 @@ async function scrapeForUser(userId, userSources) {
       totalInserted += newLeads;
       logger.info(`✅ ${source.name}: ${newLeads} new leads`);
       
-      // Track reliability
-      await trackSourceReliability(source._sourceId || source.id, source.name, true, newLeads);
+      // Track reliability - mark as success only if we extracted leads OR if using AI extraction method
+      const isSuccess = newLeads > 0 || aiExtractionUsed;
+      await trackSourceReliability(source._sourceId || source.id, source.name, isSuccess, newLeads);
       
       // Mark rate limiter success
       rateLimiter.onSuccess();
