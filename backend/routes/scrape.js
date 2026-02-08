@@ -2,31 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { dbAll, dbGet } = require('../db');
 const logger = require('../utils/logger');
+const { scrapeForUser } = require('../legacyScraper'); // Import from legacy scraper
 
-// In-memory progress tracking
-const progressMap = new Map();
-const stopFlags = new Map();
-
-function getProgress(userId) {
-  return progressMap.get(userId);
-}
-
-function updateProgress(userId, data) {
-  const existing = progressMap.get(userId) || {};
-  progressMap.set(userId, { ...existing, ...data });
-}
-
-function setShouldStop(userId, value) {
-  stopFlags.set(userId, value);
-}
-
-// Helper function - will be imported from services/scraper in Phase 5
-// For now, we reference it from the parent context (index.js)
-let scrapeForUser;
-
-function setScraperFunction(scraperFn) {
-  scrapeForUser = scraperFn;
-}
+// Import progress tracking from services
+const {
+  getProgress,
+  updateProgress,
+  setShouldStop
+} = require('../services/scraper/progress');
 
 /**
  * POST /api/scrape/now

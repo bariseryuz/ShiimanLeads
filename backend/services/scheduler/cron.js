@@ -1,6 +1,51 @@
 const cron = require('node-cron');
 const logger = require('../../utils/logger');
-const { scrapeAllUsers } = require('../scraper');
+const { scrapeForUser } = require('../../legacyScraper');
+const { dbAll } = require('../../db');
+
+/**
+ * Scrape all users' sources (cron job)
+ */
+async function scrapeAllUsers() {
+  try {
+    logger.info('=== Starting scrape cycle for all users ===');
+    const users = await dbAll('SELECT id, username, role FROM users');
+    
+    // Scrape user-specific sources from database
+    for (const user of users) {
+      try {
+        // Get user's sources WITH their IDs
+        const sourceRows = await dbAll('SELECT id, source_data FROM user_sources WHERE user_id = ?', [user.id]);
+        if (!sourceRows.length) {
+          logger.info(`User ${user.username} (${user.id}) has no custom sources configured`);
+          continue;
+        }
+        
+        const userSources = sourceRows.map(row => {
+          try {
+            const sourceData = JSON.parse(row.source_data);
+            sourceData._sourceId = row.id; // Add source ID to the source object
+            return sourceData;
+          } catch (e) {
+            logger.error(`Invalid JSON in user_sources for user ${user.id}: ${e.message}`);
+            return null;
+          }
+        }).filter(Boolean);
+        
+        if (userSources.length) {
+          logger.info(`Scraping ${userSources.length} custom sources for user ${user.username} (${user.id})`);
+          await scrapeForUser(user.id, userSources);
+        }
+      } catch (userErr) {
+        logger.error(`Error scraping custom sources for user ${user.username} (${user.id}): ${userErr.message}`);
+      }
+    }
+    
+    logger.info('=== Scrape cycle complete for all users ===');
+  } catch (e) {
+    logger.error(`Scraper orchestrator error: ${e.message}`);
+  }
+}
 
 /**
  * Setup automatic scraping with cron
@@ -23,13 +68,7 @@ function setupAutoScraping() {
 
   if (AUTO_SCRAPE_ON_STARTUP) {
     logger.info('Running initial scrape on startup...');
-    // NOTE: scrapeAllUsers() currently in index.js - imports scrapeForUser
-    // Once scrapeForUser is extracted to services/scraper/index.js, this will work seamlessly
-    
-    // For now, log warning
-    logger.warn('⚠️ AUTO_SCRAPE_ON_STARTUP enabled but scrapeForUser() not yet extracted');
-    // TODO: Uncomment when scrapeForUser is moved to services/scraper/
-    // scrapeAllUsers(); // Run once on startup
+    scrapeAllUsers().catch(err => logger.error('Startup scrape failed:', err));
   }
 }
 

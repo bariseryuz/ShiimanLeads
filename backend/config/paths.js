@@ -21,4 +21,14 @@ Object.values(paths).forEach(dirPath => {
   }
 });
 
-module.exports = paths;
+// Named exports for convenience
+const SCREENSHOT_DIR = paths.screenshots;
+const DB_PATH = path.join(paths.data, 'leads.db');
+const SESSIONS_DB_PATH = path.join(paths.data, 'sessions.db');
+
+module.exports = {
+  ...paths,
+  SCREENSHOT_DIR,
+  DB_PATH,
+  SESSIONS_DB_PATH
+};
