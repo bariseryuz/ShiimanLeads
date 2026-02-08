@@ -259,15 +259,21 @@
     
     .screenshot-lightbox-content {
       max-width: 95%;
-      max-height: 95%;
+      max-height: 95vh;
       position: relative;
+      overflow: auto; /* Enable scrolling */
+      display: flex;
+      align-items: flex-start; /* Align to top for scrolling */
+      justify-content: center;
+      scroll-behavior: smooth; /* Smooth scrolling */
     }
     
     .screenshot-lightbox img {
       max-width: 100%;
-      max-height: 90vh;
-      object-fit: contain;
+      height: auto; /* Remove max-height constraint - allow full height */
       border-radius: 8px;
+      display: block;
+      cursor: zoom-in; /* Indicate image can be interacted with */
     }
     
     .screenshot-lightbox-close {
@@ -339,6 +345,26 @@
       padding: 0.5rem 1rem;
       border-radius: 4px;
       white-space: nowrap;
+    }
+    
+    /* Custom scrollbar for lightbox */
+    .screenshot-lightbox-content::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+    }
+    
+    .screenshot-lightbox-content::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+    }
+    
+    .screenshot-lightbox-content::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 6px;
+    }
+    
+    .screenshot-lightbox-content::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.5);
     }
     
     .source-actions {
@@ -2404,6 +2430,7 @@
       lightboxState = { sourceId, index, total: allScreenshots.length, screenshots: allScreenshots };
       const lightbox = document.getElementById('screenshotLightbox');
       const lightboxImg = document.getElementById('lightboxImage');
+      const lightboxContent = lightbox.querySelector('.screenshot-lightbox-content');
       const counter = document.getElementById('lightboxCounter');
       const prevBtn = document.getElementById('lightboxPrev');
       const nextBtn = document.getElementById('lightboxNext');
@@ -2412,6 +2439,23 @@
       counter.textContent = `${index + 1} / ${allScreenshots.length}`;
       prevBtn.disabled = index === 0;
       nextBtn.disabled = index === allScreenshots.length - 1;
+      
+      // Check if image is scrollable after load and show hint
+      lightboxImg.onload = () => {
+        setTimeout(() => {
+          const isScrollable = lightboxContent.scrollHeight > lightboxContent.clientHeight;
+          if (isScrollable) {
+            // Add subtle pulse hint for scrollability
+            lightboxContent.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.3)';
+            setTimeout(() => {
+              lightboxContent.style.boxShadow = '';
+            }, 2000);
+          }
+        }, 100);
+      };
+      
+      // Reset scroll position to top
+      lightboxContent.scrollTop = 0;
       
       lightbox.classList.add('show');
       document.body.style.overflow = 'hidden';
@@ -2428,7 +2472,9 @@
       }
       
       if (newIndex !== lightboxState.index) {
+        const lightbox = document.getElementById('screenshotLightbox');
         const lightboxImg = document.getElementById('lightboxImage');
+        const lightboxContent = lightbox.querySelector('.screenshot-lightbox-content');
         const counter = document.getElementById('lightboxCounter');
         const prevBtn = document.getElementById('lightboxPrev');
         const nextBtn = document.getElementById('lightboxNext');
@@ -2438,6 +2484,22 @@
         counter.textContent = `${newIndex + 1} / ${lightboxState.total}`;
         prevBtn.disabled = newIndex === 0;
         nextBtn.disabled = newIndex === lightboxState.total - 1;
+        
+        // Reset scroll position to top when navigating
+        lightboxContent.scrollTop = 0;
+        
+        // Check if new image is scrollable after load
+        lightboxImg.onload = () => {
+          setTimeout(() => {
+            const isScrollable = lightboxContent.scrollHeight > lightboxContent.clientHeight;
+            if (isScrollable) {
+              lightboxContent.style.boxShadow = '0 0 20px rgba(139, 92, 246, 0.3)';
+              setTimeout(() => {
+                lightboxContent.style.boxShadow = '';
+              }, 2000);
+            }
+          }, 100);
+        };
       }
     }
 
@@ -2468,16 +2530,60 @@
         }
 
         if (isTyping) return;
+        
+        // Check if lightbox is open
+        const lightbox = document.getElementById('screenshotLightbox');
+        const lightboxOpen = lightbox && lightbox.classList.contains('show');
 
+        // Arrow key navigation
         if (e.key === 'ArrowRight') {
-          if (activeScreenshotSourceId !== null) {
+          if (lightboxOpen) {
+            // In lightbox: navigate to next screenshot
+            navigationScreenshotLightbox('next');
+          } else if (activeScreenshotSourceId !== null) {
+            // In carousel: change slide
             changeScreenshotSlide(activeScreenshotSourceId, 'next');
           }
         }
 
         if (e.key === 'ArrowLeft') {
-          if (activeScreenshotSourceId !== null) {
+          if (lightboxOpen) {
+            // In lightbox: navigate to previous screenshot
+            navigationScreenshotLightbox('prev');
+          } else if (activeScreenshotSourceId !== null) {
+            // In carousel: change slide
             changeScreenshotSlide(activeScreenshotSourceId, 'prev');
+          }
+        }
+        
+        // Vertical scrolling in lightbox with Up/Down arrows
+        if (lightboxOpen) {
+          const lightboxContent = lightbox.querySelector('.screenshot-lightbox-content');
+          if (lightboxContent) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              lightboxContent.scrollBy({ top: 100, behavior: 'smooth' });
+            }
+            if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              lightboxContent.scrollBy({ top: -100, behavior: 'smooth' });
+            }
+            if (e.key === 'PageDown') {
+              e.preventDefault();
+              lightboxContent.scrollBy({ top: lightboxContent.clientHeight * 0.8, behavior: 'smooth' });
+            }
+            if (e.key === 'PageUp') {
+              e.preventDefault();
+              lightboxContent.scrollBy({ top: -lightboxContent.clientHeight * 0.8, behavior: 'smooth' });
+            }
+            if (e.key === 'Home') {
+              e.preventDefault();
+              lightboxContent.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+            if (e.key === 'End') {
+              e.preventDefault();
+              lightboxContent.scrollTo({ top: lightboxContent.scrollHeight, behavior: 'smooth' });
+            }
           }
         }
       });
