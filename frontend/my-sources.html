@@ -71,14 +71,87 @@
     
     .source-screenshot-container {
       margin-top: 0.75rem;
+      min-height: 180px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .screenshot-wrapper {
+      width: 100%;
+      height: 180px;
+      overflow: hidden;
+      border-radius: 4px;
+      background: #f3f4f6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     
     .source-screenshot-container img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      cursor: pointer;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
     }
     
     .source-screenshot-container img:hover {
+      transform: scale(1.02);
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    .screenshot-lightbox {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    
+    .screenshot-lightbox.show {
+      display: flex;
+    }
+    
+    .screenshot-lightbox-content {
+      max-width: 95%;
+      max-height: 95%;
+      position: relative;
+    }
+    
+    .screenshot-lightbox img {
+      max-width: 100%;
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+    
+    .screenshot-lightbox-close {
+      position: absolute;
+      top: -40px;
+      right: 0;
+      background: rgba(255, 255, 255, 0.9);
+      border: none;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    .screenshot-lightbox-close:hover {
+      background: white;
+      transform: scale(1.1);
     }
     
     .source-actions {
@@ -473,6 +546,14 @@
       <h2>No Sources Yet</h2>
       <p>Add your first data source to start extracting leads automatically</p>
       <button class="btn btn-primary" onclick="openAddModal()">+ Add Your First Source</button>
+    </div>
+  </div>
+
+  <!-- Screenshot Lightbox Modal -->
+  <div id="screenshotLightbox" class="screenshot-lightbox">
+    <div class="screenshot-lightbox-content">
+      <button class="screenshot-lightbox-close" onclick="closeScreenshotLightbox()" title="Close (ESC)">×</button>
+      <img id="lightboxImage" src="" alt="Screenshot">
     </div>
   </div>
 
@@ -1033,14 +1114,32 @@
                     <span style="font-size: 0.875rem; font-weight: 600; color: #6b7280;">📸 Latest Screenshot</span>
                     <span style="font-size: 0.75rem; color: #9ca3af;">${new Date(screenshot.created).toLocaleDateString()}</span>
                   </div>
-                  <a href="${screenshot.url}" target="_blank" style="display: block;">
-                    <img src="${screenshot.url}" alt="Screenshot" 
-                         style="width: 100%; max-width: 400px; height: auto; border-radius: 4px; cursor: pointer; transition: transform 0.2s;"
-                         onmouseover="this.style.transform='scale(1.02)'" 
-                         onmouseout="this.style.transform='scale(1)'">
-                  </a>
-                  <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem;">
+                  <div class="screenshot-wrapper">
+                    <img src="${screenshot.url}" 
+                         alt="Screenshot" 
+                         data-lightbox-url="${screenshot.url}"
+                         onclick="openScreenshotLightbox('${screenshot.url}')">
+                  </div>
+                  <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; text-align: center;">
                     Click to view full size
+                  </div>
+                </div>
+              `;
+            }
+          } else {
+            // Add placeholder for sources without screenshots
+            const container = document.getElementById(`screenshot-${source.id}`);
+            if (container) {
+              container.innerHTML = `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem; background: #f9fafb;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-size: 0.875rem; font-weight: 600; color: #9ca3af;">📸 Screenshot</span>
+                  </div>
+                  <div class="screenshot-wrapper" style="background: #e5e7eb;">
+                    <span style="color: #9ca3af; font-size: 0.875rem;">No screenshot yet</span>
+                  </div>
+                  <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; text-align: center;">
+                    Run scrape to generate
                   </div>
                 </div>
               `;
@@ -1975,6 +2074,40 @@
 
     // Check for active scraping when page loads
     setTimeout(checkActiveScrapingOnLoad, 500);
+
+    // Screenshot lightbox functions
+    function openScreenshotLightbox(imageUrl) {
+      const lightbox = document.getElementById('screenshotLightbox');
+      const lightboxImg = document.getElementById('lightboxImage');
+      lightboxImg.src = imageUrl;
+      lightbox.classList.add('show');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function closeScreenshotLightbox() {
+      const lightbox = document.getElementById('screenshotLightbox');
+      lightbox.classList.remove('show');
+      document.body.style.overflow = 'auto';
+    }
+
+    // Close on background click
+    document.addEventListener('DOMContentLoaded', () => {
+      const lightbox = document.getElementById('screenshotLightbox');
+      if (lightbox) {
+        lightbox.addEventListener('click', (e) => {
+          if (e.target === lightbox) {
+            closeScreenshotLightbox();
+          }
+        });
+      }
+      
+      // Close on ESC key
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeScreenshotLightbox();
+        }
+      });
+    });
   </script>
 </body>
 </html>
