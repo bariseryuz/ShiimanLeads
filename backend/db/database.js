@@ -1,4 +1,4 @@
-const { db, dbGet, dbAll, dbRun } = require('./connection');
+const { db, sessionDb, dbGet, dbAll, dbRun } = require('./connection');
 const { createTables, createIndexes } = require('./schema');
 const { runMigrations } = require('./migrations');
 const logger = require('../utils/logger');
@@ -21,6 +21,7 @@ initializeDatabase();
 
 module.exports = {
   db,
+  sessionDb,
   dbGet,
   dbAll,
   dbRun
