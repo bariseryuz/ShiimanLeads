@@ -141,6 +141,7 @@ function startServer() {
   app.use('/api/scrape', scrapeRoutes);   // /api/scrape/*
   app.use('/api/leads', leadsRoutes);     // /api/leads, /api/leads/*
   app.use('/api/sources', sourcesRoutes); // /api/sources/*
+  app.use('/api/my-sources', sourcesRoutes); // /api/my-sources/* (backward compatibility alias)
   app.use('/api/screenshots', screenshotsRoutes); // /api/screenshots/*
   app.use('/api/profile', profileRoutes); // /api/profile
   app.use('/api/admin', adminRoutes);     // /api/admin/*
