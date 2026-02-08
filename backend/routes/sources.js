@@ -214,10 +214,10 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
- * GET /api/my-sources
- * Alias for backward compatibility
+ * GET /my-sources
+ * Get all user sources with full data
  */
-router.get('/api/my-sources', async (req, res) => {
+router.get('/my-sources', async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
@@ -239,10 +239,10 @@ router.get('/api/my-sources', async (req, res) => {
 });
 
 /**
- * PUT /api/my-sources/:id
- * Update a source (alias)
+ * PUT /my-sources/:id
+ * Update a source
  */
-router.put('/api/my-sources/:id', express.json(), async (req, res) => {
+router.put('/my-sources/:id', express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     const sourceId = parseInt(req.params.id, 10);
@@ -261,10 +261,10 @@ router.put('/api/my-sources/:id', express.json(), async (req, res) => {
 });
 
 /**
- * DELETE /api/my-sources/:id
- * Delete a source (alias)
+ * DELETE /my-sources/:id
+ * Delete a source
  */
-router.delete('/api/my-sources/:id', async (req, res) => {
+router.delete('/my-sources/:id', async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     const sourceId = parseInt(req.params.id, 10);
@@ -295,10 +295,10 @@ router.delete('/api/my-sources/:id', async (req, res) => {
 });
 
 /**
- * POST /api/my-sources
- * Create a new source (alias for /api/sources/add)
+ * POST /my-sources
+ * Create a new source
  */
-router.post('/api/my-sources', express.json(), async (req, res) => {
+router.post('/my-sources', express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     const sourceData = req.body;
