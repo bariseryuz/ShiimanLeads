@@ -69,6 +69,18 @@
       word-break: break-all;
     }
     
+    .source-screenshot-container {
+      margin-top: 0.75rem;
+    }
+    
+    .source-screenshot-container img {
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    .source-screenshot-container img:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
     .source-actions {
       display: flex;
       gap: 0.5rem;
@@ -932,12 +944,14 @@
         
         emptyState.style.display = 'none';
         sourcesList.innerHTML = data.data.map(source => `
-          <div class="source-card">
+          <div class="source-card" data-source-id="${source.id}">
             <div class="source-header">
               <div>
                 <div class="source-name">${escapeHtml(source.data.name)}</div>
                 <a href="${escapeHtml(source.data.url)}" target="_blank" class="source-url">${escapeHtml(source.data.url)}</a>
               </div>
+              <div id="screenshot-${source.id}" class="source-screenshot-container" style="margin-top: 0.75rem;"></div>
+            </div>
             </div>
             ${source.data.aiPrompt ? `
               <div style="background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(102, 126, 234, 0.1)); border-left: 3px solid #8b5cf6; padding: 0.75rem; margin: 1rem 0; border-radius: 6px;">
@@ -968,9 +982,57 @@
             </div>
           </div>
         `).join('');
+        
+        // Load screenshots for each source
+        await loadScreenshots(data.data);
       } catch (error) {
         console.error('Error loading sources:', error);
         alert('Failed to load sources');
+      }
+    }
+
+    async function loadScreenshots(sources) {
+      try {
+        const response = await fetch('/api/screenshots');
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        if (!data.screenshots || data.screenshots.length === 0) return;
+        
+        // Group screenshots by source name (extracted from filename)
+        sources.forEach(source => {
+          const sourceName = source.data.name.toLowerCase().replace(/\s+/g, '-');
+          
+          // Find the most recent screenshot for this source
+          const screenshot = data.screenshots
+            .filter(s => s.filename.toLowerCase().includes(sourceName))
+            .sort((a, b) => new Date(b.created) - new Date(a.created))[0];
+          
+          if (screenshot) {
+            const container = document.getElementById(`screenshot-${source.id}`);
+            if (container) {
+              container.innerHTML = `
+                <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem; background: #f9fafb;">
+                  <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+                    <span style="font-size: 0.875rem; font-weight: 600; color: #6b7280;">📸 Latest Screenshot</span>
+                    <span style="font-size: 0.75rem; color: #9ca3af;">${new Date(screenshot.created).toLocaleDateString()}</span>
+                  </div>
+                  <a href="${screenshot.url}" target="_blank" style="display: block;">
+                    <img src="${screenshot.url}" alt="Screenshot" 
+                         style="width: 100%; max-width: 400px; height: auto; border-radius: 4px; cursor: pointer; transition: transform 0.2s;"
+                         onmouseover="this.style.transform='scale(1.02)'" 
+                         onmouseout="this.style.transform='scale(1)'">
+                  </a>
+                  <div style="font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem;">
+                    Click to view full size
+                  </div>
+                </div>
+              `;
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Error loading screenshots:', error);
       }
     }
 
