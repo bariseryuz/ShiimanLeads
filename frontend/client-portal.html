@@ -1125,6 +1125,11 @@
             );
           }
           
+          // Always ensure 'link' column is present (hardcoded requirement)
+          if (!fieldNames.includes('link')) {
+            fieldNames.unshift('link'); // Add link as first column
+          }
+          
           // Build header
           const headerRow = document.createElement('tr');
           fieldNames.forEach(field => {
