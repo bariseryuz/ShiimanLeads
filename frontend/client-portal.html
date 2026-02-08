@@ -820,8 +820,8 @@
           const option = document.createElement('option');
           option.value = source.id; // Use ID instead of name
           option.textContent = source.name;
-          option.style.color = '#111827 !important'; // Dark gray/black text
-          option.style.backgroundColor = 'white';
+          // Use cssText to properly apply !important
+          option.style.cssText = 'color: #111827 !important; background-color: white !important;';
           select.appendChild(option);
         });
         
