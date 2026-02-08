@@ -819,7 +819,7 @@
         sources.forEach(source => {
           const option = document.createElement('option');
           option.value = source.id; // Use ID instead of name
-          option.textContent = source.name;
+          option.textContent = source.data.name || 'Unnamed Source'; // Access name from nested data object
           // Use cssText to properly apply !important
           option.style.cssText = 'color: #111827 !important; background-color: white !important;';
           select.appendChild(option);
