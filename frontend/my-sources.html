@@ -949,8 +949,16 @@
           return;
         }
         
+        const safeSources = (data.data || []).filter(source => source && source.data);
+        
+        if (safeSources.length === 0) {
+          sourcesList.innerHTML = '';
+          emptyState.style.display = 'block';
+          return;
+        }
+        
         emptyState.style.display = 'none';
-        sourcesList.innerHTML = data.data.map(source => `
+        sourcesList.innerHTML = safeSources.map(source => `
           <div class="source-card" data-source-id="${source.id}">
             <div class="source-header">
               <div>
@@ -991,7 +999,7 @@
         `).join('');
         
         // Load screenshots for each source
-        await loadScreenshots(data.data);
+        await loadScreenshots(safeSources);
       } catch (error) {
         console.error('Error loading sources:', error);
         alert('Failed to load sources');
@@ -1008,6 +1016,7 @@
         
         // Group screenshots by source name (extracted from filename)
         sources.forEach(source => {
+          if (!source || !source.data || !source.data.name) return;
           const sourceName = source.data.name.toLowerCase().replace(/\s+/g, '-');
           
           // Find the most recent screenshot for this source
