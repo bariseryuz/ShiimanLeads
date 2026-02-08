@@ -26,7 +26,7 @@ const net = require('net');
 const logger = require('./utils/logger');
 const { SESSIONS_DB_PATH } = require('./config/paths');
 const { db } = require('./db'); // Auto-initializes database
-const { sessionMiddleware, attachUser } = require('./middleware/auth');
+const { attachUser } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { setupAutoScraping } = require('./services/scheduler/cron');
 

@@ -1,19 +1,4 @@
-const session = require('express-session');
-const config = require('../config/environment');
-
-/**
- * Session configuration middleware
- */
-const sessionMiddleware = session({
-  secret: config.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-    httpOnly: true,
-    secure: config.NODE_ENV === 'production'
-  }
-});
+// Session middleware is configured in index.js with SQLite store for production.
 
 /**
  * Authentication middleware - requires user to be logged in
@@ -61,7 +46,6 @@ async function attachUser(req, res, next) {
 }
 
 module.exports = {
-  sessionMiddleware,
   requireAuth,
   requireAdmin,
   attachUser
