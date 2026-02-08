@@ -50,10 +50,10 @@ router.get('/', requireAuth, async (req, res) => {
 });
 
 /**
- * GET /api/metrics
+ * GET /metrics
  * Get detailed metrics/statistics for current user
  */
-router.get('/api/metrics', async (req, res) => {
+router.get('/metrics', async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     
@@ -120,10 +120,10 @@ router.get('/api/metrics', async (req, res) => {
 });
 
 /**
- * GET /api/notifications
+ * GET /notifications
  * Get notifications for current user
  */
-router.get('/api/notifications', async (req, res) => {
+router.get('/notifications', async (req, res) => {
   try {
     const userId = req.session?.user?.id;
     if (!userId) {
@@ -144,10 +144,10 @@ router.get('/api/notifications', async (req, res) => {
 });
 
 /**
- * POST /api/notifications/:id/read
- * Mark notification as read
+ * POST /notifications/:id/read
+ * Mark single notification as read
  */
-router.post('/api/notifications/:id/read', async (req, res) => {
+router.post('/notifications/:id/read', async (req, res) => {
   try {
     const userId = req.session?.user?.id;
     if (!userId) {
@@ -167,10 +167,10 @@ router.post('/api/notifications/:id/read', async (req, res) => {
 });
 
 /**
- * POST /api/notifications/mark-all-read
+ * POST /notifications/mark-all-read
  * Mark all notifications as read
  */
-router.post('/api/notifications/mark-all-read', async (req, res) => {
+router.post('/notifications/mark-all-read', async (req, res) => {
   try {
     const userId = req.session?.user?.id;
     if (!userId) {

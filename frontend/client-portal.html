@@ -848,7 +848,7 @@
     // Load notifications
     async function loadNotifications() {
       try {
-        const response = await fetch('/api/notifications?limit=10');
+        const response = await fetch('/api/stats/notifications?limit=10');
         const result = await response.json();
         const notifications = result.data || [];
         
@@ -873,7 +873,7 @@
     // Mark all notifications as read
     async function markAllNotificationsRead() {
       try {
-        await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+        await fetch('/api/stats/notifications/mark-all-read', { method: 'POST' });
         loadNotifications();
       } catch (error) {
         console.error('Failed to mark notifications as read:', error);
@@ -931,7 +931,7 @@
     // Load metrics summary
     async function loadMetrics() {
       try {
-        const response = await fetch('/api/metrics', { credentials: 'include' });
+        const response = await fetch('/api/stats/metrics', { credentials: 'include' });
         const data = await response.json();
         
         if (data.success) {
