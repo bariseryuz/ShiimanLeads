@@ -147,7 +147,12 @@ function startServer() {
   app.use('/api/admin', adminRoutes);     // /api/admin/*
   app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
   
-  // === STATIC FILES (Frontend) ===
+  // === STATIC FILES ===
+  // Serve screenshots directory (for image files)
+  const { SCREENSHOT_DIR } = require('./config/paths');
+  app.use('/screenshots', express.static(SCREENSHOT_DIR));
+  
+  // Serve frontend files
   app.use(express.static(path.join(__dirname, '../frontend')));
   
   // Fallback to index.html for SPA routing

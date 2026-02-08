@@ -42,7 +42,7 @@ WORKDIR /app
 COPY frontend/ ./frontend/
 
 # Create required directories
-RUN mkdir -p backend/logs backend/output backend/data
+RUN mkdir -p backend/logs backend/output backend/data backend/data/screenshots
 
 # Set Puppeteer environment variables
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
