@@ -18,7 +18,10 @@ const { scrapeForUser } = require('../legacyScraper');
  */
 router.get('/', async (req, res) => {
   try {
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     
     // Get all configured sources for the user
     const userSources = await dbAll('SELECT source_data FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
@@ -49,7 +52,10 @@ router.get('/', async (req, res) => {
 router.get('/mine', async (req, res) => {
   try {
     // Use user ID from session, or default to 1 if not logged in
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
     const sources = rows.map(row => {
       try {
@@ -74,7 +80,10 @@ router.get('/mine', async (req, res) => {
  */
 router.get('/:id', async (req, res) => {
   try {
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     const sourceId = req.params.id;
     
     const row = await dbGet('SELECT id, source_data, created_at FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
@@ -219,7 +228,10 @@ router.delete('/:id', async (req, res) => {
  */
 router.get('/my-sources', async (req, res) => {
   try {
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
     const sources = rows.map(row => {
       try {
@@ -248,12 +260,24 @@ router.get('/my-sources', async (req, res) => {
  */
 router.post('/', express.json(), async (req, res) => {
   try {
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
+    
+    // Require authentication
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     const sourceData = req.body;
     
     // Validate required fields
     if (!sourceData.name || !sourceData.url) {
       return res.status(400).json({ error: 'Source name and URL are required' });
+    }
+    
+    // Verify user exists in database (foreign key constraint)
+    const userExists = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
+    if (!userExists) {
+      logger.error(`User ${userId} does not exist - cannot create source`);
+      return res.status(401).json({ error: 'User not found - please log in again' });
     }
     
     // Store as JSON string
@@ -303,7 +327,10 @@ router.post('/', express.json(), async (req, res) => {
  */
 router.get('/:id/sample', async (req, res) => {
   try {
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
     const sourceId = parseInt(req.params.id, 10);
     
     // Get source config
