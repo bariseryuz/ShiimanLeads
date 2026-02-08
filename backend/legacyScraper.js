@@ -137,7 +137,7 @@ async function scrapeForUser(userId, userSources) {
       }
       
       // Apply rate limiting
-      await rateLimiter.throttle();
+      await rateLimiter.waitIfNeeded();
       
       logger.info(`\n══════════════════════════════════════════`);
       logger.info(`🔎 Starting source: ${source.name} (User ${userId})`);

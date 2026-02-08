@@ -40,6 +40,11 @@ class RateLimiter {
       this.backoffMultiplier = Math.max(this.backoffMultiplier * 0.8, 1);
     }
   }
+
+  // Alias for backward compatibility
+  async throttle() {
+    return this.waitIfNeeded();
+  }
 }
 
 // Store rate limiters per source
@@ -60,5 +65,7 @@ function getRateLimiter(source) {
 
 module.exports = {
   RateLimiter,
-  getRateLimiter
+  getRateLimiter,
+  // Backward compatibility: export throttle as well
+  throttle: (source) => getRateLimiter(source).throttle()
 };
