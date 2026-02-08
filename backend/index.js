@@ -464,26 +464,44 @@ function validateExtractedFields(data, sourceName, fieldSchema = null) {
     issues: []
   };
 
+  // ✅ CRITICAL FIELD VALIDATION - These MUST be present
+  const criticalFields = ['link', 'permit_number', 'address'];
+  const missingCritical = criticalFields.filter(f => 
+    !sampleData[f] || 
+    sampleData[f] === null || 
+    sampleData[f] === 'null' || 
+    sampleData[f] === undefined || 
+    sampleData[f] === '' ||
+    sampleData[f] === '-'
+  );
+  
+  if (missingCritical.length > 0) {
+    validations.issues.push(`Missing critical fields: ${missingCritical.join(', ')}`);
+    logger.warn(`⚠️ Critical validation failed for ${sourceName}: Missing ${missingCritical.join(', ')}`);
+    return { isValid: false, confidence: 0, issues: validations.issues };
+  }
+
   // Count how many non-null fields we have
   const dataKeys = Object.keys(sampleData).filter(k => !k.startsWith('_'));
   const nonNullFields = dataKeys.filter(k => 
     sampleData[k] !== null && 
     sampleData[k] !== 'null' && 
     sampleData[k] !== undefined &&
-    sampleData[k] !== ''
+    sampleData[k] !== '' &&
+    sampleData[k] !== '-'
   );
   
   // If we have any data at all, consider it valid
   if (nonNullFields.length > 0) {
     validations.hasData = true;
-    // Base confidence on percentage of fields filled
+    // Base confidence on percentage of fields filled (increased threshold to 40%)
     const fillPercentage = (nonNullFields.length / Math.max(dataKeys.length, 1)) * 100;
     validations.confidence = Math.min(Math.round(fillPercentage), 100);
   } else {
     validations.issues.push(`No data extracted - all fields are null or empty`);
   }
 
-  const isValid = validations.hasData && validations.confidence >= 20;
+  const isValid = validations.hasData && validations.confidence >= 40;
 
   if (!isValid) {
     logger.warn(`⚠️ Validation failed for ${sourceName}: ${validations.issues.join(', ')} (confidence: ${validations.confidence}%)`);
@@ -1065,13 +1083,21 @@ Current step: ${currentStep}/${maxSteps}`;
         if (extracted) {
           const leadsArray = Array.isArray(extracted) ? extracted : [extracted];
           
-          // Check if we're extracting the same data as last time (stuck on same page)
-          const currentHash = require('crypto').createHash('md5').update(JSON.stringify(extracted)).digest('hex');
+          // ✅ PAGINATION LOOP DETECTION - Check if we're extracting the same data as last time
+          const currentHash = crypto.createHash('md5').update(JSON.stringify(extracted)).digest('hex');
+          
           if (currentHash === lastExtractedHash) {
             samePageCount++;
-            logger.warn(`⚠️ Extracted same data as last time (${samePageCount} times) - pagination may be needed`);
+            logger.warn(`⚠️ Pagination loop detected! Extracted same data ${samePageCount} time(s) in a row`);
             
-            // If we've extracted the same page 2+ times, force pagination
+            // If we've extracted the same page 3+ times, stop pagination (avoid infinite loop)
+            if (samePageCount >= 3) {
+              logger.warn(`🛑 STOPPING: Same page extracted 3+ times - pagination complete or stuck`);
+              logger.info(`✅ Total extracted so far: ${extractedData.length} leads`);
+              break; // Exit navigation loop
+            }
+            
+            // If we've extracted same page 2 times, force pagination
             if (samePageCount >= 2) {
               logger.info(`🔄 Auto-triggering pagination - clicking next page button`);
               
@@ -1129,7 +1155,7 @@ Current step: ${currentStep}/${maxSteps}`;
                 logger.info(`✅ New page loaded, continuing extraction...`);
                 continue; // Skip the rest and go to next iteration
               } else {
-                logger.info(`✓ No more pages found - pagination complete`);
+                logger.info(`✓ No more pages found - pagination complete`);;
                 break; // Exit loop, we're done
               }
             }
@@ -1727,6 +1753,62 @@ async function createNotification(userId, type, message) {
     logger.info(`📬 Notification created for user ${userId}: ${message}`);
   } catch (e) {
     logger.error(`Failed to create notification: ${e.message}`);
+  }
+}
+
+// ✅ Track source reliability for monitoring and alerts
+async function trackSourceReliability(sourceId, sourceName, success, extractedCount = 0) {
+  try {
+    // Check if source exists in reliability table
+    const existing = await dbGet('SELECT * FROM source_reliability WHERE source_id = ?', [sourceId]);
+    
+    if (!existing) {
+      // Create new entry
+      await dbRun(`
+        INSERT INTO source_reliability (source_id, source_name, success_count, failure_count, total_leads, avg_leads_per_run, last_success, last_failure, confidence_score)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [sourceId, sourceName, success ? 1 : 0, success ? 0 : 1, extractedCount, extractedCount, 
+         success ? new Date().toISOString() : null, 
+         success ? null : new Date().toISOString(), 
+         success ? 100.0 : 0.0]
+      );
+      logger.info(`📊 Created reliability tracking for source ${sourceName}`);
+    } else {
+      // Update existing entry
+      const newSuccessCount = existing.success_count + (success ? 1 : 0);
+      const newFailureCount = existing.failure_count + (success ? 0 : 1);
+      const newTotalLeads = existing.total_leads + extractedCount;
+      const totalRuns = newSuccessCount + newFailureCount;
+      const newConfidence = totalRuns > 0 ? (newSuccessCount * 100.0 / totalRuns) : 0.0;
+      const newAvgLeads = newSuccessCount > 0 ? (newTotalLeads / newSuccessCount) : 0.0;
+      
+      await dbRun(`
+        UPDATE source_reliability SET
+          success_count = ?,
+          failure_count = ?,
+          total_leads = ?,
+          avg_leads_per_run = ?,
+          confidence_score = ?,
+          last_success = ?,
+          last_failure = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE source_id = ?`,
+        [newSuccessCount, newFailureCount, newTotalLeads, newAvgLeads, newConfidence,
+         success ? new Date().toISOString() : existing.last_success,
+         success ? existing.last_failure : new Date().toISOString(),
+         sourceId]
+      );
+      
+      // Log stats
+      logger.info(`📊 ${sourceName} reliability: ${newConfidence.toFixed(1)}% (${newSuccessCount}/${totalRuns} runs, avg ${newAvgLeads.toFixed(1)} leads/run)`);
+      
+      // Alert if confidence drops below 70%
+      if (newConfidence < 70 && totalRuns >= 3) {
+        logger.warn(`⚠️ ALERT: ${sourceName} reliability dropped to ${newConfidence.toFixed(1)}% - may need attention!`);
+      }
+    }
+  } catch (e) {
+    logger.error(`Failed to track source reliability: ${e.message}`);
   }
 }
 
@@ -2380,6 +2462,21 @@ db.exec(`CREATE TABLE IF NOT EXISTS notifications (
 
 db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)`);
 
+// ✅ Source reliability tracking table
+db.exec(`CREATE TABLE IF NOT EXISTS source_reliability (
+    source_id INTEGER PRIMARY KEY,
+    source_name TEXT,
+    success_count INTEGER DEFAULT 0,
+    failure_count INTEGER DEFAULT 0,
+    last_success DATETIME,
+    last_failure DATETIME,
+    confidence_score REAL DEFAULT 100.0,
+    avg_leads_per_run REAL DEFAULT 0,
+    total_leads INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
 // Attempt to add columns if missing (safe migrations with better-sqlite3)
 try {
   const inquiryColumns = db.prepare("PRAGMA table_info(inquiries)").all();
@@ -2561,6 +2658,13 @@ async function scrapeForUser(userId, userSources) {
     };
     
     try {
+      // ✅ RANDOM DELAY BETWEEN SOURCES (10-30 seconds) - Prevents rate limiting
+      const delayBetweenSources = Math.random() * 20000 + 10000; // 10-30 seconds
+      if (SOURCES.indexOf(source) > 0) { // Skip delay for first source
+        logger.info(`⏳ Random delay: ${Math.round(delayBetweenSources/1000)}s before scraping ${source.name} (rate limit prevention)`);
+        await new Promise(resolve => setTimeout(resolve, delayBetweenSources));
+      }
+      
       // Apply rate limiting before scraping this source
       await rateLimiter.throttle();
       
@@ -2877,6 +2981,10 @@ async function scrapeForUser(userId, userSources) {
               if (browser) await browser.close();
               await updateSourceStatus(source._sourceId || source.id, 'success', new Date());
               await updateProgress(userId, { newLeads });
+              
+              // ✅ Track source reliability
+              await trackSourceReliability(source._sourceId || source.id, source.name, aiExtractedData.length > 0, aiExtractedData.length);
+              
               logger.info(`🎉 AI autonomous scraping complete for ${source.name}: ${newLeads} new leads`);
               continue; // Skip to next source
             } else {
@@ -2979,12 +3087,31 @@ async function scrapeForUser(userId, userSources) {
             captcha: /captcha|recaptcha|hcaptcha/i.test(pageContent),
             accessDenied: /access denied|forbidden|not authorized/i.test(pageContent),
             cloudflare: cfChallenge && isSmallPage,
-            rateLimit: /rate limit|too many requests|slow down/i.test(pageContent),
+            rateLimit: /rate limit|too many requests|slow down|429|throttle/i.test(pageContent),
             blocked: /blocked|banned|suspicious/i.test(pageContent),
             bot: /bot detected|automated/i.test(pageContent)
           };
           
           const isBlocked = Object.values(blockSignals).some(signal => signal);
+          
+          // ✅ RATE LIMITING DETECTION & AUTO-BACKOFF
+          if (blockSignals.rateLimit) {
+            const backoffMinutes = 30;
+            logger.error(`🚫 RATE LIMIT DETECTED for ${source.name}!`);
+            logger.error(`⏸️ Pausing this source for ${backoffMinutes} minutes to avoid IP ban`);
+            logger.error(`Content preview: ${pageContent.substring(0, 500)}`);
+            
+            // Skip this source and schedule next scrape for later
+            await updateSourceStatus(source._sourceId || source.id, 'rate_limited', new Date());
+            
+            // Close browser immediately
+            if (browser) await browser.close();
+            
+            // Track as failure
+            await trackSourceReliability(source._sourceId || source.id, source.name, false, 0);
+            
+            continue; // Skip to next source
+          }
           
           if (isBlocked && !PROXY_ENABLED) {
             logger.error(`🚫 BLOCKING DETECTED for ${source.name}!`);
@@ -4433,6 +4560,9 @@ async function scrapeForUser(userId, userSources) {
         logger.info(`Dynamic mode (Puppeteer) used for ${source.name}`);
       }
       
+      // ✅ Track source reliability (success with extracted count)
+      await trackSourceReliability(source._sourceId || source.id, source.name, true, newLeads);
+      
       // Mark rate limiter success
       rateLimiter.onSuccess();
       
@@ -4449,6 +4579,9 @@ async function scrapeForUser(userId, userSources) {
     } catch (err) {
       logger.error(`Failed ${source.name}: ${err.message}`);
       logger.error(`Stack trace: ${err.stack}`);
+      
+      // ✅ Track source reliability (failure)
+      await trackSourceReliability(source._sourceId || source.id, source.name, false, 0);
       
       // Check if it's a rate limit or block error (403, 429)
       if (err.message.includes('403') || err.message.includes('429') || err.message.includes('blocked') || err.message.includes('rate limit')) {
