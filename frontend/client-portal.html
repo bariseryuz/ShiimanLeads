@@ -1281,7 +1281,7 @@
         const data = await res.json();
         
         if (data.success) {
-          alert(`✅ Successfully deleted ${data.deleted.leads} leads!\n\nNow go to Sources page and click "Scrape Now" to get fresh data.`);
+          alert(`✅ Successfully cleared ${data.deleted || 0} records!\n\n${data.message || 'All leads have been deleted.'}\n\nGo to Sources page and click "Scrape Now" to get fresh data.`);
           loadLeads(); // Refresh table
           loadStats(); // Refresh stats
           loadMetrics(); // Refresh metrics

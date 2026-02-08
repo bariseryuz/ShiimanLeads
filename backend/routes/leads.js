@@ -133,17 +133,27 @@ router.get('.raw', async (req, res) => {
 
 /**
  * DELETE /api/leads/clear
- * Clear all leads for the current user (from source tables)
+ * Clear all leads for the current user (from source tables AND main leads table)
  */
 router.delete('/clear', async (req, res) => {
   try {
     const userId = req.session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
-    // Get all user sources
-    const userSources = db.prepare('SELECT id FROM user_sources WHERE user_id = ?').all(userId);
     let totalDeleted = 0;
+    
+    // 1. Delete from main leads table
+    try {
+      const mainLeadsResult = db.prepare('DELETE FROM leads WHERE user_id = ?').run(userId);
+      const mainLeadsDeleted = mainLeadsResult.changes || 0;
+      totalDeleted += mainLeadsDeleted;
+      logger.info(`Deleted ${mainLeadsDeleted} leads from main leads table for user ${userId}`);
+    } catch (mainDeleteErr) {
+      logger.error(`Error deleting from main leads table: ${mainDeleteErr.message}`);
+    }
 
+    // 2. Delete from source-specific tables
+    const userSources = db.prepare('SELECT id FROM user_sources WHERE user_id = ?').all(userId);
     for (const sourceRow of userSources) {
       const tableName = `source_${sourceRow.id}`;
       
@@ -153,15 +163,24 @@ router.delete('/clear', async (req, res) => {
 
       try {
         const result = db.prepare(`DELETE FROM ${tableName} WHERE user_id = ?`).run(userId);
-        totalDeleted += result.changes || 0;
-        logger.info(`Deleted ${result.changes} leads from ${tableName} for user ${userId}`);
+        const sourceDeleted = result.changes || 0;
+        totalDeleted += sourceDeleted;
+        logger.info(`Deleted ${sourceDeleted} leads from ${tableName} for user ${userId}`);
       } catch (deleteErr) {
         logger.error(`Error deleting from ${tableName}: ${deleteErr.message}`);
       }
     }
+    
+    // 3. Also clear the seen table to reset duplicates
+    try {
+      const seenResult = db.prepare('DELETE FROM seen WHERE user_id = ?').run(userId);
+      logger.info(`Cleared ${seenResult.changes || 0} seen records for user ${userId}`);
+    } catch (seenErr) {
+      logger.error(`Error clearing seen table: ${seenErr.message}`);
+    }
 
     logger.info(`Total leads cleared for user ${userId}: ${totalDeleted}`);
-    res.json({ success: true, deleted: totalDeleted });
+    res.json({ success: true, deleted: totalDeleted, message: 'All leads cleared successfully' });
   } catch (e) {
     logger.error(`Clear leads error: ${e.message}`);
     res.status(500).json({ error: e.message });
