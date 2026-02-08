@@ -215,7 +215,7 @@ router.delete('/:id', async (req, res) => {
 
 /**
  * GET /my-sources
- * Get all user sources with full data
+ * Get all user sources with full data (alias, same as POST route for /my-sources endpoint)
  */
 router.get('/my-sources', async (req, res) => {
   try {
@@ -239,66 +239,14 @@ router.get('/my-sources', async (req, res) => {
 });
 
 /**
- * PUT /my-sources/:id
- * Update a source
+ * NOTE: Duplicate PUT and DELETE routes removed - handled by single routes above at /:id
  */
-router.put('/my-sources/:id', express.json(), async (req, res) => {
-  try {
-    const userId = req.session?.user?.id || 1;
-    const sourceId = parseInt(req.params.id, 10);
-    const sourceData = req.body;
-    
-    if (!sourceData || !sourceData.name || !sourceData.url) {
-      return res.status(400).json({ error: 'Missing required fields: name, url' });
-    }
-    
-    await dbRun('UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?', 
-      [JSON.stringify(sourceData), sourceId, userId]);
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
 
 /**
- * DELETE /my-sources/:id
- * Delete a source
- */
-router.delete('/my-sources/:id', async (req, res) => {
-  try {
-    const userId = req.session?.user?.id || 1;
-    const sourceId = parseInt(req.params.id, 10);
-    
-    // Get source name before deleting for notification
-    const existing = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
-    let sourceName = 'Unknown';
-    if (existing) {
-      try {
-        const data = JSON.parse(existing.source_data);
-        sourceName = data.name || 'Unknown';
-      } catch (e) {}
-    }
-    
-    await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
-    
-    // Create notification for source deletion
-    await createNotification(
-      userId,
-      'source_deleted',
-      `🗑️ Removed source: ${sourceName}`
-    );
-    
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-/**
- * POST /my-sources
+ * POST / (when mounted at /api/my-sources) OR POST /my-sources (when mounted at /api/sources)
  * Create a new source
  */
-router.post('/my-sources', express.json(), async (req, res) => {
+router.post('/', express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     const sourceData = req.body;

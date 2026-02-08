@@ -133,9 +133,6 @@ function startServer() {
     next();
   });
   
-  // === HEALTH CHECK ===
-  app.get('/health', (req, res) => res.json({ ok: true, timestamp: new Date().toISOString() }));
-  
   // === MOUNT ROUTES ===
   app.use(authRoutes);                    // /login, /signup, /logout (no prefix - serves HTML pages)
   app.use('/api/scrape', scrapeRoutes);   // /api/scrape/*
@@ -146,6 +143,15 @@ function startServer() {
   app.use('/api/profile', profileRoutes); // /api/profile
   app.use('/api/admin', adminRoutes);     // /api/admin/*
   app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
+  
+  // === HEALTH CHECK ===
+  app.get('/health', (req, res) => res.json({ ok: true, timestamp: new Date().toISOString() }));
+  
+  // === 404 HANDLER FOR API ROUTES (before static files) ===
+  app.use('/api/*', (req, res) => {
+    logger.warn(`❌ Unmatched API route: ${req.method} ${req.path}`);
+    res.status(404).json({ error: `API endpoint not found: ${req.path}` });
+  });
   
   // === STATIC FILES ===
   // Serve screenshots directory (for image files)
