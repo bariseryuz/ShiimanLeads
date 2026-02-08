@@ -1,27 +1,6 @@
-const { db, dbGet, dbAll, dbRun } = require('./connection');
-const { createTables, createIndexes } = require('./schema');
-const { runMigrations } = require('./migrations');
-const logger = require('../utils/logger');
+/**
+ * Database Module Entry Point
+ * Re-exports everything from database.js for backward compatibility
+ */
 
-// Initialize database on first import
-function initializeDatabase() {
-  try {
-    createTables(db);
-    runMigrations(db);  // Run migrations BEFORE creating indexes
-    createIndexes(db);   // Create indexes AFTER migrations add columns
-    logger.info('✅ Database initialized successfully');
-  } catch (err) {
-    logger.error(`❌ Database initialization failed: ${err.message}`);
-    throw err;
-  }
-}
-
-// Auto-initialize
-initializeDatabase();
-
-module.exports = {
-  db,
-  dbGet,
-  dbAll,
-  dbRun
-};
+module.exports = require('./database');
