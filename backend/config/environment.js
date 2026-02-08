@@ -1,13 +1,25 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 module.exports = {
   // Server
   PORT: process.env.PORT || 3000,
   NODE_ENV: process.env.NODE_ENV || 'development',
   
-  // Database
-  DB_PATH: process.env.DB_PATH || path.join(__dirname, '..', 'shiiman-leads.db'),
+  // Database (MUST be in /data/ for Railway volume persistence!)
+  DB_PATH: process.env.SQLITE_DB_PATH || (isProduction 
+    ? '/app/backend/data/shiiman-leads.db'  // Railway: In volume
+    : path.join(__dirname, '..', 'data', 'shiiman-leads.db')),  // Local: backend/data/
+  
+  SESSIONS_DB_PATH: process.env.SQLITE_SESSIONS_DB_PATH || (isProduction
+    ? '/app/backend/data/sessions.db'  // Railway: In volume
+    : path.join(__dirname, '..', 'data', 'sessions.db')),  // Local: backend/data/
+  
+  SCREENSHOTS_DIR: isProduction
+    ? '/app/backend/data/screenshots'  // Railway: In volume
+    : path.join(__dirname, '..', 'data', 'screenshots'),  // Local: backend/data/
   
   // Proxy
   PROXY_ENABLED: process.env.PROXY_ENABLED === 'true',

@@ -19,13 +19,12 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const express = require('express');
 const session = require('express-session');
-const Database = require('better-sqlite3');
 const net = require('net');
 
 // === CORE IMPORTS ===
 const logger = require('./utils/logger');
 const { SESSIONS_DB_PATH } = require('./config/paths');
-const { db } = require('./db'); // Auto-initializes database
+const { db, sessionDb } = require('./db'); // Auto-initializes database
 const { attachUser } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { setupAutoScraping } = require('./services/scheduler/cron');
@@ -87,7 +86,6 @@ function startServer() {
   
   // Session store (SQLite - persistent across restarts)
   const SqliteStore = require('better-sqlite3-session-store')(session);
-  const sessionDb = new Database(SESSIONS_DB_PATH);
   
   // Validate SESSION_SECRET in production
   if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
@@ -143,6 +141,50 @@ function startServer() {
   app.use('/api/profile', profileRoutes); // /api/profile
   app.use('/api/admin', adminRoutes);     // /api/admin/*
   app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
+  
+  // === DEBUG ENDPOINT (Volume Verification) ===
+  app.get('/api/debug/volume-check', (req, res) => {
+    const fs = require('fs');
+    const config = require('./config/environment');
+    
+    const volumePath = '/app/backend/data';
+    
+    const result = {
+      environment: config.NODE_ENV,
+      volumePath,
+      volumeExists: fs.existsSync(volumePath),
+      dbPath: config.DB_PATH,
+      dbExists: fs.existsSync(config.DB_PATH),
+      dbSize: 0,
+      sessionsDbPath: config.SESSIONS_DB_PATH,
+      sessionsDbExists: fs.existsSync(config.SESSIONS_DB_PATH),
+      screenshotsDir: config.SCREENSHOTS_DIR,
+      screenshotsDirExists: fs.existsSync(config.SCREENSHOTS_DIR),
+      files: [],
+      stats: { users: 0, sources: 0, leads: 0 }
+    };
+    
+    if (fs.existsSync(volumePath)) {
+      try {
+        result.files = fs.readdirSync(volumePath);
+      } catch (err) {
+        result.filesError = err.message;
+      }
+    }
+    
+    if (result.dbExists) {
+      try {
+        result.dbSize = fs.statSync(config.DB_PATH).size;
+        result.stats.users = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+        result.stats.sources = db.prepare('SELECT COUNT(*) as count FROM user_sources').get().count;
+        result.stats.leads = db.prepare('SELECT COUNT(*) as count FROM leads').get().count;
+      } catch (err) {
+        result.statsError = err.message;
+      }
+    }
+    
+    res.json(result);
+  });
   
   // === HEALTH CHECK ===
   app.get('/health', (req, res) => res.json({ ok: true, timestamp: new Date().toISOString() }));
