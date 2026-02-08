@@ -21,8 +21,6 @@ const express = require('express');
 const session = require('express-session');
 const Database = require('better-sqlite3');
 const net = require('net');
-const fs = require('fs');
-const { execSync } = require('child_process');
 
 // === CORE IMPORTS ===
 const logger = require('./utils/logger');
@@ -139,165 +137,14 @@ function startServer() {
   app.get('/health', (req, res) => res.json({ ok: true, timestamp: new Date().toISOString() }));
   
   // === MOUNT ROUTES ===
-  app.use(authRoutes);           // /login, /signup, /logout, /api/me
-  app.use(scrapeRoutes);         // /api/scrape/*
-  app.use(leadsRoutes);          // /api/leads, /api/leads/*
-  app.use(sourcesRoutes);        // /api/sources/*
-  app.use(screenshotsRoutes);    // /api/screenshots/*
-  app.use(profileRoutes);        // /api/profile
-  app.use(adminRoutes);          // /api/admin/*
-  app.use(statsRoutes);          // /api/stats, /api/notifications
-  
-  // === DEBUG ENDPOINT: Find Old Databases ===
-  app.get('/api/debug/find-databases', (req, res) => {
-    try {
-      const databases = [];
-      
-      // Check common locations
-      const locations = [
-        '/app/backend/data/leads.db',
-        '/app/backend/data/shiiman-leads.db',
-        '/app/backend/leads.db',
-        '/app/backend/shiiman-leads.db',
-        '/var/data/leads.db',
-        path.join(__dirname, 'data/leads.db'),
-        path.join(__dirname, 'data/shiiman-leads.db'),
-        path.join(__dirname, 'leads.db'),
-        path.join(__dirname, 'shiiman-leads.db')
-      ];
-      
-      locations.forEach(dbPath => {
-        if (fs.existsSync(dbPath)) {
-          const stats = fs.statSync(dbPath);
-          let leadsCount = 0;
-          let sourcesCount = 0;
-          let usersCount = 0;
-          
-          try {
-            const testDb = new Database(dbPath, { readonly: true });
-            try {
-              const leadsResult = testDb.prepare('SELECT COUNT(*) as count FROM leads').get();
-              leadsCount = leadsResult ? leadsResult.count : 0;
-            } catch (e) {
-              // Table might not exist
-            }
-            try {
-              const sourcesResult = testDb.prepare('SELECT COUNT(*) as count FROM user_sources').get();
-              sourcesCount = sourcesResult ? sourcesResult.count : 0;
-            } catch (e) {
-              // Table might not exist
-            }
-            try {
-              const usersResult = testDb.prepare('SELECT COUNT(*) as count FROM users').get();
-              usersCount = usersResult ? usersResult.count : 0;
-            } catch (e) {
-              // Table might not exist
-            }
-            testDb.close();
-          } catch (e) {
-            logger.warn(`Could not read database at ${dbPath}: ${e.message}`);
-          }
-          
-          databases.push({
-            path: dbPath,
-            size: stats.size,
-            modified: stats.mtime,
-            leads: leadsCount,
-            sources: sourcesCount,
-            users: usersCount,
-            hasData: leadsCount > 0 || sourcesCount > 0 || usersCount > 0
-          });
-        }
-      });
-      
-      // Try to find all .db files in /app directory
-      let allDbFiles = [];
-      try {
-        const findResult = execSync('find /app -name "*.db" 2>/dev/null || true', { timeout: 5000 }).toString();
-        allDbFiles = findResult.split('\n').filter(Boolean);
-      } catch (e) {
-        logger.warn('Could not search for .db files:', e.message);
-      }
-      
-      res.json({
-        found: databases.length,
-        databases,
-        currentPath: process.env.SQLITE_DB_PATH || '/app/backend/data/leads.db',
-        allDbFiles,
-        timestamp: new Date().toISOString()
-      });
-      
-    } catch (error) {
-      logger.error('Debug endpoint error:', error);
-      res.status(500).json({ error: error.message, stack: error.stack });
-    }
-  });
-  
-  // === MIGRATION ENDPOINT: Copy Old Database ===
-  app.post('/api/debug/migrate-database', (req, res) => {
-    try {
-      const { oldPath } = req.body;
-      
-      if (!oldPath) {
-        return res.status(400).json({ error: 'oldPath is required' });
-      }
-      
-      if (!fs.existsSync(oldPath)) {
-        return res.status(404).json({ error: 'Old database not found at: ' + oldPath });
-      }
-      
-      const newPath = path.join(__dirname, 'data/leads.db');
-      
-      // Check old DB has data
-      const oldDb = new Database(oldPath, { readonly: true });
-      let oldLeadsCount = 0;
-      let oldSourcesCount = 0;
-      let oldUsersCount = 0;
-      
-      try {
-        oldLeadsCount = oldDb.prepare('SELECT COUNT(*) as count FROM leads').get().count;
-      } catch (e) {}
-      try {
-        oldSourcesCount = oldDb.prepare('SELECT COUNT(*) as count FROM user_sources').get().count;
-      } catch (e) {}
-      try {
-        oldUsersCount = oldDb.prepare('SELECT COUNT(*) as count FROM users').get().count;
-      } catch (e) {}
-      
-      oldDb.close();
-      
-      logger.info(`📊 Old DB has ${oldLeadsCount} leads, ${oldSourcesCount} sources, ${oldUsersCount} users`);
-      
-      // Backup current DB (just in case)
-      if (fs.existsSync(newPath)) {
-        const backupPath = newPath + '.backup.' + Date.now();
-        fs.copyFileSync(newPath, backupPath);
-        logger.info(`📦 Backed up current DB to: ${backupPath}`);
-      }
-      
-      // Copy old DB to new location
-      fs.copyFileSync(oldPath, newPath);
-      logger.info('✅ Database migrated successfully!');
-      
-      res.json({
-        success: true,
-        message: 'Database migrated successfully',
-        oldLeads: oldLeadsCount,
-        oldSources: oldSourcesCount,
-        oldUsers: oldUsersCount,
-        from: oldPath,
-        to: newPath
-      });
-      
-    } catch (error) {
-      logger.error('❌ Migration error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  });
+  app.use(authRoutes);                    // /login, /signup, /logout (no prefix - serves HTML pages)
+  app.use('/api/scrape', scrapeRoutes);   // /api/scrape/*
+  app.use('/api/leads', leadsRoutes);     // /api/leads, /api/leads/*
+  app.use('/api/sources', sourcesRoutes); // /api/sources/*
+  app.use('/api/screenshots', screenshotsRoutes); // /api/screenshots/*
+  app.use('/api/profile', profileRoutes); // /api/profile
+  app.use('/api/admin', adminRoutes);     // /api/admin/*
+  app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
   
   // === STATIC FILES (Frontend) ===
   app.use(express.static(path.join(__dirname, '../frontend')));
