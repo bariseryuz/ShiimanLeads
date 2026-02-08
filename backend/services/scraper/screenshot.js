@@ -9,9 +9,9 @@ const logger = require('../../utils/logger');
  */
 async function captureEntirePage(page, options = {}) {
   const {
-    maxScrolls = 10,        // Maximum scroll attempts
-    scrollDelay = 1000,      // Wait between scrolls
-    loadWaitTime = 2000,     // Wait for content to load after scrolling
+    maxScrolls = 20,         // Maximum scroll attempts (increased from 10)
+    scrollDelay = 1500,      // Wait between scrolls (increased from 1000ms)
+    loadWaitTime = 3000,     // Wait for content to load after scrolling (increased from 2000ms)
     useFullPage = true       // Use fullPage screenshot vs manual stitching
   } = options;
 
@@ -22,7 +22,7 @@ async function captureEntirePage(page, options = {}) {
   
   let lastWidth = 0;
   let horizontalScrollAttempts = 0;
-  const maxHorizontalScrolls = 5;
+  const maxHorizontalScrolls = 10;  // Increased from 5
   
   while (horizontalScrollAttempts < maxHorizontalScrolls) {
     const currentWidth = await page.evaluate(() => document.body.scrollWidth);
@@ -53,15 +53,22 @@ async function captureEntirePage(page, options = {}) {
   
   let lastHeight = 0;
   let scrollAttempts = 0;
+  let unchangedCount = 0; // Track how many times height hasn't changed
   
   while (scrollAttempts < maxScrolls) {
     // Get current scroll height
     const currentHeight = await page.evaluate(() => document.body.scrollHeight);
     
-    // If height hasn't changed, we've reached the end
+    // If height hasn't changed, increment counter
     if (currentHeight === lastHeight) {
-      logger.info(`✅ Reached bottom after ${scrollAttempts} vertical scrolls`);
-      break;
+      unchangedCount++;
+      // Only stop if height hasn't changed for 2 consecutive attempts
+      if (unchangedCount >= 2) {
+        logger.info(`✅ Reached bottom after ${scrollAttempts} vertical scrolls`);
+        break;
+      }
+    } else {
+      unchangedCount = 0; // Reset counter if height changed
     }
     
     lastHeight = currentHeight;
@@ -100,23 +107,38 @@ async function captureEntirePage(page, options = {}) {
 
   logger.info(`📐 Full page dimensions: ${dimensions.width}x${dimensions.height}px`);
 
-  // Step 5: Set viewport to capture full content (with safety limits)
-  const maxWidth = 20000;  // Increased for wide tables
-  const maxHeight = 50000; // Increased limit for very long pages
+  // Step 5: Set viewport to capture full content (with increased safety limits)
+  const maxWidth = 32000;   // Increased from 20,000 for ultra-wide tables
+  const maxHeight = 100000; // Increased from 50,000 for very long pages
+  
+  const viewportWidth = Math.min(dimensions.width, maxWidth);
+  const viewportHeight = Math.min(dimensions.height, maxHeight);
+  
+  // Warn if page exceeds limits (will be cropped)
+  if (dimensions.width > maxWidth) {
+    logger.warn(`⚠️ Page width ${dimensions.width}px exceeds max ${maxWidth}px - will be cropped`);
+  }
+  if (dimensions.height > maxHeight) {
+    logger.warn(`⚠️ Page height ${dimensions.height}px exceeds max ${maxHeight}px - will be cropped`);
+  }
+  
+  logger.info(`📱 Setting viewport: ${viewportWidth}x${viewportHeight}px`);
 
   await page.setViewport({
-    width: Math.min(dimensions.width, maxWidth),
-    height: Math.min(dimensions.height, maxHeight)
+    width: viewportWidth,
+    height: viewportHeight,
+    deviceScaleFactor: 1  // Ensure 1:1 pixel ratio for accurate capture
   });
 
   // Step 6: Final wait for any animations/rendering
   await new Promise(resolve => setTimeout(resolve, loadWaitTime));
 
-  // Step 7: Take screenshot
-  logger.info(`📸 Capturing screenshot...`);
+  // Step 7: Take screenshot with fullPage mode
+  logger.info(`📸 Capturing screenshot with fullPage mode...`);
   const screenshot = await page.screenshot({ 
     fullPage: useFullPage,
-    type: 'png'
+    type: 'png',
+    captureBeyondViewport: true  // Capture content beyond initial viewport
   });
 
   logger.info(`✅ Screenshot captured: ${Math.round(screenshot.length / 1024)}KB`);
