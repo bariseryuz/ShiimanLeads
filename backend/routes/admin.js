@@ -128,4 +128,4 @@ router.delete('/sources/:userId/:sourceId', ensureAdmin, async (req, res) => {
   }
 });
 
-module.exports = { router, setHelpers };
+module.exports = router;

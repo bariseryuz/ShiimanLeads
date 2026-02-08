@@ -6,15 +6,11 @@ const puppeteer = require('puppeteer');
 const { dbAll, dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
 
-// Will be imported from services in Phase 5
-let createSourceTable, createNotification, loadSources, scrapeForUser;
-
-function setHelpers(helpers) {
-  createSourceTable = helpers.createSourceTable;
-  createNotification = helpers.createNotification;
-  loadSources = helpers.loadSources;
-  scrapeForUser = helpers.scrapeForUser;
-}
+// Import required services
+const { createSourceTable } = require('../services/sourceTable');
+const { createNotification } = require('../services/notifications');
+const { loadSources } = require('../services/scraper/helpers');
+const { scrapeForUser } = require('../legacyScraper');
 
 /**
  * GET /api/sources
@@ -523,4 +519,4 @@ router.post('/:id/mappings', express.json(), async (req, res) => {
   }
 });
 
-module.exports = { router, setHelpers };
+module.exports = router;

@@ -137,13 +137,16 @@ function createTables(db) {
 function createIndexes(db) {
   logger.info('📇 Creating database indexes...');
 
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_seen_hash ON seen(lead_hash)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_seen_user ON seen(user_id)`);
+  // Note: 'seen' table doesn't exist in current schema, using dedup_hash from leads
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_dedup ON leads(dedup_hash)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_permit ON leads(permit_number)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_contractor ON leads(contractor_name)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_date ON leads(date_added DESC)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_sources_user ON user_sources(user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_source_reliability_source ON source_reliability(source_id)`);
 
   logger.info('✅ Indexes created successfully');
 }

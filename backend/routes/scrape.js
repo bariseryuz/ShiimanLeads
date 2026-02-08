@@ -178,4 +178,4 @@ router.post('/:id', async (req, res) => {
   }
 });
 
-module.exports = { router, setScraperFunction, getProgress, updateProgress, setShouldStop };
+module.exports = router;

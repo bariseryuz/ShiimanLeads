@@ -49,21 +49,17 @@ async function scrapeAllUsers() {
 
 /**
  * Setup automatic scraping with cron
- * Reads configuration from environment variables:
- * - AUTO_SCRAPE_ENABLED: 'true' to enable auto-scraping
- * - AUTO_SCRAPE_ON_STARTUP: 'true' to run scrape on startup
- * - AUTO_SCRAPE_INTERVAL: Cron expression (default: '0 */8 * * *' = every 8 hours)
  */
 function setupAutoScraping() {
   const AUTO_SCRAPE_ENABLED = process.env.AUTO_SCRAPE_ENABLED === 'true';
   const AUTO_SCRAPE_ON_STARTUP = process.env.AUTO_SCRAPE_ON_STARTUP === 'true';
-  const AUTO_SCRAPE_INTERVAL = process.env.AUTO_SCRAPE_INTERVAL || '0 */8 * * *'; // Default: every 8 hours
+  const AUTO_SCRAPE_INTERVAL = process.env.AUTO_SCRAPE_INTERVAL || '0 */8 * * *';
 
   if (AUTO_SCRAPE_ENABLED) {
     cron.schedule(AUTO_SCRAPE_INTERVAL, scrapeAllUsers);
-    logger.info(`✅ Auto-scraping ENABLED - Running every 8 hours (${AUTO_SCRAPE_INTERVAL})`);
+    logger.info(`Auto-scraping ENABLED (${AUTO_SCRAPE_INTERVAL})`);
   } else {
-    logger.info(`⏸️  Auto-scraping DISABLED - Use "Scrape Now" button or API endpoint /api/scrape/now`);
+    logger.info(`Auto-scraping DISABLED`);
   }
 
   if (AUTO_SCRAPE_ON_STARTUP) {

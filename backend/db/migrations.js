@@ -41,6 +41,8 @@ function runMigrations(db) {
     { column: 'is_new', type: 'INTEGER DEFAULT 1' },
     { column: 'extracted_data', type: 'TEXT' },
     { column: 'canonical_hash', type: 'TEXT' },
+    { column: 'dedup_hash', type: 'TEXT' },
+    { column: 'raw', type: 'TEXT' },
     { column: 'ai_confidence', type: 'REAL' },
     { column: 'ai_validated', type: 'INTEGER DEFAULT 0' },
     { column: 'company_name', type: 'TEXT' },

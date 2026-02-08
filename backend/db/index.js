@@ -7,8 +7,8 @@ const logger = require('../utils/logger');
 function initializeDatabase() {
   try {
     createTables(db);
-    createIndexes(db);
-    runMigrations(db);
+    runMigrations(db);  // Run migrations BEFORE creating indexes
+    createIndexes(db);   // Create indexes AFTER migrations add columns
     logger.info('✅ Database initialized successfully');
   } catch (err) {
     logger.error(`❌ Database initialization failed: ${err.message}`);
