@@ -176,32 +176,169 @@ async function scrapeForUser(userId, userSources) {
           await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 90000 });
           logger.info(`Loaded: ${source.url}`);
           
-          // Wait for content
+          // Wait for initial content
           await new Promise(resolve => setTimeout(resolve, 3000));
           
-          // Capture screenshot if AI extraction enabled
+          // === PAGINATION & FULL SCROLL SUPPORT ===
           if (source.useAI && geminiModel) {
-            logger.info(`📸 Capturing screenshot for AI extraction...`);
-            const screenshot = await captureEntirePage(page);
+            logger.info(`📸 Starting multi-page AI extraction with full scrolling...`);
             
-            // Extract with AI
-            const aiLeads = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
+            let pageNumber = 1;
+            let hasMorePages = true;
+            const maxPages = source.maxPages || 10; // Configurable max pages
             
-            if (aiLeads && Array.isArray(aiLeads)) {
-              for (const lead of aiLeads) {
-                if (await insertLeadIfNew({
-                  raw: JSON.stringify(lead),
-                  sourceName: source.name,
-                  lead,
-                  userId,
-                  sourceId: source._sourceId || source.id
-                })) {
-                  newLeads++;
+            while (hasMorePages && pageNumber <= maxPages) {
+              logger.info(`📄 Processing page ${pageNumber}/${maxPages}...`);
+              
+              // === AUTO-SCROLL TO LOAD ALL CONTENT ===
+              logger.info(`🔄 Auto-scrolling to load lazy content...`);
+              await page.evaluate(async () => {
+                await new Promise((resolve) => {
+                  let totalHeight = 0;
+                  const distance = 500; // Scroll 500px at a time
+                  const timer = setInterval(() => {
+                    const scrollHeight = document.body.scrollHeight;
+                    window.scrollBy(0, distance);
+                    totalHeight += distance;
+
+                    if (totalHeight >= scrollHeight) {
+                      clearInterval(timer);
+                      window.scrollTo(0, 0); // Scroll back to top for screenshot
+                      resolve();
+                    }
+                  }, 200); // Scroll every 200ms
+                });
+              });
+              
+              logger.info(`✅ Scrolling complete, page loaded`);
+              
+              // Wait for any final lazy-loaded content
+              await new Promise(resolve => setTimeout(resolve, 2000));
+              
+              // === CAPTURE FULL-PAGE SCREENSHOT ===
+              logger.info(`📸 Capturing full-page screenshot (page ${pageNumber})...`);
+              const screenshot = await captureEntirePage(page);
+              
+              // Save screenshot for debugging
+              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+              const screenshotPath = path.join(SCREENSHOT_DIR, `${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`);
+              fs.writeFileSync(screenshotPath, screenshot);
+              logger.info(`💾 Screenshot saved: ${screenshotPath}`);
+              
+              // === EXTRACT WITH AI ===
+              logger.info(`🤖 Extracting leads from page ${pageNumber} with AI...`);
+              const aiLeads = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
+              
+              if (aiLeads && Array.isArray(aiLeads)) {
+                logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);
+                for (const lead of aiLeads) {
+                  if (await insertLeadIfNew({
+                    raw: JSON.stringify(lead),
+                    sourceName: source.name,
+                    lead,
+                    userId,
+                    sourceId: source._sourceId || source.id
+                  })) {
+                    newLeads++;
+                  }
                 }
+              } else {
+                logger.warn(`⚠️ No leads extracted from page ${pageNumber}`);
+              }
+              
+              // === CHECK FOR NEXT PAGE ===
+              const nextPageFound = await page.evaluate(() => {
+                // Try multiple selectors for "Next" button
+                const selectors = [
+                  'a[title*="Next" i]',
+                  'button[title*="Next" i]',
+                  'a[aria-label*="Next" i]',
+                  'button[aria-label*="Next" i]',
+                  'a:contains("Next")',
+                  'button:contains("Next")',
+                  '.pagination a:not(.disabled)',
+                  'a.next:not(.disabled)',
+                  'button.next:not(:disabled)',
+                  'img[alt="Next"]'
+                ];
+                
+                for (const sel of selectors) {
+                  try {
+                    const elem = document.querySelector(sel);
+                    if (elem && elem.offsetParent !== null) {
+                      const isDisabled = elem.disabled || 
+                                       elem.classList.contains('disabled') || 
+                                       elem.getAttribute('aria-disabled') === 'true';
+                      
+                      if (!isDisabled) {
+                        return { found: true, selector: sel };
+                      }
+                    }
+                  } catch(e) {}
+                }
+                
+                // Text-based search as fallback
+                const links = Array.from(document.querySelectorAll('a, button'));
+                const next = links.find(e => {
+                  const text = e.textContent.trim().toLowerCase();
+                  return (text === 'next' || text === '›' || text === '>' || text === '→') &&
+                         e.offsetParent !== null && 
+                         !e.disabled && 
+                         !e.classList.contains('disabled');
+                });
+                
+                return next ? { found: true, selector: 'text-based' } : { found: false };
+              });
+              
+              if (nextPageFound.found) {
+                logger.info(`➡️ Found Next button (${nextPageFound.selector}), navigating to page ${pageNumber + 1}...`);
+                
+                try {
+                  // Click next button
+                  if (nextPageFound.selector === 'text-based') {
+                    await page.evaluate(() => {
+                      const links = Array.from(document.querySelectorAll('a, button'));
+                      const next = links.find(e => {
+                        const text = e.textContent.trim().toLowerCase();
+                        return (text === 'next' || text === '›' || text === '>' || text === '→') &&
+                               e.offsetParent !== null;
+                      });
+                      if (next) next.click();
+                    });
+                  } else {
+                    await page.click(nextPageFound.selector);
+                  }
+                  
+                  // Wait for navigation or content change
+                  await Promise.race([
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
+                    new Promise(resolve => setTimeout(resolve, 3000))
+                  ]);
+                  
+                  logger.info(`✅ Navigated to page ${pageNumber + 1}`);
+                  pageNumber++;
+                  
+                  // Wait for new page to load
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  
+                } catch (navErr) {
+                  logger.warn(`⚠️ Failed to navigate to next page: ${navErr.message}`);
+                  hasMorePages = false;
+                }
+              } else {
+                logger.info(`✓ No more pages found (processed ${pageNumber} page(s) total)`);
+                hasMorePages = false;
               }
             }
+            
+            if (pageNumber > maxPages) {
+              logger.warn(`⚠️ Reached max page limit (${maxPages})`);
+            }
+            
+            logger.info(`✅ Multi-page extraction complete: ${newLeads} total leads from ${pageNumber} page(s)`);
+            
           } else {
-            // Get HTML
+            // Get HTML (non-AI mode)
             data = await page.content();
             usedPuppeteer = true;
           }
