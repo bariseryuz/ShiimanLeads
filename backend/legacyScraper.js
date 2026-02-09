@@ -283,30 +283,44 @@ async function scrapeForUser(userId, userSources) {
               
               // === CHECK FOR NEXT PAGE ===
               const nextPageFound = await page.evaluate(() => {
-                // Try multiple selectors for "Next" button
+                // Try multiple selectors for "Next" button - many sites use different conventions
                 const selectors = [
+                  // Standard pagination
                   'a[title*="Next" i]',
                   'button[title*="Next" i]',
                   'a[aria-label*="Next" i]',
                   'button[aria-label*="Next" i]',
-                  'a:contains("Next")',
-                  'button:contains("Next")',
                   '.pagination a:not(.disabled)',
                   'a.next:not(.disabled)',
                   'button.next:not(:disabled)',
-                  'img[alt="Next"]'
+                  
+                  // ArcGIS Hub patterns (common for government data)
+                  'button[aria-label*="next" i]',
+                  'a[class*="next"]:not(.disabled)',
+                  '.pages a:not(.disabled):contains("Next")',
+                  'a.page-next:not(.disabled)',
+                  
+                  // Icon-based pagination
+                  'img[alt="Next"]',
+                  'a[href*="page"] img[src*="arrow"]',
+                  'button svg[class*="arrow"]'
                 ];
                 
                 for (const sel of selectors) {
                   try {
-                    const elem = document.querySelector(sel);
-                    if (elem && elem.offsetParent !== null) {
-                      const isDisabled = elem.disabled || 
-                                       elem.classList.contains('disabled') || 
-                                       elem.getAttribute('aria-disabled') === 'true';
-                      
-                      if (!isDisabled) {
-                        return { found: true, selector: sel };
+                    // Skip :contains() since it's jQuery - handle separately
+                    if (!sel.includes(':contains')) {
+                      const elems = document.querySelectorAll(sel);
+                      for (const elem of elems) {
+                        if (elem && elem.offsetParent !== null) {
+                          const isDisabled = elem.disabled || 
+                                           elem.classList.contains('disabled') || 
+                                           elem.getAttribute('aria-disabled') === 'true';
+                          
+                          if (!isDisabled) {
+                            return { found: true, selector: sel };
+                          }
+                        }
                       }
                     }
                   } catch(e) {}
@@ -316,14 +330,16 @@ async function scrapeForUser(userId, userSources) {
                 const links = Array.from(document.querySelectorAll('a, button'));
                 const next = links.find(e => {
                   const text = e.textContent.trim().toLowerCase();
-                  return (text === 'next' || text === '›' || text === '>' || text === '→') &&
+                  return (text === 'next' || text === '›' || text === '>' || text === '→' || text.includes('next')) &&
                          e.offsetParent !== null && 
                          !e.disabled && 
                          !e.classList.contains('disabled');
                 });
                 
-                return next ? { found: true, selector: 'text-based' } : { found: false };
+                return next ? { found: true, selector: 'text-based' } : { found: false, selector: null };
               });
+              
+              logger.info(`📍 Pagination check: nextPageFound=${nextPageFound.found}, selector=${nextPageFound.selector}`);
               
               if (nextPageFound.found) {
                 logger.info(`➡️ Found Next button (${nextPageFound.selector}), navigating to page ${pageNumber + 1}...`);
@@ -345,12 +361,12 @@ async function scrapeForUser(userId, userSources) {
                   }
                   
                   // Wait for navigation or content change
-                  await Promise.race([
-                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => null),
-                    new Promise(resolve => setTimeout(resolve, 3000))
+                  const navigationResult = await Promise.race([
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => ({ timedOut: true })),
+                    new Promise(resolve => setTimeout(resolve, 3000)).then(() => ({ waited: true }))
                   ]);
                   
-                  logger.info(`✅ Navigated to page ${pageNumber + 1}`);
+                  logger.info(`✅ Navigated to page ${pageNumber + 1} (navigationResult: ${JSON.stringify(navigationResult)})`);
                   pageNumber++;
                   
                   // Wait for new page to load
@@ -358,6 +374,7 @@ async function scrapeForUser(userId, userSources) {
                   
                 } catch (navErr) {
                   logger.warn(`⚠️ Failed to navigate to next page: ${navErr.message}`);
+                  logger.warn(`Stack trace: ${navErr.stack}`);
                   hasMorePages = false;
                 }
               } else {
