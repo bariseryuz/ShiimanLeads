@@ -408,10 +408,6 @@ async function scrapeForUser(userId, userSources) {
           })) {
             newLeads++;
           }
-            sourceId: source._sourceId || source.id
-          })) {
-            newLeads++;
-          }
         }
       }
       
