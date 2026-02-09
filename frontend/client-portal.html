@@ -748,6 +748,29 @@
 
   <script src="app.js"></script>
   <script>
+    // Utility functions for formatting
+    function formatCurrency(value) {
+      if (!value || value === '' || value === '-') return '-';
+      const num = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+      if (isNaN(num)) return value;
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(num);
+    }
+
+    function formatDate(dateString) {
+      if (!dateString) return '-';
+      try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+      } catch (e) {
+        return dateString;
+      }
+    }
+
     // Check authentication
     checkAuth();
 
@@ -1165,6 +1188,12 @@
                 td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
               } else if (value === null || value === undefined || value === '') {
                 td.textContent = '-';
+              } else if (field.toLowerCase().includes('cost') || field.toLowerCase().includes('value') || field.toLowerCase().includes('amount') || field.toLowerCase().includes('price')) {
+                // Format currency fields
+                td.textContent = formatCurrency(value);
+              } else if (field.toLowerCase().includes('date') && !field.toLowerCase().includes('update')) {
+                // Format date fields (except updated_at)
+                td.textContent = formatDate(value);
               } else {
                 td.textContent = value;
               }
