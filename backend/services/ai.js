@@ -86,40 +86,53 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
 
     if (isScreenshot) {
       // Vision-based extraction
-      prompt = `Extract data from this screenshot into JSON format.
+      prompt = `Extract ALL data visible in this table/list screenshot into JSON format.
 
-${criticalInstruction}REQUIRED JSON FIELDS (use EXACTLY these keys, no modifications):
+${criticalInstruction}OUTPUT FIELD NAMES (use EXACTLY these keys):
 ${fieldDescriptions}
 
-FIELD MATCHING INSTRUCTIONS:
-🔍 Look CAREFULLY at the table column headers in the screenshot
-🔍 Headers may be abbreviated or truncated (e.g., "Contr." = Contractor, "Val..." = Valuation)
-🔍 Match field names by semantic meaning, not exact spelling
-🔍 Extract data from matching columns for ALL visible rows
-🔍 DO NOT extract by column position - match by HEADER NAME
+AGGRESSIVE EXTRACTION STRATEGY:
+⚠️ EXTRACT EVERYTHING YOU SEE - do not be conservative
+⚠️ If there's a table with headers and rows, extract ALL visible rows
+⚠️ For each row/record, extract data from EVERY visible column
+
+COLUMN MATCHING (Flexible - Match by semantic meaning):
+🔍 "Permit #", "Permit Number", "Permit No", "Number", "ID" → use "permit_number"
+🔍 "Address", "Location", "Street" → use "address"  
+🔍 "Cost", "Construction Cost", "Value", "Amount" → use "construction_cost"
+🔍 "Contractor", "Builder", "Company" → use "contractor_name"
+🔍 "Phone", "Contact" → use "phone"
+🔍 "Type", "Category" → use "permit_type"
+🔍 "Date", "Issued", "Applied" → use "date_issued"
+🔍 Any column header → match to closest field name
 
 CRITICAL RULES:
-✅ CORRECT field names: ${fieldDescriptions}
-❌ WRONG - DO NOT concatenate or modify field names
-❌ DO NOT add descriptions to field names
+✅ Return data from EVERY visible row in the table
+✅ Use "" for empty cells (not null, not dashes)
+✅ Return EXACTLY field names listed above - no modifications
+✅ If you see numbers/text in a column, EXTRACT IT
 
 EXTRACTION INSTRUCTIONS:
-1. Read the table/list column headers in the screenshot
-2. For each required field, find the matching column header by semantic meaning
-3. Extract data from that column for all visible records
-4. Extract ALL visible records from the screenshot (tables, lists, cards)
-5. If a field is missing or empty, use empty string "" NOT null
-6. Remove any commas from numbers (e.g., "178,132" → "178132")
-7. Return a JSON array if multiple records, JSON object if single record
+1. Identify all column headers in the table (read carefully!)
+2. For each visible row, extract values from left to right
+3. Map each column to the closest matching field name above
+4. Include ALL rows visible in the screenshot
+5. Remove dashes, parentheses, commas from numbers
+6. Return as JSON array with all records
 
-OUTPUT REQUIREMENTS:
-⚠️ Return ONLY valid JSON - no explanations, no markdown, no text
-⚠️ Start with [ or {, end with ] or }
-⚠️ Use the EXACT field names shown above - do not modify them
-⚠️ NO CODE BLOCKS (no triple backticks)
-⚠️ Use "" for empty fields, NOT null
+OUTPUT FORMAT:
+⚠️ Return ONLY valid JSON array [ ] - no explanations
+⚠️ Each record is an object with field names as keys
+⚠️ NO CODE BLOCKS, NO MARKDOWN
+⚠️ Start with [ and end with ]
 
-${isRetry ? '\n⚠️ RETRY: Previous extraction failed validation. Double-check field assignments!' : ''}`;
+EXAMPLE OUTPUT:
+[
+  {"permit_number": "2022029747", "address": "123 Main St", "constructor_name": "Smith Co", "construction_cost": "500000", "phone": "6155551234", "permit_type": "Residential", "date_issued": "2022-01-01"},
+  {"permit_number": "2022029761", "address": "", "constructor_name": "", "construction_cost": "", "phone": "", "permit_type": "", "date_issued": ""}
+]
+
+${isRetry ? '\n⚠️ RETRY: Previous attempt failed. Be AGGRESSIVE - extract the actual visible row data, not structure.' : ''}`;
 
       // Prepare image data - MUST be Base64 encoded for Gemini Vision API
       let imageData;
@@ -239,6 +252,45 @@ ${truncatedText}`;
     if (!Array.isArray(extracted)) {
       extracted = [extracted];
     }
+    
+    // Normalize field names - map any variation to standard names
+    extracted = extracted.map(record => {
+      const normalized = {};
+      
+      // Define field name variations and their target names
+      const fieldMappings = {
+        'permit_number': ['permit_number', 'permit_no', 'permit#', 'number', 'id', 'case_number', 'application_number'],
+        'address': ['address', 'location', 'street', 'street_address', 'adress_details', 'address_details'],
+        'construction_cost': ['construction_cost', 'cost', 'value', 'amount', 'contract_amount', 'valuation', 'cost_estimate'],
+        'contractor_name': ['contractor_name', 'contractor', 'builder', 'company_name', 'company', 'business_name', 'general_contractor'],
+        'permit_type': ['permit_type', 'type', 'category', 'permit_class', 'permit_category'],
+        'phone': ['phone', 'phone_number', 'contact_phone', 'mobile', 'phone#'],
+        'date_issued': ['date_issued', 'issued_date', 'date', 'approval_date', 'effective_date'],
+        'company_name': ['company_name', 'company', 'business_name', 'contractor_name']
+      };
+      
+      // For each extracted field, try to normalize it
+      for (const [key, value] of Object.entries(record)) {
+        if (value === null || value === undefined || value === '' || value === '-') {
+          continue; // Skip empty fields
+        }
+        
+        const normalizedKey = key.toLowerCase().replace(/\s+/g, '_').replace(/[#]/g, '');
+        let targetKey = normalizedKey;
+        
+        // Try to find a matching standard field
+        for (const [target, variations] of Object.entries(fieldMappings)) {
+          if (variations.some(v => normalizedKey.includes(v.replace(/_/g, '')) || v.replace(/_/g, '').includes(normalizedKey))) {
+            targetKey = target;
+            break;
+          }
+        }
+        
+        normalized[targetKey] = String(value).trim();
+      }
+      
+      return normalized;
+    });
     
     logger.info(`✅ Successfully extracted ${extracted.length} record(s) from AI`);
     
