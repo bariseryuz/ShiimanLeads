@@ -256,6 +256,9 @@ ${truncatedText}`;
       extracted = [extracted];
     }
     
+    // Store original data before normalization (for source-specific tables)
+    const originalExtracted = JSON.parse(JSON.stringify(extracted));
+    
     // Normalize field names - map any variation to standard names
     extracted = extracted.map(record => {
       const normalized = {};
@@ -296,6 +299,11 @@ ${truncatedText}`;
     });
     
     logger.info(`✅ Successfully extracted ${extracted.length} record(s) from AI`);
+    
+    // Attach original data to each normalized record for source table insertion
+    extracted.forEach((normalizedRecord, index) => {
+      normalizedRecord._original = originalExtracted[index];
+    });
     
     return extracted;
     

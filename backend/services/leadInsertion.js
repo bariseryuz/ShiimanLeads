@@ -278,7 +278,9 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         `).run(hash, userId, sourceId, permitNumber);
         
         // Also insert into source-specific table for backwards compatibility
-        insertIntoSourceTableSync(sourceId, userId, raw, lead, extractedData);
+        // Use _original data if available (non-normalized field names for source table)
+        const sourceTableData = leadData._original || extractedData || leadData;
+        insertIntoSourceTableSync(sourceId, userId, raw, lead, sourceTableData);
         
         // Create outbox entry for JSONL export
         const jobId = crypto.randomBytes(8).toString('hex');
