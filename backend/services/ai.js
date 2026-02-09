@@ -41,11 +41,13 @@ function buildGenConfig() {
 async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry = false) {
   if (!geminiModel) {
     logger.warn('Google Gemini not configured, skipping AI extraction');
+    logger.warn('⚠️ Set GEMINI_API_KEY in .env to enable AI extraction');
     return null;
   }
 
   try {
     const isScreenshot = Buffer.isBuffer(input) || (typeof input === 'object' && input.inlineData);
+    logger.info(`🤖 AI extraction mode: ${isScreenshot ? 'VISION (screenshot)' : 'TEXT'}`);
     let prompt = '';
     let content = [];
 
@@ -195,8 +197,7 @@ ${truncatedText}`;
     const response = await result.response;
     const text = response.text();
     
-    logger.info(`📝 Raw AI response length: ${text.length} chars`);
-    
+    logger.info(`📝 Raw AI response length: ${text.length} chars`);    logger.info(`\ud83d\udd0d AI response preview: ${text.substring(0, 200)}...`);    
     // Clean up response (remove markdown and extract JSON)
     let cleanedText = text.trim();
     
@@ -242,9 +243,11 @@ ${truncatedText}`;
     let extracted;
     try {
       extracted = JSON.parse(cleanedText);
+      logger.info(`✅ Successfully parsed AI response as JSON`);
     } catch (parseErr) {
       logger.error(`❌ Failed to parse AI response as JSON: ${parseErr.message}`);
-      logger.error(`Cleaned text: ${cleanedText.substring(0, 500)}`);
+      logger.error(`Cleaned text (first 500 chars): ${cleanedText.substring(0, 500)}`);
+      logger.error(`Full cleaned text length: ${cleanedText.length}`);
       return null;
     }
     

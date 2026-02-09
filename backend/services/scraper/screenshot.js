@@ -141,7 +141,13 @@ async function captureEntirePage(page, options = {}) {
     captureBeyondViewport: true  // Capture content beyond initial viewport
   });
 
-  logger.info(`✅ Screenshot captured: ${Math.round(screenshot.length / 1024)}KB`);
+  const screenshotSizeKB = Math.round(screenshot.length / 1024);
+  logger.info(`✅ Screenshot captured: ${screenshotSizeKB}KB`);
+  
+  // Verify screenshot is not empty or corrupted
+  if (screenshot.length < 1000) {
+    logger.warn(`⚠️ WARNING: Screenshot is very small (${screenshot.length} bytes) - may be blank!`);
+  }
   
   return screenshot;
 }

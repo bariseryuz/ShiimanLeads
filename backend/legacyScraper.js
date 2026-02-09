@@ -151,6 +151,9 @@ async function scrapeForUser(userId, userSources) {
       // Puppeteer scraping for dynamic sites
       if (source.usePuppeteer || source.method === 'puppeteer') {
         logger.info(`Using Puppeteer for ${source.name}`);
+        logger.info(`🔧 AI extraction enabled: ${source.useAI ? 'YES' : 'NO'}`);
+        logger.info(`📸 Screenshot capture will be used for AI vision`);
+        
         let browser, page;
         
         try {
@@ -166,8 +169,10 @@ async function scrapeForUser(userId, userSources) {
           
           if (process.env.PUPPETEER_EXECUTABLE_PATH) {
             launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+            logger.info(`🚀 Using custom Chromium: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
           }
           
+          logger.info(`🎬 Launching browser (headless: ${launchOptions.headless})...`);
           browser = await puppeteer.launch(launchOptions);
           page = await browser.newPage();
           await page.setViewport({ width: 2560, height: 1440 });
@@ -229,15 +234,25 @@ async function scrapeForUser(userId, userSources) {
               
               // === EXTRACT WITH AI ===
               logger.info(`🤖 Extracting leads from page ${pageNumber} with AI...`);
+              logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
+              logger.info(`🔍 Field schema: ${source.fieldSchema ? Object.keys(source.fieldSchema).join(', ') : 'default'}`);
+              
               const aiLeads = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
               
               if (aiLeads && Array.isArray(aiLeads)) {
                 logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);
+                
+                // Log first lead for debugging
+                if (aiLeads.length > 0) {
+                  logger.info(`🔍 First lead sample: ${JSON.stringify(aiLeads[0])}`);
+                }
+                
                 for (const lead of aiLeads) {
                   if (await insertLeadIfNew({
                     raw: JSON.stringify(lead),
                     sourceName: source.name,
                     lead,
+                    extractedData: lead,  // FIX: Pass extractedData parameter
                     userId,
                     sourceId: source._sourceId || source.id
                   })) {
@@ -246,6 +261,7 @@ async function scrapeForUser(userId, userSources) {
                 }
               } else {
                 logger.warn(`⚠️ No leads extracted from page ${pageNumber}`);
+                logger.warn(`⚠️ AI returned: ${JSON.stringify(aiLeads)}`);
               }
               
               // === CHECK FOR NEXT PAGE ===
@@ -386,7 +402,12 @@ async function scrapeForUser(userId, userSources) {
             raw: JSON.stringify(item),
             sourceName: source.name,
             lead,
+            extractedData: lead,  // FIX: Pass extractedData parameter
             userId,
+            sourceId: source._sourceId || source.id
+          })) {
+            newLeads++;
+          }
             sourceId: source._sourceId || source.id
           })) {
             newLeads++;
@@ -428,6 +449,7 @@ async function scrapeForUser(userId, userSources) {
             raw,
             sourceName: source.name,
             lead,
+            extractedData: lead,  // FIX: Pass extractedData parameter
             userId,
             sourceId: source._sourceId || source.id
           })) {

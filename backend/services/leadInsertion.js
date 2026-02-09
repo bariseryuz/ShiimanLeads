@@ -188,57 +188,86 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         return { inserted: false, reason: 'duplicate', hash, permitNumber };
       }
       
-      // Try to insert into unified leads table
+      // Try to insert into unified leads table with dynamic field mapping
       try {
-        const insertResult = db.prepare(`
-          INSERT INTO leads (
-            user_id,
-            source_id,
-            hash,
-            permit_number,
-            permit_type,
-            contractor_name,
-            company_name,
-            address,
-            city,
-            state,
-            zip_code,
-            phone,
-            value,
-            description,
-            status,
-            raw_text,
-            date_issued,
-            owner_name,
-            contractor_phone,
-            square_footage,
-            parcel_number,
-            work_description
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          userId,
-          sourceId,
-          hash,
-          uniqueId,  // Universal unique identifier
-          leadData.permit_type || leadData.permitType || null,
-          leadData.contractor_name || leadData.contractor || null,
-          leadData.company_name || leadData.companyName || null,
-          leadData.address || null,
-          leadData.city || null,
-          leadData.state || null,
-          leadData.zip_code || leadData.zip || null,
-          leadData.phone || leadData.contractor_phone || null,
-          leadData.value || leadData.construction_cost || null,
-          leadData.description || leadData.work_description || null,
-          leadData.status || 'new',
-          JSON.stringify(leadData),
-          leadData.date_issued || leadData.dateIssued || null,
-          leadData.owner_name || leadData.owner || null,
-          leadData.contractor_phone || null,
-          leadData.square_footage || leadData.squareFootage || null,
-          leadData.parcel_number || leadData.parcelNumber || null,
-          leadData.work_description || leadData.workDescription || null
-        );
+        // Get all available columns in leads table
+        const tableInfo = db.prepare(`PRAGMA table_info(leads)`).all();
+        const availableColumns = tableInfo.map(col => col.name);
+        
+        // Build a mapping of data to columns dynamically
+        const columnValues = new Map();
+        
+        // Required fields
+        columnValues.set('user_id', userId);
+        columnValues.set('source_id', sourceId);
+        columnValues.set('hash', hash);
+        columnValues.set('permit_number', uniqueId);
+        columnValues.set('status', leadData.status || 'new');
+        columnValues.set('raw_text', JSON.stringify(leadData));
+        
+        // Map all extracted fields to available columns
+        const fieldMappings = {
+          'permit_type': ['permit_type', 'permitType', 'type'],
+          'contractor_name': ['contractor_name', 'contractor', 'contractorName'],
+          'company_name': ['company_name', 'companyName', 'company', 'business_name'],
+          'address': ['address', 'location', 'street_address'],
+          'city': ['city'],
+          'state': ['state'],
+          'zip_code': ['zip_code', 'zip', 'zipCode', 'postal_code'],
+          'phone': ['phone', 'contractor_phone', 'phone_number', 'contact_phone'],
+          'value': ['value', 'construction_cost', 'cost', 'amount'],
+          'description': ['description', 'work_description', 'workDescription'],
+          'date_issued': ['date_issued', 'dateIssued', 'issued_date', 'date'],
+          'owner_name': ['owner_name', 'owner', 'ownerName'],
+          'contractor_phone': ['contractor_phone', 'contractorPhone'],
+          'square_footage': ['square_footage', 'squareFootage', 'sqft'],
+          'parcel_number': ['parcel_number', 'parcelNumber', 'parcel'],
+          'work_description': ['work_description', 'workDescription', 'description'],
+          'application_date': ['application_date', 'applicationDate', 'applied_date'],
+          'contractor_address': ['contractor_address', 'contractorAddress'],
+          'contractor_city': ['contractor_city', 'contractorCity'],
+          'contractor_state': ['contractor_state', 'contractorState'],
+          'contractor_zip': ['contractor_zip', 'contractorZip'],
+          'units': ['units'],
+          'floors': ['floors'],
+          'permit_subtype': ['permit_subtype', 'permitSubtype', 'subtype'],
+          'purpose': ['purpose'],
+          'latitude': ['latitude', 'lat'],
+          'longitude': ['longitude', 'lon', 'lng'],
+          'record_type': ['record_type', 'recordType'],
+          'project_name': ['project_name', 'projectName'],
+          'link': ['link', 'url', 'page_url'],
+          'page_url': ['page_url', 'pageUrl', 'link']
+        };
+        
+        // Iterate through field mappings and extract values
+        for (const [dbColumn, possibleKeys] of Object.entries(fieldMappings)) {
+          // Only process if column exists in database
+          if (!availableColumns.includes(dbColumn)) continue;
+          
+          let value = null;
+          for (const key of possibleKeys) {
+            if (leadData[key] !== undefined && leadData[key] !== null && leadData[key] !== '') {
+              value = leadData[key];
+              break;
+            }
+          }
+          
+          if (value !== null) {
+            columnValues.set(dbColumn, value);
+          }
+        }
+        
+        // Build dynamic INSERT statement
+        const columns = Array.from(columnValues.keys());
+        const values = Array.from(columnValues.values());
+        const placeholders = columns.map(() => '?').join(', ');
+        
+        const insertSQL = `INSERT INTO leads (${columns.join(', ')}) VALUES (${placeholders})`;
+        
+        logger.info(`📝 Inserting lead with ${columns.length} fields: ${columns.slice(0, 5).join(', ')}...`);
+        
+        const insertResult = db.prepare(insertSQL).run(...values);
         
         const leadId = insertResult.lastInsertRowid;
         
