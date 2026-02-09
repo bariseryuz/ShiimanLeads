@@ -271,7 +271,8 @@ async function scrapeForUser(userId, userSources) {
                     lead,
                     extractedData: lead,  // FIX: Pass extractedData parameter
                     userId,
-                    sourceId: source._sourceId || source.id
+                    sourceId: source._sourceId || source.id,
+                    sourceUrl: source.url
                   })) {
                     newLeads++;
                   }
@@ -438,7 +439,8 @@ async function scrapeForUser(userId, userSources) {
             lead,
             extractedData: lead,  // FIX: Pass extractedData parameter
             userId,
-            sourceId: source._sourceId || source.id
+            sourceId: source._sourceId || source.id,
+            sourceUrl: source.url
           })) {
             newLeads++;
           }
@@ -481,7 +483,8 @@ async function scrapeForUser(userId, userSources) {
             lead,
             extractedData: lead,  // FIX: Pass extractedData parameter
             userId,
-            sourceId: source._sourceId || source.id
+            sourceId: source._sourceId || source.id,
+            sourceUrl: source.url
           })) {
             newLeads++;
           }

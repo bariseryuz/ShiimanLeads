@@ -90,9 +90,10 @@ function buildLeadTitle(leadData, uniqueId) {
  * @param {number} params.userId - User ID
  * @param {object} params.extractedData - Extracted/formatted data
  * @param {number} params.sourceId - Source ID (required)
+ * @param {string} params.sourceUrl - Source URL (used as fallback for link field)
  * @returns {Promise<boolean|object>} False if duplicate, result object if inserted
  */
-async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, extractedData = null, sourceId = null }) {
+async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, extractedData = null, sourceId = null, sourceUrl = null }) {
   if (!sourceId) {
     logger.warn(`No sourceId provided - skipping lead insertion`);
     return false;
@@ -274,6 +275,20 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
           'link': ['link', 'url', 'page_url'],
           'page_url': ['page_url', 'pageUrl', 'link']
         };
+        
+        // Auto-populate link field from sourceUrl if not extracted
+        // This is universal - works for any source type
+        if (sourceUrl && !columnValues.has('link') && availableColumns.includes('link')) {
+          const hasLink = Object.keys(leadData).some(key => {
+            const lower = key.toLowerCase();
+            return lower.includes('link') || lower.includes('url') || lower.includes('page');
+          });
+          
+          if (!hasLink) {
+            columnValues.set('link', sourceUrl);
+            logger.debug(`📎 Auto-populated link field with source URL: ${sourceUrl}`);
+          }
+        }
         
         // Iterate through field mappings and extract values
         for (const [dbColumn, possibleKeys] of Object.entries(fieldMappings)) {
