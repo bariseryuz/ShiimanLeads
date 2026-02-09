@@ -5,7 +5,7 @@ const logger = require('../utils/logger');
 
 /**
  * GET /api/leads
- * Fetch leads from all user sources, dynamically querying source tables
+ * Fetch leads from unified leads table + source-specific tables (hybrid approach)
  * Supports filtering by source_id, search query (q), and date range (days)
  */
 router.get('/', async (req, res) => {
@@ -23,12 +23,17 @@ router.get('/', async (req, res) => {
     userSources.forEach(row => {
       try {
         const sourceData = JSON.parse(row.source_data);
-        sourceMap.set(row.id, { name: sourceData.name || 'Unknown Source' });
+        sourceMap.set(row.id, { name: sourceData.name || 'Unknown Source', data: sourceData });
       } catch (err) {
-        sourceMap.set(row.id, { name: 'Unknown Source' });
+        sourceMap.set(row.id, { name: 'Unknown Source', data: {} });
       }
     });
 
+    let allResults = [];
+
+    // HYBRID APPROACH: Query both unified leads table AND source-specific tables
+    
+    // 1. Query unified leads table (new JSON-based storage)
     const where = ['user_id = ?'];
     const params = [userId];
 
@@ -49,17 +54,18 @@ router.get('/', async (req, res) => {
       params.push(cutoff);
     }
 
-    const sql = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
+    const leadsSQL = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
     params.push(limit);
 
-    const rows = db.prepare(sql).all(...params);
+    const leadsRows = db.prepare(leadsSQL).all(...params);
     const excludedKeys = new Set([
       'id', 'user_id', 'source_id', 'hash', 'raw_text', 'data', 'primary_id', 'title',
       'created_at', 'updated_at', 'is_new', 'source', 'date_added', 'dedup_hash',
       'canonical_hash', 'extracted_data', 'ai_confidence', 'ai_validated'
     ]);
 
-    const results = rows.map(row => {
+    // Process unified leads table results
+    leadsRows.forEach(row => {
       let data = null;
 
       if (row.data) {
@@ -88,7 +94,7 @@ router.get('/', async (req, res) => {
       }
 
       const sourceInfo = sourceMap.get(row.source_id);
-      return {
+      allResults.push({
         ...data,
         id: row.id,
         user_id: row.user_id,
@@ -97,11 +103,78 @@ router.get('/', async (req, res) => {
         status: row.status || 'new',
         is_new: row.is_new,
         _source_id: row.source_id,
-        _source_name: sourceInfo?.name || row.source || 'Unknown Source'
-      };
+        _source_name: sourceInfo?.name || row.source || 'Unknown Source',
+        _source_table: 'leads'
+      });
     });
 
-    res.json({ data: results });
+    // 2. Query source-specific tables (legacy/existing data)
+    for (const sourceRow of userSources) {
+      if (sourceId && sourceRow.id !== sourceId) continue;
+
+      const tableName = `source_${sourceRow.id}`;
+      
+      const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(tableName);
+      if (!tableExists) continue;
+
+      const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+      const columnNames = columns.map(col => col.name);
+
+      const sourceWhere = ['user_id = ?'];
+      const sourceParams = [userId];
+
+      if (q) {
+        const textCols = columnNames.filter(col => !['id', 'user_id', 'created_at'].includes(col));
+        const searchConditions = textCols.map(col => `${col} LIKE ?`).join(' OR ');
+        if (searchConditions) {
+          sourceWhere.push(`(${searchConditions})`);
+          const like = `%${q}%`;
+          textCols.forEach(() => sourceParams.push(like));
+        }
+      }
+
+      if (Number.isFinite(days) && days > 0 && columnNames.includes('created_at')) {
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+        sourceWhere.push('created_at >= ?');
+        sourceParams.push(cutoff);
+      }
+
+      const sourceSQL = `SELECT * FROM ${tableName} WHERE ${sourceWhere.join(' AND ')} ORDER BY id DESC LIMIT ?`;
+      sourceParams.push(limit);
+      
+      try {
+        const rows = db.prepare(sourceSQL).all(...sourceParams);
+        const sourceInfo = sourceMap.get(sourceRow.id);
+        
+        rows.forEach(row => {
+          allResults.push({
+            ...row,
+            _source_id: sourceRow.id,
+            _source_name: sourceInfo?.name || 'Unknown Source',
+            _source_table: tableName
+          });
+        });
+      } catch (queryErr) {
+        logger.error(`Error querying ${tableName}: ${queryErr.message}`);
+      }
+    }
+
+    // Sort by ID desc and deduplicate
+    allResults.sort((a, b) => b.id - a.id);
+    
+    // Deduplicate by permit_number or primary_id (keep newest)
+    const seen = new Set();
+    const dedupedResults = allResults.filter(lead => {
+      const key = lead.permit_number || lead.primary_id || lead.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Apply limit after deduplication
+    const finalResults = dedupedResults.slice(0, limit);
+
+    res.json({ data: finalResults });
   } catch (e) {
     logger.error(`Error fetching leads: ${e.message}`);
     res.status(500).json({ error: e.message });
