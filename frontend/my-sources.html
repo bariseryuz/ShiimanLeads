@@ -1331,7 +1331,7 @@
         // Group screenshots by source name (extracted from filename)
         sources.forEach(source => {
           if (!source || !source.data || !source.data.name) return;
-          const sourceName = source.data.name.toLowerCase().replace(/\s+/g, '-');
+          const sourceName = source.data.name.toLowerCase().replace(/[^a-z0-9]/gi, '_');
           
           const screenshots = data.screenshots
             .filter(s => s.filename.toLowerCase().includes(sourceName))
