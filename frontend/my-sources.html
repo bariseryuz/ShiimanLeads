@@ -202,6 +202,11 @@
       font-weight: 600;
     }
 
+    .screenshot-delete {
+      border-color: #fecaca;
+      color: #b91c1c;
+    }
+
     .screenshot-nav:disabled {
       opacity: 0.5;
       cursor: not-allowed;
@@ -1340,65 +1345,73 @@
           const container = document.getElementById(`screenshot-${source.id}`);
           if (!container) return;
 
-          if (screenshots.length > 0) {
-            // LAZY LOAD: Only load active slide initially, use placeholder for others
-            const slidesHtml = screenshots.map((shot, index) => `
-              <div class="screenshot-slide ${index === 0 ? 'active' : ''}" data-index="${index}" data-created="${shot.created}" data-url="${shot.url}">
-                <img src="${index === 0 ? shot.url : 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22100%25%22 height=%22100%25%22/%3E%3C/svg%3E'}"
-                     alt="Screenshot"
-                     data-lazy="${index !== 0 ? shot.url : ''}"
-                     data-lightbox-url="${shot.url}"
-                     onclick="openScreenshotLightbox(${source.id}, ${index}, window.sourceScreenshots[${source.id}])">
-              </div>
-            `).join('');
-
-            const disableNav = screenshots.length <= 1 ? 'disabled' : '';
-
-            // Lazy load: Only show first 5 thumbnails to prevent DOM bloat
-            const visibleThumbs = Math.min(5, screenshots.length);
-            const thumbsHtml = screenshots.slice(0, visibleThumbs).map((shot, index) => `
-              <button type="button" class="screenshot-thumb ${index === 0 ? 'active' : ''}" data-thumb="${index}" data-id="${source.id}">
-                <img src="${shot.url}" alt="Thumbnail" loading="lazy" style="max-width: 60px; height: 60px;">
-              </button>
-            `).join('');
-
-            container.innerHTML = `
-              <div class="screenshot-carousel" data-source-id="${source.id}" data-total="${screenshots.length}" data-index="0">
-                <div class="screenshot-meta">
-                  <span>📸 Screenshots</span>
-                  <span class="screenshot-date">${new Date(screenshots[0].created).toLocaleDateString()}</span>
-                </div>
-                <div class="screenshot-wrapper">
-                  <div class="screenshot-slides">
-                    ${slidesHtml}
-                  </div>
-                </div>
-                <div class="screenshot-controls">
-                  <button type="button" class="screenshot-nav" data-carousel="prev" data-id="${source.id}" ${disableNav}>Prev</button>
-                  <div class="screenshot-count"><span class="current">1</span> / ${screenshots.length}</div>
-                  <button type="button" class="screenshot-nav" data-carousel="next" data-id="${source.id}" ${disableNav}>Next</button>
-                </div>
-                <div class="screenshot-thumbs" style="max-width: 320px; overflow-x: auto;">
-                  ${thumbsHtml}
-                  ${screenshots.length > visibleThumbs ? `<span style="font-size: 0.75rem; color: #9ca3af; margin-left: 0.5rem;">+${screenshots.length - visibleThumbs}</span>` : ''}
-                </div>
-              </div>
-            `;
-          } else {
-            container.innerHTML = `
-              <div class="screenshot-empty">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">📸 Screenshot</div>
-                <div class="screenshot-wrapper" style="background: #e5e7eb; height: 220px;">
-                  <span style="color: #9ca3af; font-size: 0.875rem;">No screenshot yet</span>
-                </div>
-                <div style="font-size: 0.75rem; margin-top: 0.5rem;">Run scrape to generate</div>
-              </div>
-            `;
-          }
+          renderScreenshotsForSource(container, source.id, screenshots);
         });
       } catch (error) {
         console.error('Error loading screenshots:', error);
       }
+    }
+
+    function renderScreenshotsForSource(container, sourceId, screenshots) {
+      if (!container) return;
+
+      if (!screenshots || screenshots.length === 0) {
+        container.innerHTML = `
+          <div class="screenshot-empty">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">📸 Screenshot</div>
+            <div class="screenshot-wrapper" style="background: #e5e7eb; height: 220px;">
+              <span style="color: #9ca3af; font-size: 0.875rem;">No screenshot yet</span>
+            </div>
+            <div style="font-size: 0.75rem; margin-top: 0.5rem;">Run scrape to generate</div>
+          </div>
+        `;
+        return;
+      }
+
+      // LAZY LOAD: Only load active slide initially, use placeholder for others
+      const slidesHtml = screenshots.map((shot, index) => `
+        <div class="screenshot-slide ${index === 0 ? 'active' : ''}" data-index="${index}" data-created="${shot.created}" data-url="${shot.url}">
+          <img src="${index === 0 ? shot.url : 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22%3E%3Crect fill=%22%23f3f4f6%22 width=%22100%25%22 height=%22100%25%22/%3E%3C/svg%3E'}"
+               alt="Screenshot"
+               data-lazy="${index !== 0 ? shot.url : ''}"
+               data-lightbox-url="${shot.url}"
+               onclick="openScreenshotLightbox(${sourceId}, ${index}, window.sourceScreenshots[${sourceId}])">
+        </div>
+      `).join('');
+
+      const disableNav = screenshots.length <= 1 ? 'disabled' : '';
+
+      // Lazy load: Only show first 5 thumbnails to prevent DOM bloat
+      const visibleThumbs = Math.min(5, screenshots.length);
+      const thumbsHtml = screenshots.slice(0, visibleThumbs).map((shot, index) => `
+        <button type="button" class="screenshot-thumb ${index === 0 ? 'active' : ''}" data-thumb="${index}" data-id="${sourceId}">
+          <img src="${shot.url}" alt="Thumbnail" loading="lazy" style="max-width: 60px; height: 60px;">
+        </button>
+      `).join('');
+
+      container.innerHTML = `
+        <div class="screenshot-carousel" data-source-id="${sourceId}" data-total="${screenshots.length}" data-index="0">
+          <div class="screenshot-meta">
+            <span>📸 Screenshots</span>
+            <span class="screenshot-date">${new Date(screenshots[0].created).toLocaleString()}</span>
+          </div>
+          <div class="screenshot-wrapper">
+            <div class="screenshot-slides">
+              ${slidesHtml}
+            </div>
+          </div>
+          <div class="screenshot-controls">
+            <button type="button" class="screenshot-nav" data-carousel="prev" data-id="${sourceId}" ${disableNav}>Prev</button>
+            <div class="screenshot-count"><span class="current">1</span> / ${screenshots.length}</div>
+            <button type="button" class="screenshot-nav" data-carousel="next" data-id="${sourceId}" ${disableNav}>Next</button>
+            <button type="button" class="screenshot-nav screenshot-delete" data-action="delete-screenshot" data-id="${sourceId}">Delete</button>
+          </div>
+          <div class="screenshot-thumbs" style="max-width: 320px; overflow-x: auto;">
+            ${thumbsHtml}
+            ${screenshots.length > visibleThumbs ? `<span style="font-size: 0.75rem; color: #9ca3af; margin-left: 0.5rem;">+${screenshots.length - visibleThumbs}</span>` : ''}
+          </div>
+        </div>
+      `;
     }
 
     let activeScreenshotSourceId = null;
@@ -1441,7 +1454,7 @@
       const created = slides[clampedIndex]?.getAttribute('data-created');
 
       if (dateLabel && created) {
-        dateLabel.textContent = new Date(created).toLocaleDateString();
+        dateLabel.textContent = new Date(created).toLocaleString();
       }
       if (countLabel) {
         countLabel.textContent = String(clampedIndex + 1);
@@ -1466,6 +1479,39 @@
       }
 
       goToScreenshotIndex(sourceId, index);
+    }
+
+    async function deleteActiveScreenshot(sourceId) {
+      const container = document.getElementById(`screenshot-${sourceId}`);
+      const carousel = container?.querySelector('.screenshot-carousel');
+      if (!carousel) return;
+
+      const screenshots = window.sourceScreenshots?.[sourceId];
+      if (!screenshots || screenshots.length === 0) return;
+
+      const index = parseInt(carousel.dataset.index || '0', 10);
+      const shot = screenshots[index];
+      if (!shot || !shot.filename) return;
+
+      const confirmDelete = window.confirm(`Delete screenshot ${shot.filename}?`);
+      if (!confirmDelete) return;
+
+      try {
+        const response = await fetch(`/api/screenshots/${encodeURIComponent(shot.filename)}`, {
+          method: 'DELETE'
+        });
+
+        if (!response.ok) {
+          throw new Error(`Delete failed (${response.status})`);
+        }
+
+        screenshots.splice(index, 1);
+        window.sourceScreenshots[sourceId] = screenshots;
+        renderScreenshotsForSource(container, sourceId, screenshots);
+      } catch (error) {
+        console.error('Failed to delete screenshot:', error);
+        alert('Failed to delete screenshot');
+      }
     }
 
     function openAddModal() {
@@ -2283,6 +2329,15 @@
             const id = parseInt(thumbButton.getAttribute('data-id'), 10);
             setActiveScreenshotSource(id);
             goToScreenshotIndex(id, index);
+            return;
+          }
+
+          const deleteButton = e.target.closest?.('button[data-action="delete-screenshot"]');
+          if (deleteButton) {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = parseInt(deleteButton.getAttribute('data-id'), 10);
+            await deleteActiveScreenshot(id);
             return;
           }
 
