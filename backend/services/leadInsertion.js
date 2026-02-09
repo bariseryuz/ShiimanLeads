@@ -196,8 +196,10 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
   
   logger.info(`🔑 Unique ID: ${uniqueId} (type: ${idType})`);
 
-  // Generate stable hash for deduplication
-  const hash = crypto.createHash('sha256').update(`${uniqueId}-${userId}`).digest('hex');
+  // Generate stable hash for deduplication using the proper function
+  // This tries multiple permit number fields and formats
+  const hash = generateLeadHash(leadData, userId);
+  logger.debug(`🔐 Generated hash: ${hash.substring(0, 16)}...`);
 
   try {
     const tx = db.transaction(() => {
