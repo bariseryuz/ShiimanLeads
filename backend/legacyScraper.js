@@ -298,14 +298,42 @@ async function scrapeForUser(userId, userSources) {
                   // ArcGIS Hub patterns (common for government data)
                   'button[aria-label*="next" i]',
                   'a[class*="next"]:not(.disabled)',
-                  '.pages a:not(.disabled):contains("Next")',
+                  '.pages a:not(.disabled)',
                   'a.page-next:not(.disabled)',
+                  '[class*="pagination"] button[aria-label*="next" i]',
+                  
+                  // Show More / Load More patterns
+                  'button:contains("Show More")',
+                  'button:contains("Load More")',
+                  'a:contains("Show More")',
+                  'a:contains("Load More")',
                   
                   // Icon-based pagination
                   'img[alt="Next"]',
                   'a[href*="page"] img[src*="arrow"]',
                   'button svg[class*="arrow"]'
                 ];
+                
+                // Log all pagination-related elements for debugging
+                const allButtons = Array.from(document.querySelectorAll('a, button'));
+                const paginationButtons = allButtons
+                  .filter(b => b.offsetParent !== null)
+                  .map(b => ({
+                    tag: b.tagName,
+                    text: b.textContent.trim().substring(0, 30),
+                    class: b.className,
+                    ariaLabel: b.getAttribute('aria-label'),
+                    disabled: b.disabled || b.classList.contains('disabled')
+                  }))
+                  .filter(b => 
+                    b.text.toLowerCase().includes('next') ||
+                    b.text.toLowerCase().includes('more') ||
+                    b.text.toLowerCase().includes('load') ||
+                    b.text === '›' || b.text === '>' ||
+                    (b.ariaLabel && (b.ariaLabel.toLowerCase().includes('next') || b.ariaLabel.toLowerCase().includes('page')))
+                  );
+                
+                console.log('📊 Found potential pagination buttons:', paginationButtons);
                 
                 for (const sel of selectors) {
                   try {
@@ -319,7 +347,7 @@ async function scrapeForUser(userId, userSources) {
                                            elem.getAttribute('aria-disabled') === 'true';
                           
                           if (!isDisabled) {
-                            return { found: true, selector: sel };
+                            return { found: true, selector: sel, buttons: paginationButtons };
                           }
                         }
                       }
@@ -327,51 +355,81 @@ async function scrapeForUser(userId, userSources) {
                   } catch(e) {}
                 }
                 
-                // Text-based search as fallback
+                // Text-based search as fallback (enhanced to find "Show More" / "Load More")
                 const links = Array.from(document.querySelectorAll('a, button'));
                 const next = links.find(e => {
                   const text = e.textContent.trim().toLowerCase();
-                  return (text === 'next' || text === '›' || text === '>' || text === '→' || text.includes('next')) &&
+                  return (text === 'next' || text === '›' || text === '>' || text === '→' || 
+                          text.includes('next') || text.includes('show more') || text.includes('load more')) &&
                          e.offsetParent !== null && 
                          !e.disabled && 
                          !e.classList.contains('disabled');
                 });
                 
-                return next ? { found: true, selector: 'text-based' } : { found: false, selector: null };
+                return next ? { found: true, selector: 'text-based', buttons: paginationButtons } : { found: false, selector: null, buttons: paginationButtons };
               });
               
               logger.info(`📍 Pagination check: nextPageFound=${nextPageFound.found}, selector=${nextPageFound.selector}`);
+              if (nextPageFound.buttons && nextPageFound.buttons.length > 0) {
+                logger.info(`📊 Available pagination buttons: ${JSON.stringify(nextPageFound.buttons)}`);
+              } else {
+                logger.warn(`⚠️ No pagination buttons found on page`);
+              }
               
               if (nextPageFound.found) {
                 logger.info(`➡️ Found Next button (${nextPageFound.selector}), navigating to page ${pageNumber + 1}...`);
                 
                 try {
+                  // Capture URL and content before click to verify navigation
+                  const urlBefore = page.url();
+                  const contentHashBefore = await page.evaluate(() => document.body.innerText.substring(0, 1000));
+                  
                   // Click next button
                   if (nextPageFound.selector === 'text-based') {
                     await page.evaluate(() => {
                       const links = Array.from(document.querySelectorAll('a, button'));
                       const next = links.find(e => {
                         const text = e.textContent.trim().toLowerCase();
-                        return (text === 'next' || text === '›' || text === '>' || text === '→') &&
+                        return (text === 'next' || text === '›' || text === '>' || text === '→' || 
+                                text.includes('show more') || text.includes('load more')) &&
                                e.offsetParent !== null;
                       });
-                      if (next) next.click();
+                      if (next) {
+                        console.log('🖱️ Clicking pagination button:', next.textContent.trim());
+                        next.click();
+                      }
                     });
                   } else {
+                    logger.info(`🖱️ Clicking selector: ${nextPageFound.selector}`);
                     await page.click(nextPageFound.selector);
                   }
                   
                   // Wait for navigation or content change
                   const navigationResult = await Promise.race([
                     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => ({ timedOut: true })),
-                    new Promise(resolve => setTimeout(resolve, 3000)).then(() => ({ waited: true }))
+                    new Promise(resolve => setTimeout(resolve, 5000)).then(() => ({ waited: true }))
                   ]);
                   
-                  logger.info(`✅ Navigated to page ${pageNumber + 1} (navigationResult: ${JSON.stringify(navigationResult)})`);
-                  pageNumber++;
+                  const urlAfter = page.url();
+                  const contentHashAfter = await page.evaluate(() => document.body.innerText.substring(0, 1000));
                   
-                  // Wait for new page to load
-                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  // Check if page actually changed
+                  const urlChanged = urlBefore !== urlAfter;
+                  const contentChanged = contentHashBefore !== contentHashAfter;
+                  
+                  logger.info(`✅ Navigation result: URL changed=${urlChanged}, Content changed=${contentChanged}`);
+                  logger.info(`📍 URL: ${urlBefore} → ${urlAfter}`);
+                  
+                  if (!urlChanged && !contentChanged) {
+                    logger.warn(`⚠️ Page didn't change after clicking pagination - may have reached the end`);
+                    hasMorePages = false;
+                  } else {
+                    logger.info(`✅ Successfully navigated to page ${pageNumber + 1}`);
+                    pageNumber++;
+                    
+                    // Wait for new content to fully load
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                  }
                   
                 } catch (navErr) {
                   logger.warn(`⚠️ Failed to navigate to next page: ${navErr.message}`);
