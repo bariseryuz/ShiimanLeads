@@ -227,10 +227,27 @@ async function scrapeForUser(userId, userSources) {
               const screenshot = await captureEntirePage(page);
               
               // Save screenshot for debugging
-              const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-              const screenshotPath = path.join(SCREENSHOT_DIR, `${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`);
-              fs.writeFileSync(screenshotPath, screenshot);
-              logger.info(`💾 Screenshot saved: ${screenshotPath}`);
+              try {
+                // Ensure screenshot directory exists
+                if (!fs.existsSync(SCREENSHOT_DIR)) {
+                  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+                  logger.info(`📁 Created screenshot directory: ${SCREENSHOT_DIR}`);
+                }
+                
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                const screenshotPath = path.join(SCREENSHOT_DIR, `${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`);
+                
+                if (!screenshot || screenshot.length === 0) {
+                  logger.error(`❌ Screenshot buffer is empty or null`);
+                } else {
+                  fs.writeFileSync(screenshotPath, screenshot);
+                  logger.info(`💾 Screenshot saved: ${screenshotPath}`);
+                  logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
+                }
+              } catch (screenshotError) {
+                logger.error(`❌ Failed to save screenshot: ${screenshotError.message}`);
+                logger.error(`Stack: ${screenshotError.stack}`);
+              }
               
               // === EXTRACT WITH AI ===
               logger.info(`🤖 Extracting leads from page ${pageNumber} with AI...`);
