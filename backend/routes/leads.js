@@ -18,67 +18,90 @@ router.get('/', async (req, res) => {
     const q = req.query.q ? String(req.query.q) : null;
     const days = req.query.days ? parseInt(req.query.days, 10) : null;
 
-    // Get all user sources to query their tables
     const userSources = db.prepare('SELECT id, source_data FROM user_sources WHERE user_id = ?').all(userId);
-    let allLeads = [];
+    const sourceMap = new Map();
+    userSources.forEach(row => {
+      try {
+        const sourceData = JSON.parse(row.source_data);
+        sourceMap.set(row.id, { name: sourceData.name || 'Unknown Source' });
+      } catch (err) {
+        sourceMap.set(row.id, { name: 'Unknown Source' });
+      }
+    });
 
-    for (const sourceRow of userSources) {
-      // Skip if filtering by specific source
-      if (sourceId && sourceRow.id !== sourceId) continue;
+    const where = ['user_id = ?'];
+    const params = [userId];
 
-      const tableName = `source_${sourceRow.id}`;
-      
-      // Check if table exists
-      const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(tableName);
-      if (!tableExists) continue;
+    if (sourceId) {
+      where.push('source_id = ?');
+      params.push(sourceId);
+    }
 
-      // Get all columns from this source table
-      const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
-      const columnNames = columns.map(col => col.name);
+    if (q) {
+      const like = `%${q}%`;
+      where.push('(data LIKE ? OR raw_text LIKE ? OR permit_number LIKE ? OR address LIKE ? OR description LIKE ?)');
+      params.push(like, like, like, like, like);
+    }
 
-      // Build dynamic query
-      const where = ['user_id = ?'];
-      const params = [userId];
+    if (Number.isFinite(days) && days > 0) {
+      const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      where.push('COALESCE(created_at, date_added) >= ?');
+      params.push(cutoff);
+    }
 
-      // Search across all text columns if query provided
-      if (q) {
-        const textCols = columnNames.filter(col => !['id', 'user_id', 'created_at'].includes(col));
-        const searchConditions = textCols.map(col => `${col} LIKE ?`).join(' OR ');
-        if (searchConditions) {
-          where.push(`(${searchConditions})`);
-          const like = `%${q}%`;
-          textCols.forEach(() => params.push(like));
+    const sql = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
+    params.push(limit);
+
+    const rows = db.prepare(sql).all(...params);
+    const excludedKeys = new Set([
+      'id', 'user_id', 'source_id', 'hash', 'raw_text', 'data', 'primary_id', 'title',
+      'created_at', 'updated_at', 'is_new', 'source', 'date_added', 'dedup_hash',
+      'canonical_hash', 'extracted_data', 'ai_confidence', 'ai_validated'
+    ]);
+
+    const results = rows.map(row => {
+      let data = null;
+
+      if (row.data) {
+        try {
+          data = JSON.parse(row.data);
+        } catch (err) {
+          logger.warn(`Invalid JSON in leads.data for id ${row.id}`);
         }
       }
 
-      if (Number.isFinite(days) && days > 0 && columnNames.includes('created_at')) {
-        const cutoff = new Date(Date.now() - days*24*60*60*1000).toISOString();
-        where.push('created_at >= ?');
-        params.push(cutoff);
+      if (!data && row.raw_text) {
+        try {
+          data = JSON.parse(row.raw_text);
+        } catch (err) {
+          data = null;
+        }
       }
 
-      const sql = `SELECT * FROM ${tableName} WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
-      params.push(limit);
-      
-      try {
-        const rows = db.prepare(sql).all(...params);
-        // Add source info to each row
-        const sourceData = JSON.parse(sourceRow.source_data);
-        rows.forEach(row => {
-          row._source_id = sourceRow.id;
-          row._source_name = sourceData.name;
+      if (!data || typeof data !== 'object') {
+        data = {};
+        Object.entries(row).forEach(([key, value]) => {
+          if (!excludedKeys.has(key) && value !== null && value !== undefined && value !== '') {
+            data[key] = value;
+          }
         });
-        allLeads.push(...rows);
-      } catch (queryErr) {
-        logger.error(`Error querying ${tableName}: ${queryErr.message}`);
       }
-    }
 
-    // Sort by ID desc and limit
-    allLeads.sort((a, b) => b.id - a.id);
-    allLeads = allLeads.slice(0, limit);
+      const sourceInfo = sourceMap.get(row.source_id);
+      return {
+        ...data,
+        id: row.id,
+        user_id: row.user_id,
+        source_id: row.source_id,
+        created_at: row.created_at || row.date_added || null,
+        status: row.status || 'new',
+        is_new: row.is_new,
+        _source_id: row.source_id,
+        _source_name: sourceInfo?.name || row.source || 'Unknown Source'
+      };
+    });
 
-    res.json({ data: allLeads });
+    res.json({ data: results });
   } catch (e) {
     logger.error(`Error fetching leads: ${e.message}`);
     res.status(500).json({ error: e.message });

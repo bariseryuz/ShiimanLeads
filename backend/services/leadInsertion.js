@@ -46,6 +46,38 @@ function generateLeadHash(leadData, userId) {
   return crypto.createHash('sha256').update(hashInput).digest('hex');
 }
 
+function buildLeadTitle(leadData, uniqueId) {
+  const parts = [];
+  const company = (
+    leadData.company_name ||
+    leadData.contractor_name ||
+    leadData.agent_name ||
+    leadData.name ||
+    leadData.business_name ||
+    ''
+  ).toString().trim();
+
+  const address = (
+    leadData.address ||
+    leadData.street_address ||
+    leadData.location ||
+    ''
+  ).toString().trim();
+
+  const cost = (
+    leadData.construction_cost ||
+    leadData.value ||
+    leadData.budget ||
+    ''
+  ).toString().trim();
+
+  if (company) parts.push(company);
+  if (address) parts.push(address);
+  if (cost) parts.push(`$${cost}`);
+
+  return parts.join(' - ') || uniqueId;
+}
+
 /**
  * Insert lead if it's new (not a duplicate)
  * Handles universal lead types with intelligent ID generation
@@ -201,6 +233,9 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         columnValues.set('user_id', userId);
         columnValues.set('source_id', sourceId);
         columnValues.set('hash', hash);
+        columnValues.set('primary_id', uniqueId);
+        columnValues.set('title', buildLeadTitle(leadData, uniqueId));
+        columnValues.set('data', JSON.stringify(leadData));
         columnValues.set('permit_number', uniqueId);
         columnValues.set('status', leadData.status || 'new');
         columnValues.set('raw_text', JSON.stringify(leadData));
