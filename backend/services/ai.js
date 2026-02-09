@@ -87,6 +87,35 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
     }
 
     if (isScreenshot) {
+      // Build dynamic column matching hints based on actual fieldSchema
+      const columnHints = Object.keys(schemaFields).map(fieldName => {
+        const lower = fieldName.toLowerCase();
+        if (lower.includes('permit') && (lower.includes('num') || lower === 'permit_' || lower === 'permit')) {
+          return `🔍 "Permit #", "Permit Number", "Permit No", "Number", "ID" → use "${fieldName}"`;
+        } else if (lower.includes('address') || lower.includes('location') || lower.includes('street')) {
+          return `🔍 "Address", "Location", "Street" → use "${fieldName}"`;
+        } else if (lower.includes('cost') || lower.includes('value') || lower.includes('amount')) {
+          return `🔍 "Cost", "Construction Cost", "Value", "Amount" → use "${fieldName}"`;
+        } else if (lower.includes('contractor') || lower.includes('builder') || lower.includes('company')) {
+          return `🔍 "Contractor", "Builder", "Company" → use "${fieldName}"`;
+        } else if (lower.includes('phone') || lower.includes('contact')) {
+          return `🔍 "Phone", "Contact", "Tel" → use "${fieldName}"`;
+        } else if (lower.includes('type') || lower.includes('category')) {
+          return `🔍 "Type", "Category", "Class" → use "${fieldName}"`;
+        } else if (lower.includes('date') || lower.includes('issued') || lower.includes('applied')) {
+          return `🔍 "Date", "Issued", "Applied", "Entered" → use "${fieldName}"`;
+        } else if (lower.includes('city')) {
+          return `🔍 "City" → use "${fieldName}"`;
+        } else if (lower.includes('state')) {
+          return `🔍 "State" → use "${fieldName}"`;
+        } else if (lower.includes('parce') || lower.includes('parcel')) {
+          return `🔍 "Parcel", "Parce", "Parcel Number" → use "${fieldName}"`;
+        } else if (lower.includes('description') || lower.includes('subtype')) {
+          return `🔍 Column headers with "${fieldName.replace(/_/g, ' ')}" → use "${fieldName}"`;
+        }
+        return `🔍 Any column matching "${fieldName.replace(/_/g, ' ')}" → use "${fieldName}"`;
+      }).join('\n');
+      
       // Vision-based extraction
       prompt = `Extract ALL data visible in this table/list screenshot into JSON format.
 
@@ -98,15 +127,8 @@ AGGRESSIVE EXTRACTION STRATEGY:
 ⚠️ If there's a table with headers and rows, extract ALL visible rows
 ⚠️ For each row/record, extract data from EVERY visible column
 
-COLUMN MATCHING (Flexible - Match by semantic meaning):
-🔍 "Permit #", "Permit Number", "Permit No", "Number", "ID" → use "permit_number"
-🔍 "Address", "Location", "Street" → use "address"  
-🔍 "Cost", "Construction Cost", "Value", "Amount" → use "construction_cost"
-🔍 "Contractor", "Builder", "Company" → use "contractor_name"
-🔍 "Phone", "Contact" → use "phone"
-🔍 "Type", "Category" → use "permit_type"
-🔍 "Date", "Issued", "Applied" → use "date_issued"
-🔍 Any column header → match to closest field name
+COLUMN MATCHING (Match column headers to these exact field names):
+${columnHints}
 
 CRITICAL RULES:
 ✅ Return data from EVERY visible row in the table
@@ -128,10 +150,10 @@ OUTPUT FORMAT:
 ⚠️ NO CODE BLOCKS, NO MARKDOWN
 ⚠️ Start with [ and end with ]
 
-EXAMPLE OUTPUT:
+EXAMPLE OUTPUT (using the field names above):
 [
-  {"permit_number": "2022029747", "address": "123 Main St", "constructor_name": "Smith Co", "construction_cost": "500000", "phone": "6155551234", "permit_type": "Residential", "date_issued": "2022-01-01"},
-  {"permit_number": "2022029761", "address": "", "constructor_name": "", "construction_cost": "", "phone": "", "permit_type": "", "date_issued": ""}
+  {${Object.keys(schemaFields).slice(0, 5).map(k => `"${k}": "value"`).join(', ')}},
+  {${Object.keys(schemaFields).slice(0, 5).map(k => `"${k}": ""`).join(', ')}}
 ]
 
 ${isRetry ? '\n⚠️ RETRY: Previous attempt failed. Be AGGRESSIVE - extract the actual visible row data, not structure.' : ''}`;
