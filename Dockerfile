@@ -1,7 +1,11 @@
 FROM node:20-bookworm-slim
 
-# Install Google Chrome and dependencies
+# Install build tools for native modules (better-sqlite3) + Chrome dependencies
 RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    build-essential \
     wget \
     ca-certificates \
     fonts-liberation \
