@@ -178,11 +178,15 @@ async function scrapeForUser(userId, userSources) {
           await page.setViewport({ width: 2560, height: 1440 });
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
           
-          // Navigate to page
-          await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 90000 });
-          logger.info(`Loaded: ${source.url}`);
+          // Navigate to page with proper wait strategy
+          logger.info(`🌐 Navigating to ${source.url}...`);
+          await page.goto(source.url, { 
+            waitUntil: 'networkidle2',  // Wait for network to be mostly idle
+            timeout: 90000 
+          });
+          logger.info(`✅ Page loaded: ${source.url}`);
           
-          // Wait for initial content
+          // Single wait for JS-heavy sites to fully render (consolidated)
           await new Promise(resolve => setTimeout(resolve, 3000));
           
           // === PAGINATION & FULL SCROLL SUPPORT ===
@@ -197,34 +201,14 @@ async function scrapeForUser(userId, userSources) {
             while (hasMorePages && pageNumber <= maxPages) {
               logger.info(`📄 Processing page ${pageNumber}/${maxPages}...`);
               
-              // === AUTO-SCROLL TO LOAD ALL CONTENT ===
-              logger.info(`🔄 Auto-scrolling to load lazy content...`);
-              await page.evaluate(async () => {
-                await new Promise((resolve) => {
-                  let totalHeight = 0;
-                  const distance = 500; // Scroll 500px at a time
-                  const timer = setInterval(() => {
-                    const scrollHeight = document.body.scrollHeight;
-                    window.scrollBy(0, distance);
-                    totalHeight += distance;
-
-                    if (totalHeight >= scrollHeight) {
-                      clearInterval(timer);
-                      window.scrollTo(0, 0); // Scroll back to top for screenshot
-                      resolve();
-                    }
-                  }, 200); // Scroll every 200ms
-                });
-              });
-              
-              logger.info(`✅ Scrolling complete, page loaded`);
-              
-              // Wait for any final lazy-loaded content
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              
-              // === CAPTURE FULL-PAGE SCREENSHOT ===
+              // === CAPTURE FULL-PAGE SCREENSHOT (handles scrolling internally) ===
               logger.info(`📸 Capturing full-page screenshot (page ${pageNumber})...`);
-              const screenshot = await captureEntirePage(page);
+              const screenshot = await captureEntirePage(page, {
+                maxScrolls: 25,
+                scrollDelay: 2000,
+                loadWaitTime: 5000,
+                useFullPage: true
+              });
               
               // Save screenshot for debugging
               try {
