@@ -3,6 +3,33 @@ const { db } = require('../db');
 const logger = require('../utils/logger');
 const { insertIntoSourceTableSync } = require('./sourceTable');
 
+function extractPermitNumber(leadData) {
+  const candidates = [
+    leadData.permit_number,
+    leadData.permitNumber,
+    leadData['Permit Number'],
+    leadData['Permit #'],
+    leadData.permit_no,
+    leadData.permit_id,
+    leadData.process_number,
+    leadData.case_number,
+    leadData.number,
+    leadData.id,
+    leadData.ID
+  ];
+
+  for (const value of candidates) {
+    if (value == null) continue;
+    const text = String(value).trim();
+    if (!text || text.toLowerCase() === 'n/a') continue;
+    if (text.length < 3) continue;
+    if (!/[0-9]/.test(text) && text.length < 5) continue;
+    return text;
+  }
+
+  return '';
+}
+
 /**
  * Generate stable hash for lead deduplication
  * Uses permit number or other unique identifiers
@@ -12,14 +39,7 @@ const { insertIntoSourceTableSync } = require('./sourceTable');
  */
 function generateLeadHash(leadData, userId) {
   // Extract permit number (try multiple field names)
-  const permitNumber = (
-    leadData.permit_number || 
-    leadData.permitNumber || 
-    leadData['Permit Number'] ||
-    leadData.permit_no ||
-    leadData.number ||
-    ''
-  ).toString().trim().toUpperCase();
+  const permitNumber = extractPermitNumber(leadData).toUpperCase();
   
   if (!permitNumber) {
     // Fallback: use company + address if no permit number
@@ -107,14 +127,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
   let idType = '';
   
   // Strategy 1: Permit number (construction/building permits)
-  const permitNumber = (
-    leadData.permit_number || 
-    leadData.permitNumber || 
-    leadData['Permit Number'] ||
-    leadData.permit_no ||
-    leadData.number ||
-    ''
-  ).toString().trim();
+  const permitNumber = extractPermitNumber(leadData).trim();
   
   if (permitNumber) {
     uniqueId = permitNumber;

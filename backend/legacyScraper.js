@@ -265,6 +265,14 @@ async function scrapeForUser(userId, userSources) {
               
               if (aiLeads && Array.isArray(aiLeads)) {
                 logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);
+                if (aiLeads.length > 0) {
+                  logger.info('🔍 First 3 leads extracted:');
+                  aiLeads.slice(0, 3).forEach((lead, idx) => {
+                    const permit = lead?.permit_number || lead?.permitNumber || lead?.number || 'N/A';
+                    const address = lead?.address || lead?.location || 'N/A';
+                    logger.info(`  ${idx + 1}. Permit: ${permit}, Address: ${address}`);
+                  });
+                }
                 
                 // Log first lead for debugging
                 if (aiLeads.length > 0) {
@@ -293,6 +301,13 @@ async function scrapeForUser(userId, userSources) {
               const nextPageFound = await page.evaluate(() => {
                 // Try multiple selectors for "Next" button - many sites use different conventions
                 const selectors = [
+                  // ArcGIS Hub pagination patterns
+                  'button[data-test-id="table-pagination-next-button"]',
+                  'button[aria-label="Next page"]',
+                  'button[title="Next page"]',
+                  'calcite-pagination button[aria-label="Next"]',
+                  '[class*="pagination"] button:not([disabled])[aria-label*="next" i]',
+                  
                   // Standard pagination
                   'a[title*="Next" i]',
                   'button[title*="Next" i]',

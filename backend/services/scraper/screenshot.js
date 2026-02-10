@@ -54,15 +54,57 @@ async function captureEntirePage(page, options = {}) {
   await page.evaluate(() => window.scrollTo(0, 0));
   await new Promise(resolve => setTimeout(resolve, 1000));
 
-  // Step 2: Auto-scroll vertically to reveal all rows with improved lazy-load detection
+  // Step 2: Auto-scroll vertically (supports scrollable containers)
   logger.info(`↕️ Scrolling vertically to reveal all table rows...`);
-  
+  const scrollTarget = await page.evaluate(() => {
+    const preferredSelectors = [
+      '.table-container',
+      '.data-table',
+      '[role="grid"]',
+      '.ag-body-viewport',
+      '.ReactVirtualized__Grid',
+      'calcite-table',
+      'div[style*="overflow"]'
+    ];
+
+    for (const sel of preferredSelectors) {
+      const elem = document.querySelector(sel);
+      if (elem && elem.scrollHeight > elem.clientHeight + 50) {
+        elem.setAttribute('data-scrape-scroll', 'true');
+        return '[data-scrape-scroll="true"]';
+      }
+    }
+
+    const candidates = Array.from(document.querySelectorAll('div, section, main, article'));
+    const best = candidates
+      .filter(el => el.scrollHeight > el.clientHeight + 50)
+      .sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+
+    if (best) {
+      best.setAttribute('data-scrape-scroll', 'true');
+      return '[data-scrape-scroll="true"]';
+    }
+
+    if (document.documentElement.scrollHeight > window.innerHeight + 50) {
+      return 'body';
+    }
+
+    return 'body';
+  });
+  logger.info(`🎯 Scroll target: ${scrollTarget || 'body'}`);
+
   let lastHeight = 0;
   let stableScrolls = 0;
   let scrollAttempts = 0;
   
   while (scrollAttempts < maxScrolls) {
-    const currentHeight = await page.evaluate(() => document.body.scrollHeight);
+    const currentHeight = await page.evaluate((selector) => {
+      if (selector && selector !== 'body') {
+        const elem = document.querySelector(selector);
+        return elem ? elem.scrollHeight : document.body.scrollHeight;
+      }
+      return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+    }, scrollTarget);
     
     // Track stability: only break if height hasn't changed for multiple attempts
     if (currentHeight === lastHeight) {
@@ -81,9 +123,16 @@ async function captureEntirePage(page, options = {}) {
     scrollAttempts++;
     
     // Scroll to bottom to trigger lazy loading
-    await page.evaluate(() => {
+    await page.evaluate((selector) => {
+      if (selector && selector !== 'body') {
+        const elem = document.querySelector(selector);
+        if (elem) {
+          elem.scrollTop = elem.scrollHeight;
+          return;
+        }
+      }
       window.scrollTo(0, document.body.scrollHeight);
-    });
+    }, scrollTarget);
     
     logger.info(`⬇️ Vertical scroll ${scrollAttempts}/${maxScrolls} - Height: ${currentHeight}px - Stable: ${stableScrolls}/3`);
     
