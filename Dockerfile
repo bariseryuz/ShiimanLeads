@@ -36,7 +36,8 @@ COPY backend/package*.json ./backend/
 
 # Install backend dependencies
 WORKDIR /app/backend
-RUN npm ci --only=production
+RUN npm ci --only=production \
+    && npx playwright install-deps chromium
 
 # Copy backend code
 COPY backend/ ./
@@ -48,9 +49,9 @@ COPY frontend/ ./frontend/
 # Create required directories
 RUN mkdir -p backend/logs backend/output backend/data backend/data/screenshots
 
-# Set Puppeteer environment variables
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
-    PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# Set Playwright environment variables (use system Chrome)
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true \
+    PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
 
 # Expose port
 EXPOSE 3000
