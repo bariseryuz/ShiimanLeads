@@ -335,6 +335,15 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         
         logger.info(`📝 Inserting lead with ${columns.length} fields: ${columns.slice(0, 5).join(', ')}...`);
         
+        // Log which custom fields are being inserted
+        const customFields = columns.filter(c => !['user_id', 'source_id', 'hash', 'primary_id', 'title', 'data', 'permit_number', 'status', 'raw_text', 'date_added', 'is_new'].includes(c));
+        if (customFields.length > 0) {
+          logger.debug(`   Custom fields: ${customFields.join(', ')}`);
+          customFields.forEach(field => {
+            logger.debug(`     - ${field}: ${values.get(field) ? String(values.get(field)).substring(0, 30) : '[empty]'}`);
+          });
+        }
+        
         const insertResult = db.prepare(insertSQL).run(...values);
         
         const leadId = insertResult.lastInsertRowid;

@@ -495,4 +495,34 @@ router.post('/:id/mappings', express.json(), async (req, res) => {
   }
 });
 
+/**
+ * GET /api/sources/:id/diagnose
+ * Diagnose why a source might not be extracting all columns
+ * Shows fieldSchema configuration, table structure, and sample data
+ */
+router.get('/:id/diagnose', async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    
+    const sourceId = req.params.id;
+    
+    // Verify ownership
+    const source = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+    if (!source) {
+      return res.status(404).json({ error: 'Source not found or access denied' });
+    }
+    
+    const { diagnoseSource } = require('../services/scraper/diagnostics');
+    const report = await diagnoseSource(sourceId);
+    
+    res.json(report);
+  } catch (e) {
+    logger.error(`Diagnose source error: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

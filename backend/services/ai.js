@@ -322,6 +322,27 @@ ${truncatedText}`;
     
     logger.info(`✅ Successfully extracted ${extracted.length} record(s) from AI`);
     
+    // Log field population stats
+    if (extracted.length > 0) {
+      const fieldStats = {};
+      extracted.forEach(record => {
+        Object.keys(record).forEach(field => {
+          if (!fieldStats[field]) fieldStats[field] = { populated: 0, empty: 0 };
+          if (record[field] && record[field] !== '' && record[field] !== 'N/A') {
+            fieldStats[field].populated++;
+          } else {
+            fieldStats[field].empty++;
+          }
+        });
+      });
+      
+      logger.info(`📊 Field population statistics:`);
+      Object.entries(fieldStats).forEach(([field, stats]) => {
+        const populationRate = Math.round((stats.populated / extracted.length) * 100);
+        logger.info(`   ${field}: ${populationRate}% filled (${stats.populated}/${extracted.length})`);
+      });
+    }
+    
     // Attach original data to each normalized record for source table insertion
     extracted.forEach((normalizedRecord, index) => {
       normalizedRecord._original = originalExtracted[index];
