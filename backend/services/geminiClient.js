@@ -17,7 +17,9 @@ if (process.env.GEMINI_API_KEY) {
       model: MODEL_NAME,
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: 8192
+        maxOutputTokens: 16384,
+        topP: 0.95,
+        topK: 40
       }
     });
     logger.info(`✅ Gemini initialized with model: ${MODEL_NAME}`);
@@ -99,24 +101,33 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
       .map(([key, desc]) => `- ${key}: ${desc}`)
       .join('\n');
     
-    const prompt = `Extract data from this screenshot into JSON.
+    const prompt = `Extract structured data from this screenshot.
 
-Fields to extract:
+**FIELDS TO EXTRACT:**
 ${fieldDescriptions}
 
-Rules:
-1. Return JSON array of objects
-2. Each object has keys: ${fields.join(', ')}
-3. Extract ALL visible rows
-4. Use null for missing fields
-5. Return ONLY JSON, no explanation
+**CRITICAL RULES:**
+1. Return ONLY a JSON array of objects
+2. Each object MUST have these exact keys: ${fields.join(', ')}
+3. Extract ALL visible rows/records
+4. For long text (>100 chars), truncate and add "..."
+5. Use null for missing/empty fields
+6. NO markdown formatting (no \`\`\`json)
+7. NO explanations, ONLY the JSON array
+
+**IMPORTANT - Keep responses concise:**
+Limit text fields to 100 characters maximum.
+
+**EXAMPLE OUTPUT:**
+[{"${fields.join('":"value","')}":"value"}]
 
 Extract now:`;
 
     logger.info(`📝 Calling Gemini API...`);
-    logger.info(`   Model: gemini-1.5-flash`);
+    logger.info(`   Model: ${MODEL_NAME}`);
     logger.info(`   Buffer size: ${screenshotBuffer.length} bytes`);
     logger.info(`   Fields: ${Object.keys(fieldSchema).join(', ')}`);
+    logger.info(`   Max tokens: 16384`);
     
     const base64Data = screenshotBuffer.toString('base64');
     logger.info(`   Base64 length: ${base64Data.length} chars`);
@@ -148,7 +159,27 @@ Extract now:`;
     } catch (parseErr) {
       logger.error(`❌ JSON parse failed: ${parseErr.message}`);
       logger.error(`   Response was: "${cleaned.substring(0, 200)}..."`);
-      return [];
+      
+      // Try to fix truncated JSON
+      logger.info(`🔧 Attempting to fix truncated JSON...`);
+      
+      try {
+        const lastCompleteObject = cleaned.lastIndexOf('},');
+        
+        if (lastCompleteObject > 0) {
+          const fixed = cleaned.substring(0, lastCompleteObject + 1) + '\n]';
+          logger.info(`🔧 Parsing ${fixed.length} chars (truncated from ${cleaned.length})`);
+          
+          parsed = JSON.parse(fixed);
+          logger.info(`✅ Recovered ${parsed.length} records from truncated JSON`);
+        } else {
+          logger.error(`❌ No complete JSON objects found`);
+          return [];
+        }
+      } catch (fixErr) {
+        logger.error(`❌ Failed to fix JSON: ${fixErr.message}`);
+        return [];
+      }
     }
     
     if (!Array.isArray(parsed)) {
