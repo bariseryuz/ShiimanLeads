@@ -6,19 +6,6 @@ const logger = require('../utils/logger');
 function createTables(db) {
   logger.info('📊 Creating database tables...');
 
-  // Seen tracking table (deduplication)
-  db.exec(`CREATE TABLE IF NOT EXISTS seen (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    lead_hash TEXT NOT NULL,
-    user_id INTEGER NOT NULL,
-    source_id INTEGER NOT NULL,
-    permit_number TEXT,
-    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-    seen_count INTEGER DEFAULT 1,
-    UNIQUE(lead_hash, user_id)
-  )`);
-
   // Unified leads table
   db.exec(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

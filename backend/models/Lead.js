@@ -1,5 +1,5 @@
 const { dbGet, dbAll, dbRun } = require('../db');
-const { generateLeadHash } = require('../services/leadInsertion');
+// NOTE: generateLeadHash removed - deduplication will be rebuilt from scratch
 const logger = require('../utils/logger');
 
 /**
