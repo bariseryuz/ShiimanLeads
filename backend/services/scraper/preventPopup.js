@@ -19,56 +19,66 @@ const logger = require('../../utils/logger');
 async function setupPopupBlocking(page) {
   logger.info(`🛡️ Setting up pop-up blocking...`);
   
+  // Domains known for pop-ups, tracking, and chat widgets
+  // IMPORTANT: Define outside try-catch so it's accessible in route callback
+  const blockedDomains = [
+    // Chat widgets
+    'intercom.io',
+    'intercom.com',
+    'drift.com',
+    'drift.net',
+    'hubspot.com',
+    'livechatinc.com',
+    'tawk.to',
+    'zendesk.com',
+    'crisp.chat',
+    
+    // Analytics & tracking (often trigger pop-ups)
+    'google-analytics.com',
+    'googletagmanager.com',
+    'facebook.com',
+    'facebook.net',
+    'doubleclick.net',
+    'hotjar.com',
+    'mouseflow.com',
+    'segment.com',
+    'segment.io',
+    
+    // Cookie consent platforms
+    'cookiebot.com',
+    'onetrust.com',
+    'trustarc.com',
+    'quantcast.com',
+    'cookiepro.com',
+    'cookielaw.org',
+    
+    // Ad networks (often show modals)
+    'googlesyndication.com',
+    'adservice.google.com',
+    'advertising.com'
+  ];
+  
   try {
     await page.route('**/*', (route) => {
-      const request = route.request();
-      const url = request.url();
-      const resourceType = request.resourceType();
-      
-      // Domains known for pop-ups, tracking, and chat widgets
-      const blockedDomains = [
-        // Chat widgets
-        'intercom.io',
-        'intercom.com',
-        'drift.com',
-        'drift.net',
-        'hubspot.com',
-        'livechatinc.com',
-        'tawk.to',
-        'zendesk.com',
-        'crisp.chat',
+      try {
+        const request = route.request();
+        const url = request.url();
+        const resourceType = request.resourceType();
         
-        // Analytics & tracking (often trigger pop-ups)
-        'google-analytics.com',
-        'googletagmanager.com',
-        'facebook.com',
-        'facebook.net',
-        'doubleclick.net',
-        'hotjar.com',
-        'mouseflow.com',
-        'segment.com',
-        'segment.io',
+        const shouldBlock = blockedDomains.some(domain => url.includes(domain));
         
-        // Cookie consent platforms
-        'cookiebot.com',
-        'onetrust.com',
-        'trustarc.com',
-        'quantcast.com',
-        'cookiepro.com',
-        'cookielaw.org',
-        
-        // Ad networks (often show modals)
-        'googlesyndication.com',
-        'adservice.google.com',
-        'advertising.com'
-      ];
-      
-      const shouldBlock = blockedDomains.some(domain => url.includes(domain));
-      
-      if (shouldBlock) {
-        route.abort();
-      } else {
-        route.continue();
+        if (shouldBlock) {
+          route.abort();
+        } else {
+          route.continue();
+        }
+      } catch (routeErr) {
+        logger.debug(`⚠️ Route handler error: ${routeErr.message}`);
+        try {
+          route.continue();
+        } catch (continueErr) {
+          logger.debug(`Could not continue route`);
+        }
       }
     });
     
