@@ -519,7 +519,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       }
       
       // Axios scraping for APIs and static sites (skip if AI extraction already handled it)
-      if (!aiExtractionUsed && !usedPlaywright && !data) {
+      // Also skip if forcePlaywrightOnly is enabled (Playwright-only mode)
+      if (!aiExtractionUsed && !usedPlaywright && !data && !source.forcePlaywrightOnly) {
         try {
           const response = await axios.get(source.url, {
             timeout: 30000,
@@ -531,6 +532,12 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           logger.error(`Axios failed for ${source.name}: ${err.message}`);
           continue;
         }
+      }
+      
+      // If forcePlaywrightOnly but no data yet, log warning
+      if (source.forcePlaywrightOnly && !data && !usedPlaywright) {
+        logger.warn(`⚠️ Source ${source.name} has forcePlaywrightOnly enabled but Playwright didn't produce data. Skipping.`);
+        continue;
       }
       
       // Process JSON APIs

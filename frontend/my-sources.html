@@ -875,6 +875,14 @@
         </div>
         
         <div class="form-group">
+          <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem;">
+            <input type="checkbox" id="forcePlaywrightOnly" checked style="width: auto; cursor: pointer;">
+            <span>🎭 Force Playwright Only</span>
+          </label>
+          <small style="color: var(--gray-600);">Prevent fallback to other methods. Always use Playwright browser automation.</small>
+        </div>
+        
+        <div class="form-group">
           <label class="form-label" for="includeKeywords">Include Keywords (comma-separated)</label>
           <input type="text" id="includeKeywords" class="form-input" placeholder="e.g., commercial, construction">
         </div>
@@ -1525,6 +1533,10 @@
       document.getElementById('useProxy').checked = true;
       console.log('🌐 Proxy checkbox initialized to: true (default)');
       
+      // Set forcePlaywrightOnly to enabled by default
+      document.getElementById('forcePlaywrightOnly').checked = true;
+      console.log('🎭 Force Playwright Only checkbox initialized to: true (default)');
+      
       document.getElementById('sourceModal').classList.add('show');
     }
 
@@ -1607,6 +1619,11 @@
         const useProxyValue = source.data.useProxy !== false;
         document.getElementById('useProxy').checked = useProxyValue;
         console.log('📖 Loaded source proxy setting:', source.data.useProxy, 'setting checkbox to:', useProxyValue);
+        
+        // Set forcePlaywrightOnly checkbox (default to true if not specified)
+        const forcePlaywrightOnlyValue = source.data.forcePlaywrightOnly !== false;
+        document.getElementById('forcePlaywrightOnly').checked = forcePlaywrightOnlyValue;
+        console.log('📖 Loaded source forcePlaywrightOnly setting:', source.data.forcePlaywrightOnly, 'setting checkbox to:', forcePlaywrightOnlyValue);
         
         document.getElementById('sourceModal').classList.add('show');
       } catch (error) {
@@ -1866,6 +1883,7 @@
       sourceData.useAI = true;
       sourceData.usePlaywright = true;
       sourceData.method = 'playwright';
+      sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
       sourceData.extractTable = false;
       
       // Add AI prompt - the main feature!
