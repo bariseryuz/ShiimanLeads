@@ -49,6 +49,7 @@ const {
 } = require('./services/scraper/helpers');
 const { validateExtractedFields } = require('./services/scraper/validation');
 const { setupPopupBlocking, preventAllPopups } = require('./services/scraper/preventPopup');
+const { mergeLimits, logLimits, isPageLimitReached, isRowLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
 
 // Proxy Configuration
@@ -91,8 +92,12 @@ if (process.env.GEMINI_API_KEY) {
 /**
  * Main scraping function - restored from old index.js but simplified
  * to work with refactored codebase helper modules.
+ * 
+ * @param {number} userId - User ID
+ * @param {Array} userSources - Sources to scrape
+ * @param {Object} extractionLimits - Optional extraction limits override
  */
-async function scrapeForUser(userId, userSources) {
+async function scrapeForUser(userId, userSources, extractionLimits) {
   logger.info(`Starting scrape cycle for user ${userId}...`);
   
   // Initialize progress tracking
@@ -119,6 +124,12 @@ async function scrapeForUser(userId, userSources) {
       });
       break;
     }
+    
+    // Apply extraction limits for this source
+    // Merges source-level limits with per-scrape overrides
+    const sourceLimits = source.extractionLimits || {};
+    const limits = mergeLimits(sourceLimits, extractionLimits);
+    logLimits(limits, source.name);
     
     // Update progress: starting new source
     updateProgress(userId, { currentSource: source.name });
@@ -206,10 +217,10 @@ async function scrapeForUser(userId, userSources) {
             
             let pageNumber = 1;
             let hasMorePages = true;
-            const maxPages = source.maxPages || 10; // Configurable max pages
+            let totalRowsExtracted = 0;
             
-            while (hasMorePages && pageNumber <= maxPages) {
-              logger.info(`📄 Processing page ${pageNumber}/${maxPages}...`);
+            while (hasMorePages && !isPageLimitReached(pageNumber, limits)) {
+              logger.info(`📄 Processing page ${pageNumber}/${limits.maxPages}...`);
               
               // === CAPTURE FULL-PAGE SCREENSHOT (handles scrolling internally) ===
               logger.info(`📸 Capturing full-page screenshot (page ${pageNumber})...`);
@@ -266,7 +277,22 @@ async function scrapeForUser(userId, userSources) {
                   logger.info(`🔍 First lead sample: ${JSON.stringify(aiLeads[0])}`);
                 }
                 
+                // Track rows extracted and apply limits
+                let rowsThisPage = 0;
                 for (const lead of aiLeads) {
+                  // Check per-page row limit
+                  if (isRowLimitReached(rowsThisPage, limits)) {
+                    logger.info(`⚠️ Per-page limit reached: stopping at ${rowsThisPage} rows`);
+                    break;
+                  }
+                  
+                  // Check total row limit
+                  if (isTotalRowLimitReached(totalRowsExtracted, limits)) {
+                    logger.info(`⚠️ Total row limit reached: stopping at ${totalRowsExtracted} rows`);
+                    hasMorePages = false;
+                    break;
+                  }
+                  
                   if (await insertLeadIfNew({
                     raw: JSON.stringify(lead),
                     sourceName: source.name,
@@ -277,11 +303,22 @@ async function scrapeForUser(userId, userSources) {
                     sourceUrl: source.url
                   })) {
                     newLeads++;
+                    rowsThisPage++;
+                    totalRowsExtracted++;
+                    logger.debug(`Row ${totalRowsExtracted}: inserted`);
                   }
                 }
+                
+                logger.info(`✅ Page ${pageNumber}: ${rowsThisPage} rows extracted (total: ${totalRowsExtracted})`);
               } else {
                 logger.warn(`⚠️ No leads extracted from page ${pageNumber}`);
                 logger.warn(`⚠️ AI returned: ${JSON.stringify(aiLeads)}`);
+              }
+              
+              // Check if we hit total row limit
+              if (isTotalRowLimitReached(totalRowsExtracted, limits)) {
+                logger.info(`📊 Total row limit reached (${totalRowsExtracted}). Stopping pagination.`);
+                break;
               }
               
               // === CHECK FOR NEXT PAGE ===

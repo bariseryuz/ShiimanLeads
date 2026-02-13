@@ -14,11 +14,25 @@ const {
 /**
  * POST /api/scrape/now
  * Trigger manual scraping for all user sources
+ * 
+ * Request body can include:
+ * {
+ *   userId: number,
+ *   extractionLimits: {
+ *     maxPages: number,           // Max pages to scrape
+ *     maxRowsPerPage: number,     // Max rows per page
+ *     maxTotalRows: number,       // Max rows total
+ *     testMode: boolean           // Test mode: 1 page, 10 rows
+ *   }
+ * }
  */
 router.post('/now', async (req, res) => {
   try {
     // Accept userId from request body (from server.js) or session
     const userId = req.body.userId || req.session?.user?.id || 1;
+    
+    // Get extraction limits from request (optional)
+    const extractionLimits = req.body.extractionLimits || {};
     
     // Get user's sources WITH their IDs
     const sourceRows = await dbAll('SELECT id, source_data FROM user_sources WHERE user_id = ?', [userId]);
@@ -56,9 +70,12 @@ router.post('/now', async (req, res) => {
     }
     
     logger.info(`Manual scrape triggered by user ${userId} for ${userSources.length} sources`);
+    if (Object.keys(extractionLimits).length > 0) {
+      logger.info(`Extraction limits: ${JSON.stringify(extractionLimits)}`);
+    }
     
     // Scrape in background and respond immediately
-    scrapeForUser(userId, userSources).then((newLeads) => {
+    scrapeForUser(userId, userSources, extractionLimits).then((newLeads) => {
       logger.info(`Manual scrape completed for user ${userId}: ${newLeads} new leads`);
     }).catch((err) => {
       logger.error(`Manual scrape error for user ${userId}: ${err.message}`);
@@ -66,7 +83,7 @@ router.post('/now', async (req, res) => {
     
     res.json({ 
       success: true, 
-      message: `Scraping started for ${userSources.length} source(s). Check back in a few moments.`,
+      message: `Scraping started for ${userSources.length} source(s) with limits: ${JSON.stringify(extractionLimits || {})}.`,
       sourcesCount: userSources.length
     });
   } catch (e) {
