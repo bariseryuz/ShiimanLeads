@@ -335,14 +335,20 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         
         logger.info(`📝 Inserting lead with ${columns.length} fields: ${columns.slice(0, 5).join(', ')}...`);
         
-        // Log which custom fields are being inserted
+        // Log which custom fields are being inserted with their values
         const customFields = columns.filter(c => !['user_id', 'source_id', 'hash', 'primary_id', 'title', 'data', 'permit_number', 'status', 'raw_text', 'date_added', 'is_new'].includes(c));
         if (customFields.length > 0) {
-          logger.debug(`   Custom fields: ${customFields.join(', ')}`);
+          logger.info(`   ℹ️ Custom fields in this lead:`);
           customFields.forEach(field => {
-            logger.debug(`     - ${field}: ${values.get(field) ? String(values.get(field)).substring(0, 30) : '[empty]'}`);
+            const val = values.get(field);
+            const display = val ? String(val).substring(0, 40) : '[EMPTY - NOT SET]';
+            logger.info(`      - ${field}: ${display}`);
           });
         }
+        
+        // Also log what's in extractedData that didn't make it to columns
+        logger.debug(`   📋 Full extractedData going into lead:`);
+        logger.debug(JSON.stringify(leadData, null, 2));
         
         const insertResult = db.prepare(insertSQL).run(...values);
         

@@ -110,6 +110,12 @@ function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedDat
     const placeholders = Object.keys(values).map(() => '?').join(', ');
     const insertSQL = `INSERT INTO ${tableName} (${columnNames}) VALUES (${placeholders})`;
     
+    logger.debug(`📋 Inserting into ${tableName}:`);
+    Object.entries(values).forEach(([col, val]) => {
+      const display = val ? String(val).substring(0, 40) : '[EMPTY]';
+      logger.debug(`   - ${col}: ${display}`);
+    });
+    
     const result = db.prepare(insertSQL).run(...Object.values(values));
     
     if (result.changes > 0) {

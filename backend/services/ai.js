@@ -322,6 +322,31 @@ ${truncatedText}`;
     
     logger.info(`✅ Successfully extracted ${extracted.length} record(s) from AI`);
     
+    // Log field stats AFTER normalization
+    if (extracted.length > 0) {
+      const normalizedStats = {};
+      extracted.forEach(record => {
+        Object.keys(record).forEach(field => {
+          if (!normalizedStats[field]) normalizedStats[field] = { populated: 0, empty: 0 };
+          if (record[field] && record[field] !== '' && record[field] !== 'N/A') {
+            normalizedStats[field].populated++;
+          } else {
+            normalizedStats[field].empty++;
+          }
+        });
+      });
+      
+      logger.info(`📊 Field statistics (AFTER normalization):`);
+      Object.entries(normalizedStats).forEach(([field, stats]) => {
+        const populationRate = Math.round((stats.populated / extracted.length) * 100);
+        logger.info(`   ${field}: ${populationRate}% filled (${stats.populated}/${extracted.length})`);
+      });
+      
+      // Log first record after normalization
+      logger.info(`🔍 FIRST EXTRACTED RECORD (after normalization):`);
+      logger.info(JSON.stringify(extracted[0], null, 2));
+    }
+    
     // Log field population stats
     if (extracted.length > 0) {
       const fieldStats = {};
@@ -336,11 +361,15 @@ ${truncatedText}`;
         });
       });
       
-      logger.info(`📊 Field population statistics:`);
+      logger.info(`📊 Field extraction statistics (before normalization):`);
       Object.entries(fieldStats).forEach(([field, stats]) => {
         const populationRate = Math.round((stats.populated / extracted.length) * 100);
         logger.info(`   ${field}: ${populationRate}% filled (${stats.populated}/${extracted.length})`);
       });
+      
+      // Log first extracted record raw
+      logger.info(`🔍 FIRST EXTRACTED RECORD (before normalization):`);
+      logger.info(JSON.stringify(extracted[0], null, 2));
     }
     
     // Attach original data to each normalized record for source table insertion
