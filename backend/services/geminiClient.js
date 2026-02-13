@@ -69,7 +69,13 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
     
     // Handle tiles or single screenshot
     let screenshotBuffer;
-    if (Array.isArray(screenshot)) {
+    
+    // Check if this is a tiled screenshot object {composite, tiles, tileRows, ...}
+    if (screenshot && typeof screenshot === 'object' && screenshot.composite && screenshot.tiles && Array.isArray(screenshot.tiles)) {
+      logger.info(`📦 Input is tiled screenshot object`);
+      // Use the composite image
+      screenshotBuffer = screenshot.composite;
+    } else if (Array.isArray(screenshot)) {
       logger.info(`📸 Using first of ${screenshot.length} tiles`);
       screenshotBuffer = screenshot[0].screenshot || screenshot[0];
     } else {
@@ -81,7 +87,7 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
       logger.warn(`⚠️ Screenshot is not a Buffer, attempting conversion...`);
       logger.warn(`   Type: ${typeof screenshotBuffer}`);
       logger.warn(`   Constructor: ${screenshotBuffer?.constructor?.name}`);
-      logger.warn(`   Keys: ${typeof screenshotBuffer === 'object' ? Object.keys(screenshotBuffer).slice(0, 5) : 'N/A'}`);
+      logger.warn(`   Keys: ${typeof screenshotBuffer === 'object' ? Object.keys(screenshotBuffer).slice(0, 5).join(',') : 'N/A'}`);
       
       if (screenshotBuffer && typeof screenshotBuffer === 'object' && screenshotBuffer.type === 'Buffer' && Array.isArray(screenshotBuffer.data)) {
         logger.info(`   ✓ Converting from serialized Buffer object`);
