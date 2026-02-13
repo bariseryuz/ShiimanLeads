@@ -1,3 +1,4 @@
+const sharp = require('sharp');
 const logger = require('../../utils/logger');
 
 /**
@@ -325,10 +326,37 @@ async function captureTiledScreenshots(page, options = {}) {
   const totalBytes = tiles.reduce((sum, t) => sum + t.buffer.length, 0);
   logger.info(`🧩 Tiled screenshots captured: ${tiles.length} tile(s), ${Math.round(totalBytes / 1024)}KB total`);
 
+  let compositeBuffer = null;
+  try {
+    const composite = tiles.map(tile => ({
+      input: tile.buffer,
+      left: Math.max(0, Math.floor(tile.clip.x)),
+      top: Math.max(0, Math.floor(tile.clip.y))
+    }));
+
+    compositeBuffer = await sharp({
+      create: {
+        width: viewportWidth,
+        height: viewportHeight,
+        channels: 3,
+        background: '#ffffff'
+      }
+    })
+      .composite(composite)
+      .png()
+      .toBuffer();
+
+    logger.info(`🧩 Composite image created: ${Math.round(compositeBuffer.length / 1024)}KB`);
+  } catch (stitchErr) {
+    logger.warn(`⚠️ Failed to stitch tiles into composite: ${stitchErr.message}`);
+  }
+
   return {
     tiles,
     tileRows: rows,
     tileCols: cols,
+    overlapPct: overlap,
+    compositeBuffer,
     viewportWidth,
     viewportHeight
   };

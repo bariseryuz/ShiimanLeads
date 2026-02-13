@@ -246,7 +246,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               });
 
               const tiles = Array.isArray(screenshotData?.tiles) ? screenshotData.tiles : null;
-              const screenshot = tiles && tiles.length > 0 ? tiles[0].buffer : screenshotData;
+              const composite = screenshotData?.compositeBuffer || null;
+              const screenshot = composite || (tiles && tiles.length > 0 ? tiles[0].buffer : screenshotData);
               
               // Save screenshot for debugging
               try {
@@ -262,6 +263,12 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 if (!screenshot || screenshot.length === 0) {
                   logger.error(`❌ Screenshot buffer is empty or null`);
                 } else {
+                  if (composite) {
+                    fs.writeFileSync(screenshotPath, composite);
+                    logger.info(`💾 Composite screenshot saved: ${screenshotPath}`);
+                    logger.info(`📊 Composite size: ${Math.round(composite.length / 1024)}KB`);
+                  }
+
                   if (tiles && tiles.length > 0) {
                     tiles.forEach((tile, idx) => {
                       const tilePath = screenshotPath.replace('.png', `-tile${idx + 1}.png`);
@@ -269,7 +276,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                     });
                     const totalTileBytes = tiles.reduce((sum, t) => sum + t.buffer.length, 0);
                     logger.info(`💾 ${tiles.length} tiles saved (total: ${Math.round(totalTileBytes / 1024)}KB)`);
-                  } else {
+                  } else if (!composite) {
                     fs.writeFileSync(screenshotPath, screenshot);
                     logger.info(`💾 Screenshot saved: ${screenshotPath}`);
                     logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
@@ -282,6 +289,9 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               
               // === EXTRACT WITH AI ===
               logger.info(`🤖 Extracting leads from page ${pageNumber} with AI...`);
+              if (composite) {
+                logger.info(`📊 Composite size: ${Math.round(composite.length / 1024)}KB`);
+              }
               if (tiles && tiles.length > 0) {
                 const totalTileBytes = tiles.reduce((sum, t) => sum + t.buffer.length, 0);
                 logger.info(`📊 Screenshot tiles: ${tiles.length} (${Math.round(totalTileBytes / 1024)}KB total)`);
@@ -290,7 +300,15 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               }
               logger.info(`🔍 Field schema: ${source.fieldSchema ? Object.keys(source.fieldSchema).join(', ') : 'default'}`);
 
-              const aiInput = tiles && tiles.length > 0 ? tiles.map(tile => tile.buffer) : screenshot;
+              const aiInput = tiles && tiles.length > 0
+                ? {
+                    composite: composite || null,
+                    tiles: tiles.map(tile => tile.buffer),
+                    tileRows: screenshotData.tileRows,
+                    tileCols: screenshotData.tileCols,
+                    overlapPct: screenshotData.overlapPct
+                  }
+                : screenshot;
               const aiLeads = await extractLeadWithAI(aiInput, source.name, source.fieldSchema);
               
               if (aiLeads && Array.isArray(aiLeads)) {

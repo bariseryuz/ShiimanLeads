@@ -5,10 +5,9 @@ const logger = require('../utils/logger');
 let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  // Using gemini-2.0-flash-exp - latest model with excellent vision capabilities
-  // Alternative stable: gemini-1.5-flash
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-  logger.info('✅ Google Gemini AI initialized (gemini-2.0-flash-exp - latest vision model)');
+  // Using gemini-3-flash per user request
+  geminiModel = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
+  logger.info('✅ Google Gemini AI initialized (gemini-3-flash)');
 } else {
   logger.warn('⚠️ GEMINI_API_KEY not found - AI extraction disabled');
 }
@@ -35,7 +34,7 @@ function buildGenConfig() {
 
 /**
  * Extract lead data from screenshot or text using Google Gemini AI
- * @param {Buffer|string|Array<Buffer>} input - Screenshot buffer(s) or text
+ * @param {Buffer|string|Array<Buffer>|Object} input - Screenshot buffer(s), tiles object, or text
  * @param {string} sourceName - Source name for context
  * @param {object} fieldSchema - Field schema from source configuration
  * @param {boolean} isRetry - Whether this is a retry attempt
@@ -49,7 +48,8 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
   }
 
   try {
-    const isScreenshotArray = Array.isArray(input);
+    const isTileObject = input && typeof input === 'object' && Array.isArray(input.tiles);
+    const isScreenshotArray = Array.isArray(input) || isTileObject;
     const isScreenshot = isScreenshotArray || Buffer.isBuffer(input) || (typeof input === 'object' && input.inlineData);
     logger.info(`🤖 AI extraction mode: ${isScreenshot ? 'VISION (screenshot)' : 'TEXT'}`);
     let prompt = '';
@@ -120,8 +120,16 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
         return `🔍 Any column matching "${fieldName.replace(/_/g, ' ')}" → use "${fieldName}"`;
       }).join('\n');
       
+      const tileRows = isTileObject ? input.tileRows : null;
+      const tileCols = isTileObject ? input.tileCols : null;
+      const overlapPct = isTileObject ? input.overlapPct : null;
+      const hasComposite = isTileObject && !!input.composite;
+      const tileInfo = isTileObject
+        ? `\n🧩 TILE MOSAIC INPUT:\n- You will receive ${input.tiles.length} tiles in row-major order (left-to-right, top-to-bottom).\n- Grid: ${tileRows || '?'} rows x ${tileCols || '?'} cols.\n- Overlap: ${overlapPct !== null ? Math.round(overlapPct * 100) : 0}% (duplicate edges).\n- Mentally stitch tiles into ONE big table before extracting rows.\n- Ignore duplicate text in overlap areas.\n${hasComposite ? '- You will also receive a stitched composite image. Use it for overall layout, and tiles for clarity.' : ''}\n`
+        : '';
+
       // Vision-based extraction
-      prompt = `You are looking at a screenshot of a DATA TABLE with multiple rows and columns.
+      prompt = `You are looking at a screenshot of a DATA TABLE with multiple rows and columns.${tileInfo}
 
 🎯 YOUR TASK: Extract EVERY SINGLE ROW of data from this table (minimum 5-20 rows expected)
 
@@ -225,9 +233,11 @@ ${isRetry ? '\n⚠️⚠️⚠️ RETRY ATTEMPT: Your previous response only ret
 
       let imageParts = [];
       if (isScreenshotArray) {
-        const totalBytes = input.reduce((sum, item) => sum + (Buffer.isBuffer(item) ? item.length : 0), 0);
-        logger.info(`✅ Input is tile array, converting to Base64 (${input.length} tile(s), ${totalBytes} bytes)`);
-        imageParts = input.map(buildImagePart);
+        const tilesArray = isTileObject ? input.tiles : input;
+        const compositePart = isTileObject && input.composite ? [buildImagePart(input.composite)] : [];
+        const totalBytes = tilesArray.reduce((sum, item) => sum + (Buffer.isBuffer(item) ? item.length : 0), 0);
+        logger.info(`✅ Input is tile array, converting to Base64 (${tilesArray.length} tile(s), ${totalBytes} bytes)`);
+        imageParts = [...compositePart, ...tilesArray.map(buildImagePart)];
       } else {
         const sizeBytes = Buffer.isBuffer(input)
           ? input.length
