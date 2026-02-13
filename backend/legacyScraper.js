@@ -707,7 +707,6 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
 
 module.exports = {
   scrapeForUser,
-  geminiModel,
   PROXY_ENABLED,
   PROXY_URL,
   proxyAgent,
