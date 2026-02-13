@@ -1,12 +1,11 @@
 /**
- * BULLETPROOF DEDUPLICATION SYSTEM
+ * UNIVERSAL DEDUPLICATION SYSTEM
+ * Works with ANY field schema - no hardcoded field names
  * 
- * Designed for zero-error tolerance with:
- * - Complete null/undefined checks
- * - Try-catch on every operation
- * - Fallback strategies
- * - Detailed error logging
- * - Safe type coercion
+ * Strategy:
+ * 1. Auto-detect "important" fields (non-empty, unique-looking)
+ * 2. Create fingerprint from field values
+ * 3. Use content hash as fallback
  */
 
 const crypto = require('crypto');
@@ -14,8 +13,6 @@ const logger = require('../utils/logger');
 
 /**
  * Safely convert any value to string
- * @param {*} value - Any value
- * @returns {string} String representation, never null/undefined
  */
 function safeString(value) {
   try {
@@ -26,230 +23,170 @@ function safeString(value) {
     if (typeof value === 'object') return JSON.stringify(value);
     return String(value);
   } catch (err) {
-    logger.warn(`⚠️ safeString failed for value: ${typeof value}, returning empty string`);
     return '';
-  }
-}
-
-/**
- * Normalize address with complete error handling
- * @param {*} address - Any address value
- * @returns {string} Normalized address, never fails
- */
-function normalizeAddress(address) {
-  try {
-    const addr = safeString(address);
-    
-    if (!addr || addr.length === 0) return '';
-    
-    return addr
-      .toLowerCase()
-      .trim()
-      .replace(/[.,#\-_]/g, ' ')
-      .replace(/\bstreet\b/gi, 'st')
-      .replace(/\bstrt\b/gi, 'st')
-      .replace(/\bavenue\b/gi, 'ave')
-      .replace(/\bav\b/gi, 'ave')
-      .replace(/\broad\b/gi, 'rd')
-      .replace(/\bboulevard\b/gi, 'blvd')
-      .replace(/\bblvd\b/gi, 'blvd')
-      .replace(/\bdrive\b/gi, 'dr')
-      .replace(/\blane\b/gi, 'ln')
-      .replace(/\bcourt\b/gi, 'ct')
-      .replace(/\bcircle\b/gi, 'cir')
-      .replace(/\bplace\b/gi, 'pl')
-      .replace(/\bapartment\b/gi, 'apt')
-      .replace(/\bsuite\b/gi, 'ste')
-      .replace(/\s+/g, ' ')
-      .trim();
-      
-  } catch (err) {
-    logger.error(`❌ normalizeAddress failed: ${err.message}`);
-    return '';
-  }
-}
-
-/**
- * Extract permit number from lead with ALL possible field names
- * @param {Object} lead - Lead object
- * @returns {string|null} Permit number or null
- */
-function extractPermitNumber(lead) {
-  try {
-    if (!lead || typeof lead !== 'object') return null;
-    
-    const possibleFields = [
-      'permit_number',
-      'permitNumber',
-      'permit',
-      'Permit__',
-      'PermitNumber',
-      'PERMIT_NUMBER',
-      'process_number',
-      'processNumber',
-      'ProcessNumber',
-      'master_permit_number',
-      'masterPermitNumber',
-      'MasterPermitNumber',
-      'permit_id',
-      'permitId',
-      'PermitID',
-      'application_number',
-      'applicationNumber',
-      'ApplicationNumber',
-      'folio',
-      'Folio',
-      'FOLIO'
-    ];
-    
-    for (const field of possibleFields) {
-      const value = lead[field];
-      if (value !== null && value !== undefined && value !== '') {
-        const str = safeString(value).trim();
-        if (str.length > 0) {
-          return str;
-        }
-      }
-    }
-    
-    return null;
-    
-  } catch (err) {
-    logger.error(`❌ extractPermitNumber failed: ${err.message}`);
-    return null;
-  }
-}
-
-/**
- * Extract address from lead with ALL possible field names
- * @param {Object} lead - Lead object
- * @returns {string|null} Address or null
- */
-function extractAddress(lead) {
-  try {
-    if (!lead || typeof lead !== 'object') return null;
-    
-    const possibleFields = [
-      'address',
-      'Address',
-      'ADDRESS',
-      'street_address',
-      'streetAddress',
-      'StreetAddress',
-      'location',
-      'Location',
-      'site_address',
-      'siteAddress',
-      'SiteAddress',
-      'property_address',
-      'propertyAddress',
-      'PropertyAddress'
-    ];
-    
-    for (const field of possibleFields) {
-      const value = lead[field];
-      if (value !== null && value !== undefined && value !== '') {
-        const str = safeString(value).trim();
-        if (str.length > 5) {
-          return str;
-        }
-      }
-    }
-    
-    return null;
-    
-  } catch (err) {
-    logger.error(`❌ extractAddress failed: ${err.message}`);
-    return null;
   }
 }
 
 /**
  * Generate MD5 hash safely
- * @param {string} input - Input string
- * @returns {string} MD5 hash or empty string on error
  */
 function safeHash(input) {
   try {
     if (!input || typeof input !== 'string') return '';
-    
     return crypto
       .createHash('md5')
       .update(input.toLowerCase().trim())
       .digest('hex')
-      .substring(0, 12);
-      
+      .substring(0, 16);
   } catch (err) {
-    logger.error(`❌ safeHash failed: ${err.message}`);
     return '';
   }
 }
 
 /**
- * Generate unique ID with multiple fallback strategies
- * GUARANTEED to never throw an error
- * 
- * @param {Object} lead - Lead object
- * @param {string} strategy - 'permit', 'address', 'hash', 'combined'
- * @returns {string|null} Unique ID or null if impossible to generate
+ * Normalize a string for comparison (remove punctuation, lowercase, trim)
  */
-function generateUniqueId(lead, strategy = 'permit') {
+function normalizeString(str) {
   try {
-    if (!lead || typeof lead !== 'object') {
-      logger.warn(`⚠️ generateUniqueId: Invalid lead object`);
+    const s = safeString(str);
+    if (!s || s.length === 0) return '';
+    
+    return s
+      .toLowerCase()
+      .trim()
+      .replace(/[.,#\-_:;]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  } catch (err) {
+    return '';
+  }
+}
+
+/**
+ * Detect if a field name suggests it's a unique identifier
+ * @param {string} fieldName - Field name to check
+ * @returns {number} Score (higher = more likely to be unique ID)
+ */
+function getFieldImportanceScore(fieldName) {
+  if (!fieldName) return 0;
+  
+  const name = fieldName.toLowerCase();
+  
+  // Primary identifiers (highest priority)
+  const primaryKeywords = ['id', 'number', 'permit', 'code', 'reference', 'folio'];
+  for (const keyword of primaryKeywords) {
+    if (name.includes(keyword)) return 100;
+  }
+  
+  // Unique identifiers (high priority)
+  const uniqueKeywords = ['name', 'title', 'university', 'school', 'company', 'address', 'email'];
+  for (const keyword of uniqueKeywords) {
+    if (name.includes(keyword)) return 80;
+  }
+  
+  // Supporting fields (medium priority)
+  const supportKeywords = ['date', 'value', 'amount', 'price', 'fee', 'location', 'state', 'city'];
+  for (const keyword of supportKeywords) {
+    if (name.includes(keyword)) return 50;
+  }
+  
+  // Generic fields (low priority)
+  const genericKeywords = ['description', 'notes', 'comments', 'type', 'status'];
+  for (const keyword of genericKeywords) {
+    if (name.includes(keyword)) return 20;
+  }
+  
+  // Unknown field
+  return 10;
+}
+
+/**
+ * Extract the most important fields from a lead object
+ * @param {Object} lead - Lead object with any fields
+ * @returns {Array} Sorted array of {field, value, score}
+ */
+function extractImportantFields(lead) {
+  try {
+    if (!lead || typeof lead !== 'object') return [];
+    
+    const fields = [];
+    
+    for (const [fieldName, value] of Object.entries(lead)) {
+      // Skip internal/metadata fields
+      if (fieldName.startsWith('_')) continue;
+      
+      const strValue = safeString(value).trim();
+      
+      // Skip empty or very short values
+      if (!strValue || strValue.length < 2) continue;
+      
+      // Skip if value looks like JSON
+      if (strValue.startsWith('{') || strValue.startsWith('[')) continue;
+      
+      const score = getFieldImportanceScore(fieldName);
+      
+      fields.push({
+        field: fieldName,
+        value: strValue,
+        normalized: normalizeString(strValue),
+        score: score
+      });
+    }
+    
+    // Sort by score (highest first)
+    fields.sort((a, b) => b.score - a.score);
+    
+    return fields;
+    
+  } catch (err) {
+    logger.error(`❌ extractImportantFields failed: ${err.message}`);
+    return [];
+  }
+}
+
+
+/**
+ * Generate unique ID using universal strategy
+ * @param {Object} lead - Lead object with any schema
+ * @param {string} strategy - 'smart', 'hash', 'combined'
+ * @returns {string|null} Unique ID or null
+ */
+function generateUniqueId(lead, strategy = 'smart') {
+  try {
+    if (!lead || typeof lead !== 'object') return null;
+    
+    const importantFields = extractImportantFields(lead);
+    
+    if (importantFields.length === 0) {
+      logger.warn(`⚠️ No valid fields found in lead`);
       return null;
     }
     
     switch (strategy) {
-      case 'permit': {
-        const permit = extractPermitNumber(lead);
-        if (permit) {
-          logger.debug(`🔑 Generated permit ID: ${permit}`);
-          return permit;
+      case 'smart': {
+        // Use the single most important field
+        const primary = importantFields[0];
+        
+        if (primary && primary.score >= 80) {
+          // High-confidence unique identifier
+          const id = primary.normalized.substring(0, 100);
+          logger.debug(`🔑 Generated smart ID from '${primary.field}': ${id}`);
+          return id;
         }
-        return null;
-      }
-      
-      case 'address': {
-        const address = extractAddress(lead);
-        if (address) {
-          const normalized = normalizeAddress(address);
-          if (normalized && normalized.length >= 10) {
-            const id = `ADDR_${safeHash(normalized)}`;
-            logger.debug(`🔑 Generated address ID: ${id}`);
-            return id;
-          }
-        }
+        
         return null;
       }
       
       case 'hash': {
-        const parts = [];
+        // Hash of top 3 most important fields
+        const topFields = importantFields.slice(0, 3);
+        const combined = topFields.map(f => f.normalized).join('|');
         
-        const permit = extractPermitNumber(lead);
-        if (permit) parts.push(safeString(permit));
-        
-        const address = extractAddress(lead);
-        if (address) parts.push(normalizeAddress(address));
-        
-        const value = lead.estimated_value || lead.estimatedValue || lead.Value;
-        if (value) {
-          const cleanValue = safeString(value).replace(/[^0-9]/g, '');
-          if (cleanValue) parts.push(cleanValue);
-        }
-        
-        const date = lead.application_date || lead.applicationDate || lead.Date;
-        if (date) {
-          const cleanDate = safeString(date).replace(/[^0-9]/g, '').substring(0, 8);
-          if (cleanDate) parts.push(cleanDate);
-        }
-        
-        if (parts.length > 0) {
-          const combined = parts.join('|');
+        if (combined.length > 0) {
           const hash = safeHash(combined);
           if (hash) {
             const id = `HASH_${hash}`;
-            logger.debug(`🔑 Generated hash ID: ${id}`);
+            logger.debug(`🔑 Generated hash ID from ${topFields.length} fields: ${id}`);
             return id;
           }
         }
@@ -258,27 +195,12 @@ function generateUniqueId(lead, strategy = 'permit') {
       }
       
       case 'combined': {
-        const parts = [];
-        
-        const permit = extractPermitNumber(lead);
-        if (permit) {
-          parts.push(safeString(permit).substring(0, 20));
-        }
-        
-        const address = extractAddress(lead);
-        if (address) {
-          const normalized = normalizeAddress(address);
-          parts.push(normalized.substring(0, 20));
-        }
-        
-        const value = lead.estimated_value || lead.estimatedValue || lead.Value;
-        if (value) {
-          const cleanValue = safeString(value).replace(/[^0-9]/g, '');
-          if (cleanValue) parts.push(cleanValue.substring(0, 10));
-        }
+        // Combine top 2-3 fields
+        const topFields = importantFields.slice(0, 3);
+        const parts = topFields.map(f => f.normalized.substring(0, 20));
         
         if (parts.length >= 2) {
-          const id = parts.join('_').substring(0, 50);
+          const id = parts.join('_').substring(0, 100);
           logger.debug(`🔑 Generated combined ID: ${id}`);
           return id;
         }
@@ -287,27 +209,24 @@ function generateUniqueId(lead, strategy = 'permit') {
       }
       
       default:
-        logger.warn(`⚠️ Unknown strategy: ${strategy}`);
         return null;
     }
     
   } catch (err) {
-    logger.error(`❌ generateUniqueId failed with strategy '${strategy}': ${err.message}`);
-    logger.error(`Stack: ${err.stack}`);
+    logger.error(`❌ generateUniqueId failed: ${err.message}`);
     return null;
   }
 }
 
 /**
- * Generate unique ID with automatic fallback through all strategies
- * GUARANTEED to return a string (never null)
- * 
+ * Generate unique ID with automatic fallback (NEVER returns null)
  * @param {Object} lead - Lead object
- * @returns {string} Unique ID (uses fallback if needed)
+ * @returns {string} Unique ID (guaranteed)
  */
 function generateUniqueIdWithFallback(lead) {
   try {
-    const strategies = ['permit', 'combined', 'hash', 'address'];
+    // Try strategies in order
+    const strategies = ['smart', 'combined', 'hash'];
     
     for (const strategy of strategies) {
       const id = generateUniqueId(lead, strategy);
@@ -316,89 +235,71 @@ function generateUniqueIdWithFallback(lead) {
       }
     }
     
-    logger.warn(`⚠️ All strategies failed, using JSON hash fallback`);
-    const json = safeString(JSON.stringify(lead));
+    // Fallback 1: Hash entire object
+    logger.warn(`⚠️ Standard strategies failed, using full JSON hash`);
+    const json = JSON.stringify(lead);
     const hash = safeHash(json);
     
-    if (hash) {
+    if (hash && hash.length > 0) {
       return `FALLBACK_${hash}`;
     }
     
+    // Fallback 2: Emergency timestamp-based ID
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 8);
-    const id = `UNKNOWN_${timestamp}_${random}`;
+    const emergency = `EMERGENCY_${timestamp}_${random}`;
     
-    logger.warn(`⚠️ Using timestamp fallback: ${id}`);
-    return id;
+    logger.warn(`⚠️ Using emergency timestamp ID: ${emergency}`);
+    return emergency;
     
   } catch (err) {
-    logger.error(`❌ CRITICAL: generateUniqueIdWithFallback failed: ${err.message}`);
-    const emergency = `EMERGENCY_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-    logger.error(`🚨 Using emergency ID: ${emergency}`);
-    return emergency;
+    // This should NEVER happen
+    logger.error(`❌ CRITICAL: All fallbacks failed: ${err.message}`);
+    return `CRITICAL_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   }
 }
 
 /**
- * Check if two leads are duplicates
- * GUARANTEED to never throw an error
- * 
+ * Check if two leads are duplicates (universal comparison)
  * @param {Object} lead1 - First lead
  * @param {Object} lead2 - Second lead
- * @returns {boolean} True if duplicates, false otherwise
+ * @returns {boolean} True if duplicates
  */
 function areDuplicates(lead1, lead2) {
   try {
     if (!lead1 || !lead2) return false;
     if (typeof lead1 !== 'object' || typeof lead2 !== 'object') return false;
     
-    const permit1 = extractPermitNumber(lead1);
-    const permit2 = extractPermitNumber(lead2);
+    // Compare important fields from both leads
+    const fields1 = extractImportantFields(lead1);
+    const fields2 = extractImportantFields(lead2);
     
-    if (permit1 && permit2) {
-      const match = safeString(permit1).toLowerCase() === safeString(permit2).toLowerCase();
-      if (match) {
-        logger.debug(`✓ Duplicate found: Permit match (${permit1})`);
+    if (fields1.length === 0 || fields2.length === 0) return false;
+    
+    // Strategy 1: Check if top field matches (both normalized)
+    if (fields1[0].normalized === fields2[0].normalized && 
+        fields1[0].normalized.length >= 5) {
+      logger.debug(`✓ Duplicate: Top field match (${fields1[0].field})`);
+      return true;
+    }
+    
+    // Strategy 2: Check if top 2 fields match
+    if (fields1.length >= 2 && fields2.length >= 2) {
+      const match1 = fields1[0].normalized === fields2[0].normalized;
+      const match2 = fields1[1].normalized === fields2[1].normalized;
+      
+      if (match1 && match2) {
+        logger.debug(`✓ Duplicate: Top 2 fields match`);
         return true;
       }
     }
     
-    const addr1 = extractAddress(lead1);
-    const addr2 = extractAddress(lead2);
-    
-    if (addr1 && addr2) {
-      const norm1 = normalizeAddress(addr1);
-      const norm2 = normalizeAddress(addr2);
-      
-      if (norm1 && norm2 && norm1.length >= 10 && norm2.length >= 10) {
-        if (norm1 === norm2) {
-          const val1 = safeString(lead1.estimated_value || '').replace(/[^0-9]/g, '');
-          const val2 = safeString(lead2.estimated_value || '').replace(/[^0-9]/g, '');
-          
-          if (val1 && val2 && val1 === val2) {
-            logger.debug(`✓ Duplicate found: Address + Value match`);
-            return true;
-          }
-          
-          if (val1 && val2) {
-            const diff = Math.abs(parseInt(val1) - parseInt(val2));
-            const avg = (parseInt(val1) + parseInt(val2)) / 2;
-            const percentDiff = (diff / avg) * 100;
-            
-            if (percentDiff < 5) {
-              logger.debug(`✓ Duplicate found: Address match with similar values (${percentDiff.toFixed(1)}% diff)`);
-              return true;
-            }
-          }
-        }
-      }
-    }
-    
+    // Strategy 3: Content hash comparison
     const hash1 = generateUniqueId(lead1, 'hash');
     const hash2 = generateUniqueId(lead2, 'hash');
     
     if (hash1 && hash2 && hash1 === hash2) {
-      logger.debug(`✓ Duplicate found: Content hash match`);
+      logger.debug(`✓ Duplicate: Content hash match`);
       return true;
     }
     
@@ -406,15 +307,12 @@ function areDuplicates(lead1, lead2) {
     
   } catch (err) {
     logger.error(`❌ areDuplicates failed: ${err.message}`);
-    logger.error(`Stack: ${err.stack}`);
-    return false;
+    return false; // On error, assume not duplicate (safer)
   }
 }
 
 /**
- * Deduplicate an array of leads
- * GUARANTEED to never throw an error
- * 
+ * Deduplicate an array of leads (universal)
  * @param {Array} leads - Array of lead objects
  * @returns {Object} { unique: Array, duplicates: Array, stats: Object }
  */
@@ -437,12 +335,11 @@ function deduplicateBatch(leads) {
     }
     
     if (leads.length === 0) {
-      logger.info(`ℹ️ deduplicateBatch: Empty array, nothing to deduplicate`);
       return result;
     }
     
     result.stats.total = leads.length;
-    logger.info(`🔍 Deduplicating batch of ${leads.length} leads...`);
+    logger.info(`🔍 Deduplicating ${leads.length} leads (universal mode)...`);
     
     const seenIds = new Set();
     
@@ -456,10 +353,12 @@ function deduplicateBatch(leads) {
           continue;
         }
         
+        // Generate universal unique ID
         const uniqueId = generateUniqueIdWithFallback(lead);
         
+        // Check if duplicate
         if (seenIds.has(uniqueId)) {
-          logger.info(`♻️ Duplicate #${result.duplicates.length + 1}: ${uniqueId}`);
+          logger.info(`♻️ Duplicate #${result.duplicates.length + 1}: ${uniqueId.substring(0, 50)}`);
           result.duplicates.push({
             lead: lead,
             uniqueId: uniqueId,
@@ -469,156 +368,69 @@ function deduplicateBatch(leads) {
           result.stats.duplicates++;
         } else {
           seenIds.add(uniqueId);
-          result.unique.push({
-            lead: lead,
-            uniqueId: uniqueId,
-            index: i
-          });
+          result.unique.push(lead);
           result.stats.unique++;
         }
         
       } catch (leadErr) {
-        logger.error(`❌ Error processing lead at index ${i}: ${leadErr.message}`);
+        logger.error(`❌ Error processing lead ${i}: ${leadErr.message}`);
         result.stats.errors++;
       }
     }
     
-    logger.info(`✅ Deduplication complete: ${result.stats.unique} unique, ${result.stats.duplicates} duplicates, ${result.stats.errors} errors`);
+    const rate = result.stats.total > 0 
+      ? ((result.stats.duplicates / result.stats.total) * 100).toFixed(1)
+      : '0.0';
+    
+    logger.info(`✅ Deduplication complete: ${result.stats.unique} unique, ${result.stats.duplicates} duplicates (${rate}%)`);
     
     return result;
     
   } catch (err) {
-    logger.error(`❌ CRITICAL: deduplicateBatch failed: ${err.message}`);
-    logger.error(`Stack: ${err.stack}`);
-    
+    logger.error(`❌ deduplicateBatch CRITICAL: ${err.message}`);
     return {
       unique: [],
       duplicates: [],
-      stats: {
-        total: Array.isArray(leads) ? leads.length : 0,
-        unique: 0,
-        duplicates: 0,
-        errors: 1
-      }
+      stats: { total: 0, unique: 0, duplicates: 0, errors: 1 }
     };
   }
 }
 
 /**
- * Insert lead if it's new (not a duplicate)
- * BULLETPROOF: Never throws errors
+ * Get human-readable info about what fields were used for deduplication
+ * @param {Object} lead - Lead object
+ * @returns {Object} Info about detected fields
  */
-async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, sourceId, sourceUrl }) {
+function getDeduplicationInfo(lead) {
   try {
-    const { db } = require('../db');
+    const fields = extractImportantFields(lead);
     
-    // Validate inputs
-    if (!lead || typeof lead !== 'object') {
-      logger.error(`❌ insertLeadIfNew: Invalid lead object`);
-      return false;
-    }
-    
-    if (!userId || !sourceId) {
-      logger.error(`❌ insertLeadIfNew: Missing userId or sourceId`);
-      return false;
-    }
-    
-    // Generate unique ID with guaranteed fallback
-    const uniqueId = generateUniqueIdWithFallback(extractedData || lead);
-    
-    logger.info(`🔑 Unique ID: ${uniqueId}`);
-    
-    try {
-      // Check for duplicate
-      const existing = db.prepare(
-        'SELECT id, seen_count FROM leads WHERE user_id = ? AND unique_id = ?'
-      ).get(userId, uniqueId);
-      
-      if (existing) {
-        const seenCount = (existing.seen_count || 0) + 1;
-        logger.info(`♻️ Duplicate: ${uniqueId} (seen ${seenCount} times)`);
-        
-        // Update seen count
-        try {
-          db.prepare(
-            'UPDATE leads SET seen_count = ?, last_seen_at = CURRENT_TIMESTAMP WHERE id = ?'
-          ).run(seenCount, existing.id);
-        } catch (updateErr) {
-          logger.error(`❌ Failed to update seen count: ${updateErr.message}`);
-        }
-        
-        return false;
-      }
-    } catch (queryErr) {
-      logger.error(`❌ Database query failed: ${queryErr.message}`);
-      logger.error(`Stack: ${queryErr.stack}`);
-      return false;
-    }
-    
-    // Prepare data for insertion
-    const data = extractedData || lead;
-    
-    const permitNumber = data.permit_number || data.permitNumber || data.Permit__ || null;
-    const address = data.address || data.Address || null;
-    const estimatedValue = data.estimated_value || data.estimatedValue || data.Value || null;
-    const description = data.description || data.Description || null;
-    const applicationDate = data.application_date || data.applicationDate || data.Date || null;
-    const phone = data.phone || data.Phone || null;
-    
-    // Insert new lead
-    try {
-      const result = db.prepare(
-        `INSERT INTO leads (
-          user_id, source_id, source_name, unique_id, raw_data,
-          permit_number, address, estimated_value, description,
-          application_date, phone, page_url, is_new, seen_count,
-          created_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`
-      ).run(
-        userId,
-        sourceId,
-        sourceName || 'unknown',
-        uniqueId,
-        typeof raw === 'string' ? raw : JSON.stringify(raw || lead),
-        permitNumber,
-        address,
-        estimatedValue,
-        description,
-        applicationDate,
-        phone,
-        sourceUrl || null
-      );
-      
-      if (result && result.lastInsertRowid) {
-        logger.info(`✅ Inserted new lead (row ${result.lastInsertRowid}): ${uniqueId}`);
-        return true;
-      }
-      
-      logger.error(`❌ Insert failed: No result returned`);
-      return false;
-      
-    } catch (insertErr) {
-      logger.error(`❌ Database insert failed: ${insertErr.message}`);
-      logger.error(`Stack: ${insertErr.stack}`);
-      return false;
-    }
-    
+    return {
+      totalFields: Object.keys(lead).length,
+      importantFields: fields.length,
+      topField: fields[0] || null,
+      strategy: fields.length > 0 ? 'field-based' : 'hash-based',
+      uniqueId: generateUniqueIdWithFallback(lead)
+    };
   } catch (err) {
-    logger.error(`❌ insertLeadIfNew CRITICAL ERROR: ${err.message}`);
-    logger.error(`Stack: ${err.stack}`);
-    return false;
+    return {
+      totalFields: 0,
+      importantFields: 0,
+      topField: null,
+      strategy: 'error',
+      uniqueId: null
+    };
   }
 }
 
 module.exports = {
   generateUniqueId,
   generateUniqueIdWithFallback,
-  normalizeAddress,
-  extractPermitNumber,
-  extractAddress,
   areDuplicates,
   deduplicateBatch,
+  extractImportantFields,
+  getDeduplicationInfo,
   safeString,
   safeHash,
-  insertLeadIfNew
+  normalizeString
 };

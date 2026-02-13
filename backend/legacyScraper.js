@@ -26,7 +26,7 @@ const { ProxyAgent } = require('undici');
 // Import extracted modules
 const logger = require('./utils/logger');
 const { dbGet, dbAll, dbRun } = require('./db');
-const { insertLeadIfNew } = require('./services/deduplication');
+const { insertLeadIfNew } = require('./services/leadInsertion');
 const { trackSourceReliability } = require('./services/reliability');
 const { createNotification } = require('./services/notifications');
 const { extractLeadWithAI } = require('./services/ai');

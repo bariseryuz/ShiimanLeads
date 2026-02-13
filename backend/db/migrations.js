@@ -49,7 +49,9 @@ function runMigrations(db) {
     { column: 'ai_confidence', type: 'REAL' },
     { column: 'ai_validated', type: 'INTEGER DEFAULT 0' },
     { column: 'company_name', type: 'TEXT' },
-    { column: 'link', type: 'TEXT' }
+    { column: 'link', type: 'TEXT' },
+    { column: 'seen_count', type: 'INTEGER DEFAULT 1' },
+    { column: 'last_seen_at', type: 'DATETIME' }
   ];
 
   leadsMigrations.forEach(({ column, type }) => {
