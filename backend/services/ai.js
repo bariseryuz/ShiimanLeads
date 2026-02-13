@@ -5,10 +5,10 @@ const logger = require('../utils/logger');
 let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  // Using gemini-1.5-pro for superior vision analysis (best for complex tables)
-  // Alternative: gemini-2.0-flash-exp (faster but experimental)
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
-  logger.info('✅ Google Gemini AI initialized (gemini-1.5-pro - superior vision)');
+  // Using gemini-2.0-flash-exp - latest model with excellent vision capabilities
+  // Alternative stable: gemini-1.5-flash
+  geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+  logger.info('✅ Google Gemini AI initialized (gemini-2.0-flash-exp - latest vision model)');
 } else {
   logger.warn('⚠️ GEMINI_API_KEY not found - AI extraction disabled');
 }
