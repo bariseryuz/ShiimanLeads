@@ -26,7 +26,7 @@ const { ProxyAgent } = require('undici');
 // Import extracted modules
 const logger = require('./utils/logger');
 const { dbGet, dbAll, dbRun } = require('./db');
-// NOTE: insertLeadIfNew removed - deduplication will be rebuilt from scratch
+const { insertLeadIfNew } = require('./services/deduplication');
 const { trackSourceReliability } = require('./services/reliability');
 const { createNotification } = require('./services/notifications');
 const { extractLeadWithAI } = require('./services/ai');
@@ -50,7 +50,7 @@ const {
 const { validateExtractedFields } = require('./services/scraper/validation');
 const { setupPopupBlocking, preventAllPopups } = require('./services/scraper/preventPopup');
 const { mergeLimits, logLimits, isPageLimitReached, isRowLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
-// NOTE: Deduplication functionality removed - will be rebuilt from scratch
+// NOTE: Deduplication system - bulletproof implementation in services/deduplication.js
 const { SCREENSHOT_DIR } = require('./config/paths');
 
 // Proxy Configuration
@@ -303,14 +303,15 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                     break;
                   }
                   
-                  // TODO: Insert lead with new deduplication logic
-                  // TODO: Insert lead with new deduplication logic
-                  // if (await insertLeadIfNew({
-                  if (true) { // Placeholder
-                    // Lead insertion disabled during deduplication rebuild
-                  } else if (true) {
-                  {
-                    if (true) { // Placeholder - deduplication not yet implemented
+                  if (await insertLeadIfNew({
+                    raw: JSON.stringify(lead),
+                    sourceName: source.name,
+                    lead,
+                    extractedData: lead,
+                    userId,
+                    sourceId: source._sourceId || source.id,
+                    sourceUrl: source.url
+                  })) {
                     newLeads++;
                     rowsThisPage++;
                     totalRowsExtracted++;
@@ -554,12 +555,16 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             page_url: source.url
           };
           
-          // TODO: Insert lead with new deduplication logic
-          // if (await insertLeadIfNew({ 
-          if (true) { // Placeholder
-            // Lead insertion disabled during deduplication rebuild
-            newLeads++; // Count but don't insert
-          } else if (true) {
+          if (await insertLeadIfNew({ 
+            raw: JSON.stringify(item),
+            sourceName: source.name,
+            lead,
+            extractedData: lead,
+            userId,
+            sourceId: source._sourceId || source.id,
+            sourceUrl: source.url
+          })) {
+            newLeads++;
           }
         }
       }
@@ -594,12 +599,16 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             };
           }
           
-          // TODO: Insert lead with new deduplication logic
-          // if (await insertLeadIfNew({
-          if (true) { // Placeholder
-            // Lead insertion disabled during deduplication rebuild
-            newLeads++; // Count but don't insert
-          } else if (true) {
+          if (await insertLeadIfNew({
+            raw,
+            sourceName: source.name,
+            lead,
+            extractedData: lead,
+            userId,
+            sourceId: source._sourceId || source.id,
+            sourceUrl: source.url
+          })) {
+            newLeads++;
           }
         }
       }

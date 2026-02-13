@@ -5,7 +5,7 @@ const { initProgress, updateProgress, getProgress, shouldStopScraping } = requir
 const { getRateLimiter } = require('./rateLimiter');
 const { getTimings } = require('./timings');
 const { trackSourceReliability } = require('../reliability');
-// NOTE: insertLeadIfNew removed - deduplication will be rebuilt from scratch
+// Deduplication fully implemented in services/deduplication.js
 const { extractLeadWithAI } = require('../ai');
 const { captureEntirePage } = require('./screenshot');
 const {
