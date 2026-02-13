@@ -30,7 +30,7 @@ const { insertLeadIfNew } = require('./services/leadInsertion');
 const { trackSourceReliability } = require('./services/reliability');
 const { createNotification } = require('./services/notifications');
 const { extractLeadWithAI } = require('./services/ai');
-const { captureEntirePage } = require('./services/scraper/screenshot');
+const { captureEntirePage, captureTiledScreenshots } = require('./services/scraper/screenshot');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
 const { getTimings } = require('./services/scraper/timings');
 const {
@@ -234,12 +234,19 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               
               // === CAPTURE FULL-PAGE SCREENSHOT (handles scrolling internally) ===
               logger.info(`📸 Capturing full-page screenshot (page ${pageNumber})...`);
-              const screenshot = await captureEntirePage(page, {
+              const screenshotData = await captureTiledScreenshots(page, {
                 maxScrolls: 25,
                 scrollDelay: 2000,
                 loadWaitTime: 5000,
-                useFullPage: true
+                useFullPage: true,
+                tileRows: 2,
+                tileCols: 3,
+                overlapPct: 0.1,
+                maxTiles: 6
               });
+
+              const tiles = Array.isArray(screenshotData?.tiles) ? screenshotData.tiles : null;
+              const screenshot = tiles && tiles.length > 0 ? tiles[0].buffer : screenshotData;
               
               // Save screenshot for debugging
               try {
@@ -255,9 +262,18 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 if (!screenshot || screenshot.length === 0) {
                   logger.error(`❌ Screenshot buffer is empty or null`);
                 } else {
-                  fs.writeFileSync(screenshotPath, screenshot);
-                  logger.info(`💾 Screenshot saved: ${screenshotPath}`);
-                  logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
+                  if (tiles && tiles.length > 0) {
+                    tiles.forEach((tile, idx) => {
+                      const tilePath = screenshotPath.replace('.png', `-tile${idx + 1}.png`);
+                      fs.writeFileSync(tilePath, tile.buffer);
+                    });
+                    const totalTileBytes = tiles.reduce((sum, t) => sum + t.buffer.length, 0);
+                    logger.info(`💾 ${tiles.length} tiles saved (total: ${Math.round(totalTileBytes / 1024)}KB)`);
+                  } else {
+                    fs.writeFileSync(screenshotPath, screenshot);
+                    logger.info(`💾 Screenshot saved: ${screenshotPath}`);
+                    logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
+                  }
                 }
               } catch (screenshotError) {
                 logger.error(`❌ Failed to save screenshot: ${screenshotError.message}`);
@@ -266,10 +282,16 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               
               // === EXTRACT WITH AI ===
               logger.info(`🤖 Extracting leads from page ${pageNumber} with AI...`);
-              logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
+              if (tiles && tiles.length > 0) {
+                const totalTileBytes = tiles.reduce((sum, t) => sum + t.buffer.length, 0);
+                logger.info(`📊 Screenshot tiles: ${tiles.length} (${Math.round(totalTileBytes / 1024)}KB total)`);
+              } else {
+                logger.info(`📊 Screenshot size: ${Math.round(screenshot.length / 1024)}KB`);
+              }
               logger.info(`🔍 Field schema: ${source.fieldSchema ? Object.keys(source.fieldSchema).join(', ') : 'default'}`);
-              
-              const aiLeads = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
+
+              const aiInput = tiles && tiles.length > 0 ? tiles.map(tile => tile.buffer) : screenshot;
+              const aiLeads = await extractLeadWithAI(aiInput, source.name, source.fieldSchema);
               
               if (aiLeads && Array.isArray(aiLeads)) {
                 logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);

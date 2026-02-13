@@ -1,18 +1,16 @@
 const logger = require('../../utils/logger');
 
 /**
- * Capture entire page screenshot with intelligent scrolling to reveal all content
- * Handles lazy-loaded content and wide tables
+ * Prepare page for full-content screenshots with scrolling and viewport sizing.
  * @param {Object} page - Playwright page object
  * @param {Object} options - Screenshot options
- * @returns {Buffer} Screenshot buffer
+ * @returns {Object} Viewport dimensions
  */
-async function captureEntirePage(page, options = {}) {
+async function prepareFullPageViewport(page, options = {}) {
   const {
     maxScrolls = 25,
     scrollDelay = 2000,
-    loadWaitTime = 5000,
-    useFullPage = true
+    loadWaitTime = 5000
   } = options;
 
   logger.info(`📸 Starting full page capture (maxScrolls: ${maxScrolls})...`);
@@ -206,6 +204,25 @@ async function captureEntirePage(page, options = {}) {
   logger.info(`⏳ Waiting ${finalWait}ms for large viewport to render...`);
   await new Promise(resolve => setTimeout(resolve, finalWait));
 
+  return {
+    viewportWidth,
+    viewportHeight,
+    dimensions
+  };
+}
+
+/**
+ * Capture entire page screenshot with intelligent scrolling to reveal all content
+ * Handles lazy-loaded content and wide tables
+ * @param {Object} page - Playwright page object
+ * @param {Object} options - Screenshot options
+ * @returns {Buffer} Screenshot buffer
+ */
+async function captureEntirePage(page, options = {}) {
+  const { useFullPage = true } = options;
+
+  await prepareFullPageViewport(page, options);
+
   // Step 7: Take screenshot with fullPage mode and enhanced error handling
   logger.info(`📸 Capturing screenshot with fullPage mode...`);
   let screenshot;
@@ -233,6 +250,91 @@ async function captureEntirePage(page, options = {}) {
   return screenshot;
 }
 
+/**
+ * Capture the page in multiple tiles for sharper text in large tables.
+ * @param {Object} page - Playwright page object
+ * @param {Object} options - Tiling options
+ * @returns {Object} Tile buffers and metadata
+ */
+async function captureTiledScreenshots(page, options = {}) {
+  const {
+    tileRows = 2,
+    tileCols = 3,
+    overlapPct = 0.1,
+    maxTiles = 6
+  } = options;
+
+  const { viewportWidth, viewportHeight } = await prepareFullPageViewport(page, options);
+
+  let rows = Math.max(1, tileRows);
+  let cols = Math.max(1, tileCols);
+  while (rows * cols > maxTiles) {
+    if (cols >= rows && cols > 1) {
+      cols -= 1;
+    } else if (rows > 1) {
+      rows -= 1;
+    } else {
+      break;
+    }
+  }
+
+  const overlap = Math.min(Math.max(overlapPct, 0), 0.4);
+  const baseTileWidth = Math.ceil(viewportWidth / cols);
+  const baseTileHeight = Math.ceil(viewportHeight / rows);
+  const overlapX = Math.floor(baseTileWidth * overlap);
+  const overlapY = Math.floor(baseTileHeight * overlap);
+
+  const tiles = [];
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      let x = c * baseTileWidth;
+      let y = r * baseTileHeight;
+      let width = baseTileWidth;
+      let height = baseTileHeight;
+
+      if (c > 0) {
+        x -= overlapX;
+        width += overlapX;
+      }
+      if (c < cols - 1) {
+        width += overlapX;
+      }
+      if (r > 0) {
+        y -= overlapY;
+        height += overlapY;
+      }
+      if (r < rows - 1) {
+        height += overlapY;
+      }
+
+      if (x + width > viewportWidth) {
+        width = viewportWidth - x;
+      }
+      if (y + height > viewportHeight) {
+        height = viewportHeight - y;
+      }
+
+      const tile = await page.screenshot({
+        clip: { x, y, width, height },
+        type: 'png'
+      });
+      tiles.push({ buffer: tile, row: r, col: c, clip: { x, y, width, height } });
+    }
+  }
+
+  const totalBytes = tiles.reduce((sum, t) => sum + t.buffer.length, 0);
+  logger.info(`🧩 Tiled screenshots captured: ${tiles.length} tile(s), ${Math.round(totalBytes / 1024)}KB total`);
+
+  return {
+    tiles,
+    tileRows: rows,
+    tileCols: cols,
+    viewportWidth,
+    viewportHeight
+  };
+}
+
 module.exports = {
-  captureEntirePage
+  captureEntirePage,
+  captureTiledScreenshots
 };

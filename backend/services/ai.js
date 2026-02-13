@@ -35,7 +35,7 @@ function buildGenConfig() {
 
 /**
  * Extract lead data from screenshot or text using Google Gemini AI
- * @param {Buffer|string} input - Screenshot buffer or text
+ * @param {Buffer|string|Array<Buffer>} input - Screenshot buffer(s) or text
  * @param {string} sourceName - Source name for context
  * @param {object} fieldSchema - Field schema from source configuration
  * @param {boolean} isRetry - Whether this is a retry attempt
@@ -49,7 +49,8 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
   }
 
   try {
-    const isScreenshot = Buffer.isBuffer(input) || (typeof input === 'object' && input.inlineData);
+    const isScreenshotArray = Array.isArray(input);
+    const isScreenshot = isScreenshotArray || Buffer.isBuffer(input) || (typeof input === 'object' && input.inlineData);
     logger.info(`🤖 AI extraction mode: ${isScreenshot ? 'VISION (screenshot)' : 'TEXT'}`);
     let prompt = '';
     let content = [];
@@ -191,42 +192,51 @@ EXAMPLE (if table has 3 data rows, return 3 objects):
 ${isRetry ? '\n⚠️⚠️⚠️ RETRY ATTEMPT: Your previous response only returned 1 row but the table has MULTIPLE rows.\n🔥 Extract ALL visible data rows, not just the first one! Count them and return that many objects.' : ''}`;
 
       // Prepare image data - MUST be Base64 encoded for Gemini Vision API
-      let imageData;
-      if (Buffer.isBuffer(input)) {
-        logger.info(`✅ Input is Buffer, converting to Base64 (${input.length} bytes)`);
-        imageData = {
-          inlineData: {
-            data: input.toString('base64'),
-            mimeType: 'image/png'
-          }
-        };
-      } else if (input && typeof input === 'object' && input.type === 'Buffer' && Array.isArray(input.data)) {
-        // Handle serialized Buffer object { type: 'Buffer', data: [...] }
-        logger.info(`✅ Input is serialized Buffer, converting to Base64`);
-        const buffer = Buffer.from(input.data);
-        imageData = {
+      const buildImagePart = (item) => {
+        if (Buffer.isBuffer(item)) {
+          return {
+            inlineData: {
+              data: item.toString('base64'),
+              mimeType: 'image/png'
+            }
+          };
+        }
+        if (item && typeof item === 'object' && item.type === 'Buffer' && Array.isArray(item.data)) {
+          const buffer = Buffer.from(item.data);
+          return {
+            inlineData: {
+              data: buffer.toString('base64'),
+              mimeType: 'image/png'
+            }
+          };
+        }
+        if (item && typeof item === 'object' && item.inlineData) {
+          return item;
+        }
+        logger.warn(`⚠️ Unexpected image input type: ${typeof item}, attempting conversion`);
+        const buffer = Buffer.from(item);
+        return {
           inlineData: {
             data: buffer.toString('base64'),
             mimeType: 'image/png'
           }
         };
-      } else if (input && typeof input === 'object' && input.inlineData) {
-        // Already in correct format
-        logger.info(`✅ Input already in inlineData format`);
-        imageData = input;
+      };
+
+      let imageParts = [];
+      if (isScreenshotArray) {
+        const totalBytes = input.reduce((sum, item) => sum + (Buffer.isBuffer(item) ? item.length : 0), 0);
+        logger.info(`✅ Input is tile array, converting to Base64 (${input.length} tile(s), ${totalBytes} bytes)`);
+        imageParts = input.map(buildImagePart);
       } else {
-        // Try to convert whatever we got to Buffer
-        logger.warn(`⚠️ Unexpected input type: ${typeof input}, attempting conversion`);
-        const buffer = Buffer.from(input);
-        imageData = {
-          inlineData: {
-            data: buffer.toString('base64'),
-            mimeType: 'image/png'
-          }
-        };
+        const sizeBytes = Buffer.isBuffer(input)
+          ? input.length
+          : (input && input.inlineData && input.inlineData.data ? Buffer.byteLength(input.inlineData.data, 'base64') : 0);
+        logger.info(`✅ Input is single image, converting to Base64 (${sizeBytes} bytes)`);
+        imageParts = [buildImagePart(input)];
       }
 
-      content = [{ role: 'user', parts: [{ text: prompt }, imageData] }];
+      content = [{ role: 'user', parts: [{ text: prompt }, ...imageParts] }];
     } else {
       // Text-based extraction (fallback)
       const truncatedText = typeof input === 'string' ? input.substring(0, 6000) : String(input).substring(0, 6000);
