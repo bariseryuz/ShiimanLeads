@@ -217,14 +217,14 @@
         <div class="form-group">
           <label for="sourceMethod">Scraping Method *</label>
           <select id="sourceMethod" required onchange="updateMethodFields()">
-            <option value="puppeteer">Puppeteer (Browser Automation)</option>
+            <option value="playwright">Playwright (Browser Automation)</option>
             <option value="html">HTML (Simple)</option>
             <option value="json">JSON API</option>
           </select>
-          <small>Puppeteer for complex sites, HTML for simple pages, JSON for APIs</small>
+          <small>Playwright for complex sites, HTML for simple pages, JSON for APIs</small>
         </div>
 
-        <div id="puppeteerFields" style="display:none;">
+        <div id="playwrightFields" style="display:none;">
           <div class="form-group">
             <label for="waitSelector">Wait For Selector</label>
             <input type="text" id="waitSelector" placeholder=".agent-card, article">
@@ -365,8 +365,8 @@
 
     function updateMethodFields() {
       const method = document.getElementById('sourceMethod').value;
-      const puppeteerFields = document.getElementById('puppeteerFields');
-      puppeteerFields.style.display = method === 'puppeteer' ? 'block' : 'none';
+      const playwrightFields = document.getElementById('playwrightFields');
+      playwrightFields.style.display = method === 'playwright' ? 'block' : 'none';
     }
 
     function toggleFieldSchema() {
@@ -378,7 +378,7 @@
     function loadZillowTemplate() {
       document.getElementById('sourceName').value = 'Zillow Real Estate Agents';
       document.getElementById('sourceUrl').value = 'https://www.zillow.com/professionals/real-estate-agent-reviews/';
-      document.getElementById('sourceMethod').value = 'puppeteer';
+      document.getElementById('sourceMethod').value = 'playwright';
       document.getElementById('waitSelector').value = 'article[data-test="agent-card"]';
       document.getElementById('dataSelector').value = 'article[data-test="agent-card"]';
       document.getElementById('useAI').checked = true;
@@ -390,7 +390,7 @@
     function loadRealtorTemplate() {
       document.getElementById('sourceName').value = 'Realtor.com Agents';
       document.getElementById('sourceUrl').value = 'https://www.realtor.com/realestateagents/';
-      document.getElementById('sourceMethod').value = 'puppeteer';
+      document.getElementById('sourceMethod').value = 'playwright';
       document.getElementById('waitSelector').value = '.agent-list-card';
       document.getElementById('dataSelector').value = '.agent-list-card';
       document.getElementById('useAI').checked = true;
@@ -401,7 +401,7 @@
     function loadLinkedInTemplate() {
       document.getElementById('sourceName').value = 'LinkedIn Search Results';
       document.getElementById('sourceUrl').value = 'https://www.linkedin.com/search/results/people/';
-      document.getElementById('sourceMethod').value = 'puppeteer';
+      document.getElementById('sourceMethod').value = 'playwright';
       document.getElementById('waitSelector').value = '.search-results-container';
       document.getElementById('dataSelector').value = '.entity-result';
       document.getElementById('useAI').checked = true;
@@ -453,8 +453,9 @@
         sourceData.displayColumns = displayColumnsInput.split(',').map(col => col.trim()).filter(col => col);
       }
 
-      if (method === 'puppeteer') {
-        sourceData.puppeteerConfig = {
+      if (method === 'playwright') {
+        sourceData.usePlaywright = true;
+        sourceData.playwrightConfig = {
           waitForSelector: document.getElementById('waitSelector').value,
           actions: [
             { type: 'wait', duration: 3000 },

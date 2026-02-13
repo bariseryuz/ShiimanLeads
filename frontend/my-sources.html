@@ -853,11 +853,11 @@
           </div>
         </div>
         
-        <!-- Hidden inputs: Force AI + Puppeteer mode -->
+        <!-- Hidden inputs: Force AI + Playwright mode -->
         <input type="hidden" id="sourceType" value="html">
         <input type="hidden" id="sourceSelector" value="">
         <input type="hidden" id="useAI" value="true">
-        <input type="hidden" id="usePuppeteer" value="true">
+        <input type="hidden" id="usePlaywright" value="true">
         <input type="hidden" id="extractTable" value="false">
         
         <div class="form-group">
@@ -1230,7 +1230,7 @@
 
     // Toggle between HTML and API source types
     function toggleSourceType() {
-      // Simplified: All sources now use AI + Puppeteer mode automatically
+      // Simplified: All sources now use AI + Playwright mode automatically
       // No need to toggle between HTML/API options
     }
 
@@ -1287,7 +1287,7 @@
               ${source.data.type === 'json' && source.data.jsonPath ? `<div><strong>JSON Path:</strong> ${escapeHtml(source.data.jsonPath)}</div>` : ''}
               ${source.data.type !== 'json' && source.data.selector ? `<div><strong>Selector:</strong> ${escapeHtml(source.data.selector)}</div>` : ''}
               ${source.data.type !== 'json' && !source.data.selector && source.data.useAI ? '<div><strong>Mode:</strong> Full-Page Screenshot</div>' : ''}
-              ${source.data.usePuppeteer ? '<div><strong>Browser:</strong> ✓ Puppeteer</div>' : ''}
+              ${source.data.usePlaywright ? '<div><strong>Browser:</strong> ✓ Playwright</div>' : ''}
               <div><strong>Proxy:</strong> ${source.data.useProxy !== false ? '🌐 Enabled' : '⚠️ Disabled'}</div>
               ${source.data.fieldSchema ? `<div><strong>Fields to Extract:</strong> ${Array.isArray(source.data.fieldSchema) ? source.data.fieldSchema.map(f => f.name).join(', ') : Object.keys(source.data.fieldSchema).join(', ')}</div>` : ''}
               ${source.data.displayColumns ? `<div><strong>Display Columns:</strong> ${Array.isArray(source.data.displayColumns) ? source.data.displayColumns.join(', ') : source.data.displayColumns}</div>` : ''}
@@ -1861,10 +1861,11 @@
         sourceData.displayColumns = displayColumnsInput.split(',').map(col => col.trim()).filter(Boolean);
       }
       
-      // Always enable AI and Puppeteer for automated extraction
+      // Always enable AI and Playwright for automated extraction
       sourceData.selector = null;
       sourceData.useAI = true;
-      sourceData.usePuppeteer = true;
+      sourceData.usePlaywright = true;
+      sourceData.method = 'playwright';
       sourceData.extractTable = false;
       
       // Add AI prompt - the main feature!
