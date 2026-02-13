@@ -47,9 +47,10 @@ function createSourceTable(sourceId, fieldSchema) {
  * @param {string} rawText - Raw text extracted from source
  * @param {object} lead - Lead data
  * @param {object} extractedData - Extracted/formatted data
+ * @param {string} sourceUrl - Source URL (optional, used for link field)
  * @returns {boolean} Success status
  */
-function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedData) {
+function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedData, sourceUrl) {
   // Validate table name to prevent SQL injection
   const tableName = `source_${sourceId}`;
   if (!/^source_\d+$/.test(tableName)) {
@@ -85,7 +86,7 @@ function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedDat
     const values = {};
     values.user_id = userId;
     values.raw_text = rawText;
-    values.page_url = lead.page_url || '';
+    values.page_url = lead.page_url || sourceUrl || '';
     values.source_name = lead.source_name || '';
     
     // Map extractedData to available columns
@@ -94,6 +95,18 @@ function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedDat
         if (columns.includes(key) && key !== '_aiConfidence' && key !== '_validationIssues') {
           values[key] = value;
         }
+      }
+    }
+    
+    // ALWAYS ensure link/page_url is set from sourceUrl if available
+    if (sourceUrl) {
+      if (columns.includes('link') && !values.link) {
+        values.link = sourceUrl;
+        logger.debug(`📎 Set link field in source table: ${sourceUrl}`);
+      }
+      if (columns.includes('page_url') && !values.page_url) {
+        values.page_url = sourceUrl;
+        logger.debug(`📎 Set page_url field in source table: ${sourceUrl}`);
       }
     }
     
@@ -134,8 +147,8 @@ function insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedDat
 /**
  * Async wrapper for backwards compatibility
  */
-async function insertIntoSourceTable(sourceId, userId, rawText, lead, extractedData) {
-  return insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedData);
+async function insertIntoSourceTable(sourceId, userId, rawText, lead, extractedData, sourceUrl) {
+  return insertIntoSourceTableSync(sourceId, userId, rawText, lead, extractedData, sourceUrl);
 }
 
 module.exports = {

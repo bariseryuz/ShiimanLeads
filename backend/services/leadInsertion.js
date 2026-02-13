@@ -294,17 +294,26 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
           'page_url': ['page_url', 'pageUrl', 'link', 'url']
         };
         
-        // Auto-populate link field from sourceUrl if not extracted
-        // This is universal - works for any source type
-        if (sourceUrl && !columnValues.has('link') && availableColumns.includes('link')) {
-          const hasLink = Object.keys(leadData).some(key => {
-            const lower = key.toLowerCase();
-            return lower.includes('link') || lower.includes('url') || lower.includes('page');
-          });
+        // ALWAYS ensure link field is populated from sourceUrl
+        // This is a fallback that runs AFTER field mappings, so extracted links take priority
+        // but if no link was extracted, sourceUrl is guaranteed to be set
+        if (availableColumns.includes('link')) {
+          // First, check if link was already set from extracted data
+          let linkValue = columnValues.get('link');
           
-          if (!hasLink) {
+          // If no link was extracted, use sourceUrl
+          if (!linkValue && sourceUrl) {
             columnValues.set('link', sourceUrl);
-            logger.debug(`📎 Auto-populated link field with source URL: ${sourceUrl}`);
+            logger.info(`📎 Set link to source URL: ${sourceUrl}`);
+          }
+          // If link exists but sourceUrl is different, log it
+          else if (linkValue && sourceUrl && linkValue !== sourceUrl) {
+            logger.debug(`📎 Link already extracted: ${linkValue} (source URL: ${sourceUrl})`);
+          }
+          // If sourceUrl exists but wasn't used, add it now
+          else if (sourceUrl && !linkValue) {
+            columnValues.set('link', sourceUrl);
+            logger.info(`📎 Added link field with source URL: ${sourceUrl}`);
           }
         }
         
@@ -363,7 +372,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         // Also insert into source-specific table for backwards compatibility
         // Use _original data if available (non-normalized field names for source table)
         const sourceTableData = leadData._original || extractedData || leadData;
-        insertIntoSourceTableSync(sourceId, userId, raw, lead, sourceTableData);
+        insertIntoSourceTableSync(sourceId, userId, raw, lead, sourceTableData, sourceUrl);
         
         // Create outbox entry for JSONL export
         const jobId = crypto.randomBytes(8).toString('hex');
