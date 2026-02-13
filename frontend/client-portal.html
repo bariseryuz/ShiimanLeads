@@ -1137,20 +1137,77 @@
           
           // Determine columns to display
           let fieldNames = [];
+          let useAutoDetect = true;
+          
+          // Check if fieldSchema columns actually exist in the data
           if (Object.keys(fieldSchema).length > 0) {
-            fieldNames = Object.keys(fieldSchema);
-          } else {
-            // Auto-detect from data
-            const excludeColumns = ['id', 'user_id', 'created_at', 'hash', 'raw_text', 'is_new', 'source_id', 'source', '_source_name'];
-            fieldNames = Object.keys(firstLead).filter(col => 
+            const schemaColumns = Object.keys(fieldSchema);
+            const dataHasSchemaColumns = schemaColumns.some(col => 
+              firstLead[col] !== null && firstLead[col] !== undefined && firstLead[col] !== ''
+            );
+            
+            if (dataHasSchemaColumns) {
+              fieldNames = schemaColumns;
+              useAutoDetect = false;
+            }
+          }
+          
+          if (useAutoDetect) {
+            // Auto-detect from data - use smarter detection
+            const excludeColumns = [
+              'id', 'user_id', 'created_at', 'updated_at', 'hash', 'raw_text', 'is_new', 'source_id', 
+              'source', '_source_name', '_source_id', 'raw_data', 'unique_id', 'source_name',
+              'seen_count', 'last_seen_at', 'extracted_data', 'canonical_hash', 'dedup_hash',
+              'ai_confidence', 'ai_validated', 'primary_id', 'data', 'raw'
+            ];
+            
+            // Get all non-excluded columns
+            let allColumns = Object.keys(firstLead).filter(col => 
               !excludeColumns.includes(col) && 
               !col.startsWith('_')
             );
+            
+            // Prioritize columns with actual data
+            // For universal dedup system: permit_number, address, estimated_value, description contain the actual data
+            const priorityColumns = ['page_url', 'link', 'permit_number', 'address', 'estimated_value', 
+                                      'description', 'phone', 'application_date'];
+            
+            // Sort: priority columns first, then others with data, then empty
+            fieldNames = allColumns.sort((a, b) => {
+              const aPriority = priorityColumns.indexOf(a);
+              const bPriority = priorityColumns.indexOf(b);
+              
+              // Both in priority list
+              if (aPriority >= 0 && bPriority >= 0) {
+                return aPriority - bPriority;
+              }
+              
+              // Only A in priority
+              if (aPriority >= 0) return -1;
+              if (bPriority >= 0) return 1;
+              
+              // Check if has data
+              const aHasData = sourceLeads.some(l => l[a] !== null && l[a] !== undefined && l[a] !== '');
+              const bHasData = sourceLeads.some(l => l[b] !== null && l[b] !== undefined && l[b] !== '');
+              
+              if (aHasData && !bHasData) return -1;
+              if (!aHasData && bHasData) return 1;
+              
+              return 0;
+            });
           }
           
-          // Always ensure 'link' column is present (hardcoded requirement)
-          if (!fieldNames.includes('link')) {
-            fieldNames.unshift('link'); // Add link as first column
+          // Always ensure 'link' or 'page_url' column is present (hardcoded requirement)
+          if (!fieldNames.includes('link') && !fieldNames.includes('page_url')) {
+            fieldNames.unshift('page_url'); // Add page_url as first column
+          } else if (fieldNames.includes('page_url') && fieldNames.indexOf('page_url') > 0) {
+            // Move page_url to first if it exists
+            fieldNames = fieldNames.filter(f => f !== 'page_url');
+            fieldNames.unshift('page_url');
+          } else if (fieldNames.includes('link') && fieldNames.indexOf('link') > 0) {
+            // Move link to first if it exists
+            fieldNames = fieldNames.filter(f => f !== 'link');
+            fieldNames.unshift('link');
           }
           
           // Build header
@@ -1181,14 +1238,24 @@
             
             fieldNames.forEach(field => {
               const td = document.createElement('td');
-              const value = lead[field];
+              let value = lead[field];
+              
+              // For universal dedup system: try to get value from raw_data if empty
+              if (!value && lead.raw_data) {
+                try {
+                  const rawData = typeof lead.raw_data === 'string' ? JSON.parse(lead.raw_data) : lead.raw_data;
+                  value = rawData[field];
+                } catch (e) {
+                  // Not JSON, ignore
+                }
+              }
               
               // Handle URL fields
               if (value && (field.toLowerCase().includes('url') || field.toLowerCase().includes('link'))) {
                 td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
               } else if (value === null || value === undefined || value === '') {
                 td.textContent = '-';
-              } else if (field.toLowerCase().includes('cost') || field.toLowerCase().includes('value') || field.toLowerCase().includes('amount') || field.toLowerCase().includes('price')) {
+              } else if (field.toLowerCase().includes('cost') || field.toLowerCase().includes('value') || field.toLowerCase().includes('amount') || field.toLowerCase().includes('price') || field.toLowerCase().includes('fee')) {
                 // Format currency fields
                 td.textContent = formatCurrency(value);
               } else if (field.toLowerCase().includes('date') && !field.toLowerCase().includes('update')) {
