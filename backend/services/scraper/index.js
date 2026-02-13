@@ -38,13 +38,13 @@ const { validateExtractedFields } = require('./validation');
 //       - Field mappings (user-configured or auto-mapping)
 //       - Date parsing (Unix timestamps, ISO, various formats)
 //
-//    b) Puppeteer (Dynamic Pages)
+//    b) Playwright (Dynamic Pages)
 //       - Browser launch with proxy rotation
 //       - Anti-detection stealth (navigator.webdriver masking)
 //       - AI autonomous navigation (aiPrompt processing)
 //       - Block detection (Cloudflare, CAPTCHA, rate limits, 403/429)
 //       - Rate limiting detection → 30-minute backoff
-//       - puppeteerConfig actions (select, fill, click, wait)
+//       - playwrightConfig actions (select, fill, click, wait)
 //       - Universal wait for data selectors (table, rows, results)
 //       - Content quality validation (hasUsefulContent)
 //       - Auto-scrolling for lazy loading (incremental wheel events)
@@ -59,7 +59,7 @@ const { validateExtractedFields } = require('./validation');
 //       - Pattern matching fallback (permit numbers, addresses, phones, $$$)
 //
 //    d) AI Extraction
-//       - Vision mode (screenshots from Puppeteer)
+//       - Vision mode (screenshots from Playwright)
 //       - Text mode (HTML body text)
 //       - Field schema validation
 //       - Multi-page processing

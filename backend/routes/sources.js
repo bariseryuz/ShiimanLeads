@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const jp = require('jsonpath');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 const { dbAll, dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
 
@@ -419,16 +419,16 @@ router.get('/:id/sample', async (req, res) => {
       }
       
     } else if (sourceConfig.type === 'html') {
-      // For HTML sources, use Puppeteer to get sample
-      const browser = await puppeteer.launch({
+      // For HTML sources, use Playwright to get sample
+      const browser = await chromium.launch({
         headless: true,
-        protocolTimeout: 180000,
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
-      const page = await browser.newPage();
+      const context = await browser.newContext();
+      const page = await context.newPage();
       page.setDefaultTimeout(90000);
       page.setDefaultNavigationTimeout(90000);
-      await page.goto(sourceConfig.url, { waitUntil: 'networkidle2', timeout: 30000 });
+      await page.goto(sourceConfig.url, { waitUntil: 'networkidle', timeout: 30000 });
       
       const selector = sourceConfig.selector || 'table tr, .result, .item';
       const elements = await page.$$(selector);
@@ -439,6 +439,7 @@ router.get('/:id/sample', async (req, res) => {
         sampleData.push({ _text: text.trim() });
       }
       
+      await context.close();
       await browser.close();
     }
     

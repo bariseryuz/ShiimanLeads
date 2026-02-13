@@ -6,7 +6,7 @@
  * 
  * Handles:
  * - JSON API scraping (ArcGIS, Socrata, etc.)
- * - Puppeteer browser automation
+ * - Playwright browser automation
  * - HTML parsing with Cheerio
  * - AI vision extraction  
  * - Block detection and rate limiting
@@ -19,7 +19,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { ProxyAgent } = require('undici');
 
@@ -156,22 +156,22 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       logger.info(`══════════════════════════════════════════`);
       
       let data;
-      let usedPuppeteer = false;
+      let usedPlaywright = false;
       let aiExtractionUsed = false;
       let newLeads = 0;
       
-      // Puppeteer scraping for dynamic sites
-      if (source.usePuppeteer || source.method === 'puppeteer') {
-        logger.info(`Using Puppeteer for ${source.name}`);
+      // Playwright scraping for dynamic sites
+      if (source.usePlaywright || source.usePuppeteer || source.method === 'playwright' || source.method === 'puppeteer') {
+        logger.info(`Using Playwright for ${source.name}`);
         logger.info(`🔧 AI extraction enabled: ${source.useAI ? 'YES' : 'NO'}`);
         logger.info(`📸 Screenshot capture will be used for AI vision`);
         
-        let browser, page;
+        let browser, context, page;
         
         try {
           // Launch browser with anti-detection
           const launchOptions = {
-            headless: process.env.PUPPETEER_HEADLESS === 'false' ? false : 'new',
+            headless: (process.env.PLAYWRIGHT_HEADLESS ?? process.env.PUPPETEER_HEADLESS) === 'false' ? false : true,
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
@@ -179,16 +179,19 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             ]
           };
           
-          if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-            launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-            logger.info(`🚀 Using custom Chromium: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+          const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
+          if (executablePath) {
+            launchOptions.executablePath = executablePath;
+            logger.info(`🚀 Using custom Chromium: ${executablePath}`);
           }
           
           logger.info(`🎬 Launching browser (headless: ${launchOptions.headless})...`);
-          browser = await puppeteer.launch(launchOptions);
-          page = await browser.newPage();
-          await page.setViewport({ width: 2560, height: 1440 });
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+          browser = await chromium.launch(launchOptions);
+          context = await browser.newContext({
+            viewport: { width: 2560, height: 1440 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          });
+          page = await context.newPage();
           
           // 🛡️ BLOCK POP-UPS BEFORE NAVIGATION
           await setupPopupBlocking(page);
@@ -196,7 +199,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           // Navigate to page with proper wait strategy
           logger.info(`🌐 Navigating to ${source.url}...`);
           await page.goto(source.url, { 
-            waitUntil: 'networkidle2',  // Wait for network to be mostly idle
+            waitUntil: 'networkidle',  // Wait for network to be mostly idle
             timeout: 90000 
           });
           logger.info(`✅ Page loaded: ${source.url}`);
@@ -488,8 +491,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               }
             }
             
-            if (pageNumber > maxPages) {
-              logger.warn(`⚠️ Reached max page limit (${maxPages})`);
+            if (isPageLimitReached(pageNumber, limits)) {
+              logger.warn(`⚠️ Reached max page limit (${limits.maxPages})`);
             }
             
             logger.info(`✅ Multi-page extraction complete: ${newLeads} total leads from ${pageNumber} page(s)`);
@@ -497,19 +500,20 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           } else {
             // Get HTML (non-AI mode)
             data = await page.content();
-            usedPuppeteer = true;
+            usedPlaywright = true;
           }
           
         } catch (err) {
-          logger.error(`Puppeteer failed for ${source.name}: ${err.message}`);
+          logger.error(`Playwright failed for ${source.name}: ${err.message}`);
         } finally {
           if (page) await page.close().catch(() => {});
+          if (context) await context.close().catch(() => {});
           if (browser) await browser.close().catch(() => {});
         }
       }
       
       // Axios scraping for APIs and static sites (skip if AI extraction already handled it)
-      if (!aiExtractionUsed && !usedPuppeteer && !data) {
+      if (!aiExtractionUsed && !usedPlaywright && !data) {
         try {
           const response = await axios.get(source.url, {
             timeout: 30000,

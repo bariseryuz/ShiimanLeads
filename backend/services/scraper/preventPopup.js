@@ -14,15 +14,14 @@ const logger = require('../../utils/logger');
  * Block known pop-up and tracking scripts before they load
  * Call this BEFORE page.goto()
  * 
- * @param {Object} page - Puppeteer page object
+ * @param {Object} page - Playwright page object
  */
 async function setupPopupBlocking(page) {
   logger.info(`🛡️ Setting up pop-up blocking...`);
   
   try {
-    await page.setRequestInterception(true);
-    
-    page.on('request', (request) => {
+    await page.route('**/*', (route) => {
+      const request = route.request();
       const url = request.url();
       const resourceType = request.resourceType();
       
@@ -67,9 +66,9 @@ async function setupPopupBlocking(page) {
       const shouldBlock = blockedDomains.some(domain => url.includes(domain));
       
       if (shouldBlock) {
-        request.abort();
+        route.abort();
       } else {
-        request.continue();
+        route.continue();
       }
     });
     
@@ -83,7 +82,7 @@ async function setupPopupBlocking(page) {
  * Detect and click "Accept", "Close", "Dismiss" buttons
  * Tries multiple common selectors for various pop-up types
  * 
- * @param {Object} page - Puppeteer page object
+ * @param {Object} page - Playwright page object
  * @returns {Promise<number>} Number of pop-ups closed
  */
 async function closePopups(page) {
@@ -302,7 +301,7 @@ async function closePopups(page) {
  * Forcefully remove pop-up overlays and modals from the DOM
  * This is the "nuclear option" for stubborn pop-ups
  * 
- * @param {Object} page - Puppeteer page object
+ * @param {Object} page - Playwright page object
  * @returns {Promise<number>} Number of elements removed
  */
 async function removePopupElements(page) {
@@ -432,7 +431,7 @@ async function removePopupElements(page) {
  * Complete pop-up prevention workflow
  * Combines all three strategies in the optimal order
  * 
- * @param {Object} page - Puppeteer page object
+ * @param {Object} page - Playwright page object
  * @param {Object} options - Configuration options
  * @returns {Promise<Object>} Stats about what was blocked/removed
  */

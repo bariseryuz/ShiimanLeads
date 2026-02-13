@@ -45,18 +45,27 @@ router.post('/now', async (req, res) => {
         const sourceData = JSON.parse(row.source_data);
         sourceData._sourceId = row.id; // Attach source ID for table saving
         
-        // Ensure method field is set based on usePuppeteer flag
-        if (sourceData.usePuppeteer === true && !sourceData.method) {
-          sourceData.method = 'puppeteer';
+        // Ensure method field is set based on usePlaywright flag
+        if (sourceData.usePlaywright === true && !sourceData.method) {
+          sourceData.method = 'playwright';
         }
-        // Also set usePuppeteer if method is puppeteer
-        if (sourceData.method === 'puppeteer' && sourceData.usePuppeteer !== true) {
-          sourceData.usePuppeteer = true;
+        // Backwards compatibility: map Puppeteer flags to Playwright
+        if (sourceData.usePuppeteer === true) {
+          sourceData.usePlaywright = true;
+          sourceData.method = 'playwright';
         }
-        // Default to puppeteer if useAI is enabled (AI extraction needs screenshots)
-        if (sourceData.useAI === true && !sourceData.usePuppeteer) {
-          sourceData.usePuppeteer = true;
-          sourceData.method = 'puppeteer';
+        if (sourceData.method === 'puppeteer') {
+          sourceData.usePlaywright = true;
+          sourceData.method = 'playwright';
+        }
+        // Also set usePlaywright if method is playwright
+        if (sourceData.method === 'playwright' && sourceData.usePlaywright !== true) {
+          sourceData.usePlaywright = true;
+        }
+        // Default to Playwright if useAI is enabled (AI extraction needs screenshots)
+        if (sourceData.useAI === true && !sourceData.usePlaywright) {
+          sourceData.usePlaywright = true;
+          sourceData.method = 'playwright';
         }
         
         return sourceData;

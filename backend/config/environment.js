@@ -30,7 +30,12 @@ module.exports = {
   // Google Gemini AI
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
   
-  // Puppeteer
+  // Playwright (fallback to legacy Puppeteer env vars if set)
+  PLAYWRIGHT_HEADLESS: process.env.PLAYWRIGHT_HEADLESS
+    ? process.env.PLAYWRIGHT_HEADLESS !== 'false'
+    : process.env.PUPPETEER_HEADLESS !== 'false',
+  PLAYWRIGHT_EXECUTABLE_PATH: process.env.PLAYWRIGHT_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH,
+  // Legacy Puppeteer env vars (deprecated)
   PUPPETEER_HEADLESS: process.env.PUPPETEER_HEADLESS !== 'false',
   PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
   

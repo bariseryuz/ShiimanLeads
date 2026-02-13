@@ -245,7 +245,7 @@ function startServer() {
   // === STARTUP COMPLETE ===
   logger.info('✅ SHIIMAN LEADS IS LIVE');
   logger.info('📊 Multi-tenant lead generation system');
-  logger.info('🤖 AI-powered scraping with Puppeteer + Google Gemini');
+  logger.info('🤖 AI-powered scraping with Playwright + Google Gemini');
   logger.info('🔒 User isolation - each user sees only their own leads');
   logger.info('📈 Reliability tracking and source management');
 }

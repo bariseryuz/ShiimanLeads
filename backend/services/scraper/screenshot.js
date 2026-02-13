@@ -3,7 +3,7 @@ const logger = require('../../utils/logger');
 /**
  * Capture entire page screenshot with intelligent scrolling to reveal all content
  * Handles lazy-loaded content and wide tables
- * @param {Object} page - Puppeteer page object
+ * @param {Object} page - Playwright page object
  * @param {Object} options - Screenshot options
  * @returns {Buffer} Screenshot buffer
  */
@@ -195,10 +195,9 @@ async function captureEntirePage(page, options = {}) {
   
   logger.info(`📱 Setting viewport: ${viewportWidth}x${viewportHeight}px`);
 
-  await page.setViewport({
+  await page.setViewportSize({
     width: viewportWidth,
-    height: viewportHeight,
-    deviceScaleFactor: 1
+    height: viewportHeight
   });
 
   // Step 6: Final wait for animations to complete and DOM to stabilize
@@ -213,15 +212,13 @@ async function captureEntirePage(page, options = {}) {
   try {
     screenshot = await page.screenshot({ 
       fullPage: useFullPage,
-      type: 'png',
-      captureBeyondViewport: true
+      type: 'png'
     });
   } catch (screenshotErr) {
     logger.error(`❌ Screenshot failed: ${screenshotErr.message}`);
     logger.warn(`⚠️ Attempting fallback screenshot without fullPage mode...`);
     screenshot = await page.screenshot({ 
-      type: 'png',
-      captureBeyondViewport: false
+      type: 'png'
     });
   }
 
