@@ -21,13 +21,14 @@ const AI_THINKING_LEVEL = String(process.env.AI_THINKING_LEVEL || 'low').toLower
 function buildGenConfig() {
   const base = { responseMimeType: 'application/json' };
   if (AI_THINKING_LEVEL === 'low') {
-    return { ...base, temperature: 0.2, topP: 0.8, maxOutputTokens: 8192 };
+    // Increased temperature for better vision analysis (was 0.2)
+    return { ...base, temperature: 0.4, topP: 0.85, maxOutputTokens: 8192 };
   }
   if (AI_THINKING_LEVEL === 'medium') {
-    return { ...base, temperature: 0.5, topP: 0.9, maxOutputTokens: 12288 };
+    return { ...base, temperature: 0.6, topP: 0.9, maxOutputTokens: 12288 };
   }
   // high
-  return { ...base, temperature: 0.7, topP: 0.95, maxOutputTokens: 16384 };
+  return { ...base, temperature: 0.8, topP: 0.95, maxOutputTokens: 16384 };
 }
 
 /**
@@ -117,46 +118,65 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
       }).join('\n');
       
       // Vision-based extraction
-      prompt = `Extract ALL data visible in this table/list screenshot into JSON format.
+      prompt = `You are looking at a screenshot of a DATA TABLE with multiple rows and columns.
 
-${criticalInstruction}OUTPUT FIELD NAMES (use EXACTLY these keys):
+🎯 YOUR TASK: Extract EVERY SINGLE ROW of data from this table (minimum 5-20 rows expected)
+
+${criticalInstruction}📋 OUTPUT FIELD NAMES (use EXACTLY these keys):
 ${fieldDescriptions}
 
-AGGRESSIVE EXTRACTION STRATEGY:
-⚠️ EXTRACT EVERYTHING YOU SEE - do not be conservative
-⚠️ If there's a table with headers and rows, extract ALL visible rows
-⚠️ For each row/record, extract data from EVERY visible column
+🔍 TABLE STRUCTURE RECOGNITION:
+1. HEADER ROW: First row contains column names (do NOT extract this as data)
+2. DATA ROWS: All rows BELOW the header are data (extract EVERY one of these)
+3. COUNT the visible data rows - you should extract that many JSON objects
 
-COLUMN MATCHING (Match column headers to these exact field names):
+⚠️ CRITICAL EXTRACTION RULES:
+✅ Extract AT LEAST 5-10 rows (if table shows more, extract ALL of them)
+✅ Each data row → 1 JSON object in your output array
+✅ SKIP the header row (column names) - only extract actual data cells
+✅ If you see 20 rows of data, return 20 JSON objects
+✅ Empty cells should be "" (not null, not dashes, not missing)
+
+📊 COLUMN MAPPING (Match table column headers to these field names):
 ${columnHints}
 
-CRITICAL RULES:
-✅ Return data from EVERY visible row in the table
-✅ Use "" for empty cells (not null, not dashes)
-✅ Return EXACTLY field names listed above - no modifications
-✅ If you see numbers/text in a column, EXTRACT IT
+📖 STEP-BY-STEP INSTRUCTIONS:
+1. IDENTIFY: Locate the table and identify the header row (column names)
+2. COUNT: Count how many DATA rows are visible below the header
+3. EXTRACT: For EACH data row, read values from left to right
+4. MAP: Match each column value to the closest field name from list above
+5. OUTPUT: Return JSON array with one object per data row
 
-EXTRACTION INSTRUCTIONS:
-1. Identify all column headers in the table (read carefully!)
-2. For each visible row, extract values from left to right
-3. Map each column to the closest matching field name above
-4. Include ALL rows visible in the screenshot
-5. Remove dashes, parentheses, commas from numbers
-6. Return as JSON array with all records
+🎨 HTML TABLE STRUCTURE (what you're looking at):
+- <thead> or first row = HEADERS (column names) → SKIP THIS
+- <tbody> or remaining rows = DATA (actual records) → EXTRACT ALL OF THESE
+- Each <tr> in tbody = one JSON object in your output array
 
-OUTPUT FORMAT:
-⚠️ Return ONLY valid JSON array [ ] - no explanations
-⚠️ Each record is an object with field names as keys
-⚠️ NO CODE BLOCKS, NO MARKDOWN
-⚠️ Start with [ and end with ]
+🚫 COMMON MISTAKES TO AVOID:
+❌ Only extracting 1 row when table shows 10+ rows
+❌ Extracting header row as data
+❌ Stopping after first row
+❌ Missing rows at the bottom of the table
 
-EXAMPLE OUTPUT (using the field names above):
+✅ CORRECT BEHAVIOR:
+✓ Look at entire screenshot from top to bottom
+✓ Find ALL table rows with data (not just the first one)
+✓ Return JSON array with 5-20 objects (depends on table size)
+✓ Each object represents ONE row from the table
+
+📤 OUTPUT FORMAT:
+⚠️ Return ONLY valid JSON array starting with [ and ending with ]
+⚠️ NO explanations, NO code blocks, NO markdown, NO extra text
+⚠️ Minimum 5 objects in array (unless table has fewer rows)
+
+EXAMPLE (if table has 3 data rows, return 3 objects):
 [
-  {${Object.keys(schemaFields).slice(0, 5).map(k => `"${k}": "value"`).join(', ')}},
-  {${Object.keys(schemaFields).slice(0, 5).map(k => `"${k}": ""`).join(', ')}}
+  {${Object.keys(schemaFields).slice(0, 3).map(k => `"${k}": "actual value from row 1"`).join(', ')}},
+  {${Object.keys(schemaFields).slice(0, 3).map(k => `"${k}": "actual value from row 2"`).join(', ')}},
+  {${Object.keys(schemaFields).slice(0, 3).map(k => `"${k}": "actual value from row 3"`).join(', ')}}
 ]
 
-${isRetry ? '\n⚠️ RETRY: Previous attempt failed. Be AGGRESSIVE - extract the actual visible row data, not structure.' : ''}`;
+${isRetry ? '\n⚠️⚠️⚠️ RETRY ATTEMPT: Your previous response only returned 1 row but the table has MULTIPLE rows.\n🔥 Extract ALL visible data rows, not just the first one! Count them and return that many objects.' : ''}`;
 
       // Prepare image data - MUST be Base64 encoded for Gemini Vision API
       let imageData;
