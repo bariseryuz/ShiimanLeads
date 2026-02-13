@@ -750,7 +750,25 @@
       <div>
         <h1><img src="icons/sources.svg" style="width:24px;height:24px;vertical-align:middle;margin-right:8px;"> My Data Sources</h1>
       </div>
-      <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1.5rem;">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: end;">
+          <div>
+            <label for="scrapeMaxPages" style="font-size: 0.8rem; color: #6b7280;">Max pages</label>
+            <input type="number" id="scrapeMaxPages" min="1" placeholder="10" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 6px;">
+          </div>
+          <div>
+            <label for="scrapeMaxRowsPerPage" style="font-size: 0.8rem; color: #6b7280;">Max rows/page</label>
+            <input type="number" id="scrapeMaxRowsPerPage" min="1" placeholder="(optional)" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 6px;">
+          </div>
+          <div>
+            <label for="scrapeMaxTotalRows" style="font-size: 0.8rem; color: #6b7280;">Max total rows</label>
+            <input type="number" id="scrapeMaxTotalRows" min="1" placeholder="(optional)" style="width: 100%; padding: 0.5rem; border: 1px solid #e5e7eb; border-radius: 6px;">
+          </div>
+          <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #374151;">
+            <input type="checkbox" id="scrapeTestMode" style="width: auto;">
+            Test mode (1 page, 10 rows)
+          </label>
+        </div>
         <button class="btn btn-secondary" onclick="scrapeNow()" id="scrapeBtn">
           <img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Scrape Now
         </button>
@@ -2132,7 +2150,27 @@
       btn.innerHTML = '<img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;animation:spin 1s linear infinite;"> Starting...';
       
       try {
-        const response = await fetch('/api/scrape/now', { method: 'POST', credentials: 'include' });
+        const extractionLimits = {};
+        const maxPages = document.getElementById('scrapeMaxPages')?.value;
+        const maxRowsPerPage = document.getElementById('scrapeMaxRowsPerPage')?.value;
+        const maxTotalRows = document.getElementById('scrapeMaxTotalRows')?.value;
+        const testMode = document.getElementById('scrapeTestMode')?.checked;
+        
+        if (maxPages) extractionLimits.maxPages = Number(maxPages);
+        if (maxRowsPerPage) extractionLimits.maxRowsPerPage = Number(maxRowsPerPage);
+        if (maxTotalRows) extractionLimits.maxTotalRows = Number(maxTotalRows);
+        if (testMode) extractionLimits.testMode = true;
+        
+        const body = Object.keys(extractionLimits).length > 0
+          ? JSON.stringify({ extractionLimits })
+          : '{}';
+        
+        const response = await fetch('/api/scrape/now', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body
+        });
         const data = await response.json();
         
         if (data.success) {
