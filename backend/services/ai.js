@@ -1,16 +1,5 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const logger = require('../utils/logger');
-
-// Initialize Gemini AI
-let geminiModel = null;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp';
-if (process.env.GEMINI_API_KEY) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  geminiModel = genAI.getGenerativeModel({ model: GEMINI_MODEL });
-  logger.info(`✅ Google Gemini AI initialized (${GEMINI_MODEL})`);
-} else {
-  logger.warn('⚠️ GEMINI_API_KEY not found - AI extraction disabled');
-}
+const { getGeminiModel, isGeminiAvailable } = require('./geminiClient');
 
 // AI generation config — allow controlling "thinking level" via env
 const AI_THINKING_LEVEL = String(process.env.AI_THINKING_LEVEL || 'low').toLowerCase();
@@ -41,11 +30,12 @@ function buildGenConfig() {
  * @returns {Promise<object|array>} Extracted lead data
  */
 async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry = false) {
-  if (!geminiModel) {
+  if (!isGeminiAvailable()) {
     logger.warn('Google Gemini not configured, skipping AI extraction');
     logger.warn('⚠️ Set GEMINI_API_KEY in .env to enable AI extraction');
     return null;
   }
+  const geminiModel = getGeminiModel();
 
   try {
     const isTileObject = input && typeof input === 'object' && Array.isArray(input.tiles);
@@ -437,26 +427,8 @@ ${truncatedText}`;
   }
 }
 
-/**
- * Check if Gemini AI is available
- * @returns {boolean} True if Gemini is configured
- */
-function isGeminiAvailable() {
-  return geminiModel !== null;
-}
-
-/**
- * Get the Gemini model instance
- * @returns {object|null} Gemini model or null
- */
-function getGeminiModel() {
-  return geminiModel;
-}
-
 module.exports = {
   extractLeadWithAI,
   buildGenConfig,
-  isGeminiAvailable,
-  getGeminiModel,
-  geminiModel
+  isGeminiAvailable
 };

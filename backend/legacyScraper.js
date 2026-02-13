@@ -20,7 +20,6 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const fs = require('fs');
 const { chromium } = require('playwright');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { ProxyAgent } = require('undici');
 
 // Import extracted modules
@@ -82,14 +81,7 @@ const axiosProxyConfig = PROXY_ENABLED ? {
   })
 } : {};
 
-// Initialize Google Gemini
-let geminiModel = null;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp';
-if (process.env.GEMINI_API_KEY) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  geminiModel = genAI.getGenerativeModel({ model: GEMINI_MODEL });
-  logger.info(`Google Gemini AI initialized (${GEMINI_MODEL})`);
-}
+// Gemini is initialized in services/geminiClient.js
 
 /**
  * Main scraping function - restored from old index.js but simplified
