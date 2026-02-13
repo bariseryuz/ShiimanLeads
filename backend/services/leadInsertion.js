@@ -349,7 +349,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, hashSalt = '', userId, e
         if (customFields.length > 0) {
           logger.info(`   ℹ️ Custom fields in this lead:`);
           customFields.forEach(field => {
-            const val = values.get(field);
+            const val = columnValues.get(field);
             const display = val ? String(val).substring(0, 40) : '[EMPTY - NOT SET]';
             logger.info(`      - ${field}: ${display}`);
           });
