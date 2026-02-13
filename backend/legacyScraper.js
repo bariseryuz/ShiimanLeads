@@ -293,16 +293,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               }
               logger.info(`🔍 Field schema: ${source.fieldSchema ? Object.keys(source.fieldSchema).join(', ') : 'default'}`);
 
-              const aiInput = tiles && tiles.length > 0
-                ? {
-                    composite: composite || null,
-                    tiles: tiles.map(tile => tile.buffer),
-                    tileRows: screenshotData.tileRows,
-                    tileCols: screenshotData.tileCols,
-                    overlapPct: screenshotData.overlapPct
-                  }
-                : screenshot;
-              const aiLeads = await extractLeadWithAI(aiInput, source.name, source.fieldSchema);
+              // ✅ Pass single composite buffer to AI (not the tiled object structure)
+              // 'screenshot' is already properly extracted as composite or first tile
+              logger.info(`📤 Passing ${Buffer.isBuffer(screenshot) ? 'Buffer' : typeof screenshot} to AI extraction`);
+              const aiLeads = await extractLeadWithAI(screenshot, source.name, source.fieldSchema);
               
               if (aiLeads && Array.isArray(aiLeads)) {
                 logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);

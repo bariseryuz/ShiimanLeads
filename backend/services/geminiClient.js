@@ -67,28 +67,14 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
       return [];
     }
     
-    // Handle tiles or single screenshot
-    let screenshotBuffer;
+    // Ensure we have a Buffer
+    let screenshotBuffer = screenshot;
     
-    // Check if this is a tiled screenshot object {composite, tiles, tileRows, ...}
-    if (screenshot && typeof screenshot === 'object' && screenshot.composite && screenshot.tiles && Array.isArray(screenshot.tiles)) {
-      logger.info(`📦 Input is tiled screenshot object`);
-      // Use the composite image
-      screenshotBuffer = screenshot.composite;
-    } else if (Array.isArray(screenshot)) {
-      logger.info(`📸 Using first of ${screenshot.length} tiles`);
-      screenshotBuffer = screenshot[0].screenshot || screenshot[0];
-    } else {
-      screenshotBuffer = screenshot;
-    }
-    
-    // Ensure it's a Buffer, not an object
+    // Handle various buffer formats
     if (!Buffer.isBuffer(screenshotBuffer)) {
-      logger.warn(`⚠️ Screenshot is not a Buffer, attempting conversion...`);
-      logger.warn(`   Type: ${typeof screenshotBuffer}`);
-      logger.warn(`   Constructor: ${screenshotBuffer?.constructor?.name}`);
-      logger.warn(`   Keys: ${typeof screenshotBuffer === 'object' ? Object.keys(screenshotBuffer).slice(0, 5).join(',') : 'N/A'}`);
+      logger.warn(`⚠️ Screenshot is not a Buffer: ${typeof screenshotBuffer}`);
       
+      // Try to convert serialized Buffer format {type: "Buffer", data: [...]}
       if (screenshotBuffer && typeof screenshotBuffer === 'object' && screenshotBuffer.type === 'Buffer' && Array.isArray(screenshotBuffer.data)) {
         logger.info(`   ✓ Converting from serialized Buffer object`);
         screenshotBuffer = Buffer.from(screenshotBuffer.data);
@@ -100,7 +86,7 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
         screenshotBuffer = Buffer.from(screenshotBuffer, 'base64');
       } else {
         logger.error(`❌ Unable to convert screenshot to Buffer`);
-        logger.error(`   Value preview: ${JSON.stringify(screenshotBuffer).substring(0, 200)}`);
+        logger.error(`   Type: ${typeof screenshotBuffer}, Constructor: ${screenshotBuffer?.constructor?.name}`);
         return [];
       }
     }
