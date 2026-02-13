@@ -214,7 +214,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           });
           
           // === PAGINATION & FULL SCROLL SUPPORT ===
-          if (source.useAI && geminiModel) {
+          if (source.useAI) {
             aiExtractionUsed = true;
             logger.info(`📸 Starting multi-page AI extraction with full scrolling...`);
             
@@ -615,7 +615,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           // Try AI extraction
           let lead;
-          if (source.useAI && geminiModel) {
+          if (source.useAI) {
             lead = await extractLeadWithAI(raw, source.name, source.fieldSchema);
           }
           
