@@ -74,6 +74,19 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
       screenshotBuffer = screenshot;
     }
     
+    // Ensure it's a Buffer, not an object
+    if (!Buffer.isBuffer(screenshotBuffer)) {
+      if (screenshotBuffer && typeof screenshotBuffer === 'object' && screenshotBuffer.type === 'Buffer' && Array.isArray(screenshotBuffer.data)) {
+        screenshotBuffer = Buffer.from(screenshotBuffer.data);
+      } else if (typeof screenshotBuffer === 'string') {
+        // Already base64 encoded
+        screenshotBuffer = Buffer.from(screenshotBuffer, 'base64');
+      } else {
+        logger.error(`❌ Invalid screenshot type: ${typeof screenshotBuffer}, value: ${JSON.stringify(screenshotBuffer).substring(0, 100)}`);
+        return [];
+      }
+    }
+    
     logger.info(`📊 Screenshot: ${(screenshotBuffer.length / 1024).toFixed(1)}KB`);
     
     // Build prompt
@@ -98,11 +111,13 @@ Extract now:`;
 
     logger.info(`📝 Calling Gemini API...`);
     
+    const base64Data = screenshotBuffer.toString('base64');
+    
     const result = await geminiModel.generateContent([
       {
         inlineData: {
           mimeType: 'image/png',
-          data: screenshotBuffer.toString('base64')
+          data: base64Data
         }
       },
       { text: prompt }
