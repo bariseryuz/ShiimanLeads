@@ -48,6 +48,7 @@ const {
   normalizeText
 } = require('./services/scraper/helpers');
 const { validateExtractedFields } = require('./services/scraper/validation');
+const { setupPopupBlocking, preventAllPopups } = require('./services/scraper/preventPopup');
 const { SCREENSHOT_DIR } = require('./config/paths');
 
 // Proxy Configuration
@@ -178,6 +179,9 @@ async function scrapeForUser(userId, userSources) {
           await page.setViewport({ width: 2560, height: 1440 });
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
           
+          // 🛡️ BLOCK POP-UPS BEFORE NAVIGATION
+          await setupPopupBlocking(page);
+          
           // Navigate to page with proper wait strategy
           logger.info(`🌐 Navigating to ${source.url}...`);
           await page.goto(source.url, { 
@@ -189,28 +193,11 @@ async function scrapeForUser(userId, userSources) {
           // Single wait for JS-heavy sites to fully render (consolidated)
           await new Promise(resolve => setTimeout(resolve, 3000));
 
-          // Attempt to accept cookie/consent dialogs so page content is accessible
-          try {
-            const consentClicked = await page.evaluate(() => {
-              const candidates = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="button"], input[type="submit"]'));
-              const labels = ['accept', 'i accept', 'agree', 'ok', 'got it', 'allow all', 'accept all', 'continue'];
-              const match = candidates.find(el => {
-                const text = (el.textContent || el.value || '').trim().toLowerCase();
-                return labels.some(label => text === label || text.includes(label));
-              });
-              if (match) {
-                match.click();
-                return true;
-              }
-              return false;
-            });
-            if (consentClicked) {
-              logger.info('✅ Consent dialog accepted');
-              await new Promise(resolve => setTimeout(resolve, 1500));
-            }
-          } catch (consentErr) {
-            logger.warn(`⚠️ Consent dialog handling failed: ${consentErr.message}`);
-          }
+          // 🛡️ COMPREHENSIVE POP-UP REMOVAL (replaces manual consent handling)
+          await preventAllPopups(page, {
+            waitBetweenSteps: 1500,
+            retries: 2
+          });
           
           // === PAGINATION & FULL SCROLL SUPPORT ===
           if (source.useAI && geminiModel) {
