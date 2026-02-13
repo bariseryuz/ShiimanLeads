@@ -8,6 +8,10 @@ function runMigrations(db) {
 
   // Leads table migrations
   const leadsMigrations = [
+    { column: 'unique_id', type: 'TEXT' },
+    { column: 'source_name', type: 'TEXT' },
+    { column: 'raw_data', type: 'TEXT' },
+    { column: 'estimated_value', type: 'TEXT' },
     { column: 'source_id', type: 'INTEGER' },
     { column: 'created_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
     { column: 'updated_at', type: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },

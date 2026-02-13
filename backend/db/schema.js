@@ -11,14 +11,18 @@ function createTables(db) {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     source_id INTEGER NOT NULL,
+    unique_id TEXT NOT NULL,
+    source_name TEXT,
     hash TEXT,
     primary_id TEXT,
     title TEXT,
     data TEXT,
     raw_text TEXT,
-    permit_number TEXT NOT NULL,
+    raw_data TEXT,
+    permit_number TEXT,
     address TEXT,
     value TEXT,
+    estimated_value TEXT,
     description TEXT,
     source TEXT,
     date_added TEXT,
@@ -51,10 +55,12 @@ function createTables(db) {
     record_type TEXT,
     project_name TEXT,
     is_new INTEGER DEFAULT 1,
+    seen_count INTEGER DEFAULT 1,
+    last_seen_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     link TEXT,
-    UNIQUE(user_id, permit_number)
+    UNIQUE(user_id, source_id, unique_id)
   )`);
 
   // Users table
