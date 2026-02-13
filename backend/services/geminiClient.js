@@ -62,6 +62,8 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
     
     if (!screenshot || !fieldSchema) {
       logger.error('❌ Missing screenshot or schema');
+      logger.error(`   Screenshot type: ${typeof screenshot}, isBuffer: ${Buffer.isBuffer(screenshot)}`);
+      logger.error(`   FieldSchema type: ${typeof fieldSchema}, keys: ${fieldSchema ? Object.keys(fieldSchema).length : 0}`);
       return [];
     }
     
@@ -76,13 +78,23 @@ async function extractWithAI(screenshot, sourceName, fieldSchema) {
     
     // Ensure it's a Buffer, not an object
     if (!Buffer.isBuffer(screenshotBuffer)) {
+      logger.warn(`⚠️ Screenshot is not a Buffer, attempting conversion...`);
+      logger.warn(`   Type: ${typeof screenshotBuffer}`);
+      logger.warn(`   Constructor: ${screenshotBuffer?.constructor?.name}`);
+      logger.warn(`   Keys: ${typeof screenshotBuffer === 'object' ? Object.keys(screenshotBuffer).slice(0, 5) : 'N/A'}`);
+      
       if (screenshotBuffer && typeof screenshotBuffer === 'object' && screenshotBuffer.type === 'Buffer' && Array.isArray(screenshotBuffer.data)) {
+        logger.info(`   ✓ Converting from serialized Buffer object`);
         screenshotBuffer = Buffer.from(screenshotBuffer.data);
+      } else if (screenshotBuffer instanceof Uint8Array) {
+        logger.info(`   ✓ Converting from Uint8Array`);
+        screenshotBuffer = Buffer.from(screenshotBuffer);
       } else if (typeof screenshotBuffer === 'string') {
-        // Already base64 encoded
+        logger.info(`   ✓ Converting from base64 string`);
         screenshotBuffer = Buffer.from(screenshotBuffer, 'base64');
       } else {
-        logger.error(`❌ Invalid screenshot type: ${typeof screenshotBuffer}, value: ${JSON.stringify(screenshotBuffer).substring(0, 100)}`);
+        logger.error(`❌ Unable to convert screenshot to Buffer`);
+        logger.error(`   Value preview: ${JSON.stringify(screenshotBuffer).substring(0, 200)}`);
         return [];
       }
     }
@@ -110,8 +122,12 @@ Rules:
 Extract now:`;
 
     logger.info(`📝 Calling Gemini API...`);
+    logger.info(`   Model: gemini-1.5-flash`);
+    logger.info(`   Buffer size: ${screenshotBuffer.length} bytes`);
+    logger.info(`   Fields: ${Object.keys(fieldSchema).join(', ')}`);
     
     const base64Data = screenshotBuffer.toString('base64');
+    logger.info(`   Base64 length: ${base64Data.length} chars`);
     
     const result = await geminiModel.generateContent([
       {
@@ -134,22 +150,42 @@ Extract now:`;
     
     logger.info(`🔍 Parsing JSON...`);
     
-    let parsed = JSON.parse(cleaned);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr) {
+      logger.error(`❌ JSON parse failed: ${parseErr.message}`);
+      logger.error(`   Response was: "${cleaned.substring(0, 200)}..."`);
+      return [];
+    }
     
     if (!Array.isArray(parsed)) {
+      logger.warn(`⚠️ Response wasn't an array, converting single object`);
       parsed = [parsed];
     }
     
+    logger.info(`   Total records from AI: ${parsed.length}`);
+    
     // Filter valid records
-    const valid = parsed.filter(record => {
-      return record && typeof record === 'object' &&
+    const valid = parsed.filter((record, idx) => {
+      const isValid = record && typeof record === 'object' &&
         fields.some(f => record[f] != null && record[f] !== '');
+      
+      if (!isValid && parsed.length < 5) {
+        logger.warn(`   Record ${idx} filtered: ${JSON.stringify(record).substring(0, 100)}`);
+      }
+      
+      return isValid;
     });
     
-    logger.info(`✅ Extracted ${valid.length} records`);
+    logger.info(`✅ Extracted ${valid.length} valid records (filtered ${parsed.length - valid.length})`);
     
     if (valid.length > 0) {
       logger.info(`🔍 First: ${JSON.stringify(valid[0]).substring(0, 100)}`);
+    } else if (parsed.length > 0) {
+      logger.warn(`⚠️ AI extracted ${parsed.length} records but all filtered out`);
+      logger.warn(`   Expected fields: ${fields.join(', ')}`);
+      if (parsed[0]) logger.warn(`   First record keys: ${Object.keys(parsed[0]).join(', ')}`);
     }
     
     return valid;
