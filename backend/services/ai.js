@@ -5,8 +5,10 @@ const logger = require('../utils/logger');
 let geminiModel = null;
 if (process.env.GEMINI_API_KEY) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' });
-  logger.info('✅ Google Gemini AI initialized (gemini-3-flash-preview)');
+  // Using gemini-1.5-pro for superior vision analysis (best for complex tables)
+  // Alternative: gemini-2.0-flash-exp (faster but experimental)
+  geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  logger.info('✅ Google Gemini AI initialized (gemini-1.5-pro - superior vision)');
 } else {
   logger.warn('⚠️ GEMINI_API_KEY not found - AI extraction disabled');
 }
@@ -122,6 +124,13 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
 
 🎯 YOUR TASK: Extract EVERY SINGLE ROW of data from this table (minimum 5-20 rows expected)
 
+🔍 SYSTEMATIC SCANNING INSTRUCTION:
+1. FIRST: Look at the ENTIRE screenshot from TOP to BOTTOM
+2. Identify where the table starts and ends
+3. Do NOT focus on just one highlighted/selected row
+4. Scan through ALL rows systematically (row 1, row 2, row 3... row N)
+5. Extract data from EACH row you see
+
 ${criticalInstruction}📋 OUTPUT FIELD NAMES (use EXACTLY these keys):
 ${fieldDescriptions}
 
@@ -154,12 +163,15 @@ ${columnHints}
 
 🚫 COMMON MISTAKES TO AVOID:
 ❌ Only extracting 1 row when table shows 10+ rows
+❌ Only extracting the highlighted/selected row (dark gray background)
+❌ Focusing on one row and ignoring others
 ❌ Extracting header row as data
 ❌ Stopping after first row
 ❌ Missing rows at the bottom of the table
 
 ✅ CORRECT BEHAVIOR:
 ✓ Look at entire screenshot from top to bottom
+✓ Ignore highlighting - extract ALL rows equally (highlighted and non-highlighted)
 ✓ Find ALL table rows with data (not just the first one)
 ✓ Return JSON array with 5-20 objects (depends on table size)
 ✓ Each object represents ONE row from the table
