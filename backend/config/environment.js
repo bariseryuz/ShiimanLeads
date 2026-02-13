@@ -30,14 +30,11 @@ module.exports = {
   // Google Gemini AI
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
   
-  // Playwright (fallback to legacy Puppeteer env vars if set)
-  PLAYWRIGHT_HEADLESS: process.env.PLAYWRIGHT_HEADLESS
-    ? process.env.PLAYWRIGHT_HEADLESS !== 'false'
-    : process.env.PUPPETEER_HEADLESS !== 'false',
-  PLAYWRIGHT_EXECUTABLE_PATH: process.env.PLAYWRIGHT_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH,
-  // Legacy Puppeteer env vars (deprecated)
-  PUPPETEER_HEADLESS: process.env.PUPPETEER_HEADLESS !== 'false',
-  PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH,
+  // Playwright
+  PLAYWRIGHT_HEADLESS: process.env.PLAYWRIGHT_HEADLESS !== 'false',
+  PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+    || process.env.PLAYWRIGHT_EXECUTABLE_PATH,
+  PLAYWRIGHT_CHROMIUM_ARGS: process.env.PLAYWRIGHT_CHROMIUM_ARGS,
   
   // Session
   SESSION_SECRET: process.env.SESSION_SECRET || 'your-secret-key-here-change-in-production',

@@ -49,15 +49,6 @@ router.post('/now', async (req, res) => {
         if (sourceData.usePlaywright === true && !sourceData.method) {
           sourceData.method = 'playwright';
         }
-        // Backwards compatibility: map Puppeteer flags to Playwright
-        if (sourceData.usePuppeteer === true) {
-          sourceData.usePlaywright = true;
-          sourceData.method = 'playwright';
-        }
-        if (sourceData.method === 'puppeteer') {
-          sourceData.usePlaywright = true;
-          sourceData.method = 'playwright';
-        }
         // Also set usePlaywright if method is playwright
         if (sourceData.method === 'playwright' && sourceData.usePlaywright !== true) {
           sourceData.usePlaywright = true;

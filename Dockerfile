@@ -49,9 +49,11 @@ COPY frontend/ ./frontend/
 # Create required directories
 RUN mkdir -p backend/logs backend/output backend/data backend/data/screenshots
 
-# Set Playwright environment variables (use system Chrome)
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=true \
-    PLAYWRIGHT_EXECUTABLE_PATH=/usr/bin/google-chrome-stable
+# Set Playwright environment variables (use system Chromium/Chrome)
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/google-chrome-stable \
+    PLAYWRIGHT_HEADLESS=true \
+    PLAYWRIGHT_CHROMIUM_ARGS=--no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage
 
 # Expose port
 EXPOSE 3000

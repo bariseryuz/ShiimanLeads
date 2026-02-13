@@ -161,7 +161,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       let newLeads = 0;
       
       // Playwright scraping for dynamic sites
-      if (source.usePlaywright || source.usePuppeteer || source.method === 'playwright' || source.method === 'puppeteer') {
+      if (source.usePlaywright || source.method === 'playwright') {
         logger.info(`Using Playwright for ${source.name}`);
         logger.info(`🔧 AI extraction enabled: ${source.useAI ? 'YES' : 'NO'}`);
         logger.info(`📸 Screenshot capture will be used for AI vision`);
@@ -170,16 +170,22 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         
         try {
           // Launch browser with anti-detection
+          const baseArgs = [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-blink-features=AutomationControlled'
+          ];
+          const extraArgs = (process.env.PLAYWRIGHT_CHROMIUM_ARGS || '')
+            .split(',')
+            .map(arg => arg.trim())
+            .filter(Boolean);
           const launchOptions = {
-            headless: (process.env.PLAYWRIGHT_HEADLESS ?? process.env.PUPPETEER_HEADLESS) === 'false' ? false : true,
-            args: [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-blink-features=AutomationControlled'
-            ]
+            headless: process.env.PLAYWRIGHT_HEADLESS === 'false' ? false : true,
+            args: [...baseArgs, ...extraArgs]
           };
           
-          const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH || process.env.PUPPETEER_EXECUTABLE_PATH;
+          const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+            || process.env.PLAYWRIGHT_EXECUTABLE_PATH;
           if (executablePath) {
             launchOptions.executablePath = executablePath;
             logger.info(`🚀 Using custom Chromium: ${executablePath}`);
