@@ -304,7 +304,7 @@ ${truncatedText}`;
         }
         
         const normalizedKey = key.toLowerCase().replace(/\s+/g, '_').replace(/[#]/g, '');
-        let targetKey = normalizedKey;
+        let targetKey = key; // PRESERVE original key name by default
         
         // Try to find a matching standard field
         for (const [target, variations] of Object.entries(fieldMappings)) {
