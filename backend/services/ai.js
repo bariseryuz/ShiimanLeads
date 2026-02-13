@@ -3,11 +3,11 @@ const logger = require('../utils/logger');
 
 // Initialize Gemini AI
 let geminiModel = null;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash';
 if (process.env.GEMINI_API_KEY) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  // Using gemini-3-flash per user request
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-3-flash' });
-  logger.info('✅ Google Gemini AI initialized (gemini-3-flash)');
+  geminiModel = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+  logger.info(`✅ Google Gemini AI initialized (${GEMINI_MODEL})`);
 } else {
   logger.warn('⚠️ GEMINI_API_KEY not found - AI extraction disabled');
 }

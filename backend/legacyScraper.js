@@ -84,10 +84,11 @@ const axiosProxyConfig = PROXY_ENABLED ? {
 
 // Initialize Google Gemini
 let geminiModel = null;
+const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3-flash';
 if (process.env.GEMINI_API_KEY) {
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-  geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-  logger.info('Google Gemini AI initialized');
+  geminiModel = genAI.getGenerativeModel({ model: GEMINI_MODEL });
+  logger.info(`Google Gemini AI initialized (${GEMINI_MODEL})`);
 }
 
 /**
