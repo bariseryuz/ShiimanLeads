@@ -84,10 +84,10 @@ async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, s
           sourceId,
           sourceName || 'unknown',
           uniqueId,
-          typeof raw === 'string' ? raw : JSON.stringify(raw || data),
-          field1 || null,  // Store first field in permit_number column
-          field2 || null,  // Store second field in address column
-          field3 || null,  // Store third field in estimated_value column
+          JSON.stringify(data),  // Store full extracted data as JSON
+          field1 || null,
+          field2 || null,
+          field3 || null,
           JSON.stringify(importantFields).substring(0, 200) || null,
           new Date().toISOString(),
           null,

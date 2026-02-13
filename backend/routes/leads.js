@@ -59,16 +59,26 @@ router.get('/', async (req, res) => {
 
     const leadsRows = db.prepare(leadsSQL).all(...params);
     const excludedKeys = new Set([
-      'id', 'user_id', 'source_id', 'hash', 'raw_text', 'data', 'primary_id', 'title',
+      'id', 'user_id', 'source_id', 'hash', 'raw_text', 'raw_data', 'data', 'primary_id', 'title',
       'created_at', 'updated_at', 'is_new', 'source', 'date_added', 'dedup_hash',
-      'canonical_hash', 'extracted_data', 'ai_confidence', 'ai_validated'
+      'canonical_hash', 'extracted_data', 'ai_confidence', 'ai_validated', 'unique_id', 'source_name'
     ]);
 
     // Process unified leads table results
     leadsRows.forEach(row => {
       let data = null;
 
-      if (row.data) {
+      // Try raw_data first (universal dedup system stores extracted data here)
+      if (row.raw_data) {
+        try {
+          data = JSON.parse(row.raw_data);
+        } catch (err) {
+          logger.warn(`Invalid JSON in leads.raw_data for id ${row.id}`);
+        }
+      }
+
+      // Try data column
+      if (!data && row.data) {
         try {
           data = JSON.parse(row.data);
         } catch (err) {
@@ -76,6 +86,7 @@ router.get('/', async (req, res) => {
         }
       }
 
+      // Try raw_text column (legacy)
       if (!data && row.raw_text) {
         try {
           data = JSON.parse(row.raw_text);
