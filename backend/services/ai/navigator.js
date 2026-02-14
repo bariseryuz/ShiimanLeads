@@ -45,7 +45,7 @@ async function parseNavigationSteps(userPrompt, pageUrl, screenshot) {
     logger.info(`🤖 Asking Gemini to interpret navigation instructions...`);
     logger.info(`📝 User prompt: ${processedPrompt.substring(0, 200)}...`);
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash ' });
 
     const systemPrompt = `You are a web automation expert. Analyze the screenshot and user instructions to generate precise Playwright automation steps.
 
