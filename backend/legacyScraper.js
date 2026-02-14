@@ -149,6 +149,15 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       logger.info(`\n══════════════════════════════════════════`);
       logger.info(`🔎 Starting source: ${source.name} (User ${userId})`);
       logger.info(`══════════════════════════════════════════`);
+      logger.info(`📋 Source Configuration:`);
+      logger.info(`   URL: ${source.url}`);
+      logger.info(`   Method: ${source.method || 'html'}`);
+      logger.info(`   Use AI: ${source.useAI}`);
+      logger.info(`   Use Playwright: ${source.usePlaywright}`);
+      logger.info(`   AI Prompt: ${source.aiPrompt ? `"${source.aiPrompt.substring(0, 150)}${source.aiPrompt.length > 150 ? '...' : ''}"` : 'NOT SET'}`);
+      if (source.fieldSchema && Object.keys(source.fieldSchema).length > 0) {
+        logger.info(`   Field Schema: ${Object.keys(source.fieldSchema).join(', ')}`);
+      }
       
       let data;
       let usedPlaywright = false;
