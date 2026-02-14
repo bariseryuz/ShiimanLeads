@@ -6,8 +6,10 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const logger = require('../utils/logger');
 
-// ✅ STABLE MODEL (using latest available)
-const MODEL_NAME = 'gemini-2.0-flash';
+// ✅ STABLE MODEL (configurable via env)
+const MODEL_NAME = process.env.GEMINI_EXTRACTION_MODEL ||
+  process.env.GEMINI_MODEL ||
+  'gemini-2.5-flash';
 let geminiModel = null;
 
 if (process.env.GEMINI_API_KEY) {
