@@ -288,6 +288,73 @@ async function closePopups(page) {
   } catch (err) {
     // Ignore
   }
+
+  // Try to close popups inside iframes (common for cookie banners)
+  try {
+    const frames = page.frames();
+    for (const frame of frames) {
+      for (const selector of popupSelectors) {
+        try {
+          if (selector.includes(':contains')) {
+            continue;
+          }
+
+          const elements = await frame.$$(selector);
+          if (elements.length > 0) {
+            for (const element of elements) {
+              try {
+                await element.click({ timeout: 1000 });
+                popupsClosed++;
+                await new Promise(resolve => setTimeout(resolve, 300));
+                logger.info(`✅ Clicked pop-up in iframe (${selector})`);
+              } catch (clickErr) {
+                // Ignore click errors inside frames
+              }
+            }
+          }
+        } catch (err) {
+          // Ignore frame selector errors
+        }
+      }
+
+      // Text-based fallback inside frame
+      try {
+        const frameTextClosed = await frame.evaluate(() => {
+          const texts = [
+            'Accept', 'Accept all', 'Accept all cookies', 'Accept cookies',
+            'I agree', 'Got it', 'OK', 'Agree',
+            'No thanks', 'Maybe later', 'Skip', 'Close', 'Dismiss'
+          ];
+
+          let closed = 0;
+          const buttons = Array.from(document.querySelectorAll('button, a'));
+
+          for (const button of buttons) {
+            const text = button.textContent.trim();
+            if (texts.some(t => text === t || text.toLowerCase().includes(t.toLowerCase()))) {
+              const rect = button.getBoundingClientRect();
+              const style = window.getComputedStyle(button);
+
+              if (rect.width > 0 && rect.height > 0 &&
+                  style.visibility !== 'hidden' &&
+                  style.display !== 'none') {
+                button.click();
+                closed++;
+              }
+            }
+          }
+
+          return closed;
+        });
+
+        popupsClosed += frameTextClosed;
+      } catch (err) {
+        // Ignore
+      }
+    }
+  } catch (err) {
+    // Ignore frame handling errors
+  }
   
   // Press ESC key (closes many modals)
   try {

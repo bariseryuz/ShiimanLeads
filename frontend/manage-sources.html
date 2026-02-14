@@ -251,6 +251,30 @@
           <small>Optional: Define custom fields you want AI to extract. Leave empty for auto-detection.</small>
         </div>
 
+        <div id="aiNavigationSection" class="form-group" style="display:block;">
+          <label for="aiNavigationPrompts">
+            🤖 AI Navigation Prompts (Beta)
+          </label>
+          <textarea id="aiNavigationPrompts" rows="6" placeholder="Enter natural language instructions (one per line):&#10;&#10;Select 'All Building Permits' from the Permit Type dropdown&#10;Select '10 or More Family Units' from Structure Class&#10;Fill the start date with {{DATE_365_DAYS_AGO}}&#10;Click the 'Create List' button&#10;Wait for results to load"></textarea>
+          <small style="line-height: 1.5;">
+            <strong>Optional:</strong> Natural language instructions for AI to navigate forms, filters, and buttons.<br>
+            <strong>Leave empty</strong> for automatic scraping.<br><br>
+            <strong>Available date placeholders:</strong> 
+            <code>{{DATE_TODAY}}</code>, 
+            <code>{{DATE_YESTERDAY}}</code>, 
+            <code>{{DATE_7_DAYS_AGO}}</code>, 
+            <code>{{DATE_30_DAYS_AGO}}</code>, 
+            <code>{{DATE_365_DAYS_AGO}}</code><br><br>
+            <strong>Examples:</strong>
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Select "Commercial" from the permit type dropdown</li>
+              <li>Fill the date field with {{DATE_30_DAYS_AGO}}</li>
+              <li>Click the blue "Search" button</li>
+              <li>Wait for the results table to appear</li>
+            </ul>
+          </small>
+        </div>
+
         <div class="form-group">
           <label for="includeKeywords">Include Keywords (comma-separated)</label>
           <input type="text" id="includeKeywords" placeholder="commercial, office, retail, warehouse">
@@ -372,7 +396,9 @@
     function toggleFieldSchema() {
       const useAI = document.getElementById('useAI').checked;
       const fieldSchemaSection = document.getElementById('fieldSchemaSection');
+      const aiNavigationSection = document.getElementById('aiNavigationSection');
       fieldSchemaSection.style.display = useAI ? 'block' : 'none';
+      aiNavigationSection.style.display = useAI ? 'block' : 'none';
     }
 
     function loadZillowTemplate() {
@@ -431,6 +457,20 @@
           } catch (error) {
             alert('Invalid JSON in Custom Fields. Please check the format.');
             return;
+          }
+        }
+        
+        // Add AI Navigation Prompts if provided
+        const aiNavigationInput = document.getElementById('aiNavigationPrompts').value.trim();
+        if (aiNavigationInput) {
+          const prompts = aiNavigationInput.split('\n')
+            .map(p => p.trim())
+            .filter(p => p.length > 0);
+          
+          if (prompts.length > 0) {
+            sourceData.aiNavigationPrompts = prompts;
+            // For backward compatibility, also set aiPrompt as joined string
+            sourceData.aiPrompt = prompts.join('\n');
           }
         }
       }

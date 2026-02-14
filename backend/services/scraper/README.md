@@ -42,9 +42,9 @@ Main scraping orchestration (~1500 lines). Handles:
   - ArcGIS/ESRI (attribute flattening)
 - Date parsing (Unix timestamps, ISO, various formats)
 
-#### b) Puppeteer Method (Dynamic Pages)
+#### b) Playwright Method (Dynamic Pages)
 - **Browser Automation**:
-  - Headless Chrome with stealth plugins
+  - Headless Chromium with stealth tactics
   - Proxy rotation with authentication
   - Anti-detection (navigator.webdriver masking)
   
@@ -64,7 +64,7 @@ Main scraping orchestration (~1500 lines). Handles:
   - Triggers 30-minute backoff on detection
   - Exponential backoff (2x, 4x, 8x max)
   
-- **puppeteerConfig Actions**:
+- **playwrightConfig Actions**:
   - `select` - Select dropdown options
   - `fill` - Fill form inputs
   - `click` - Click buttons/links
@@ -112,7 +112,7 @@ Main scraping orchestration (~1500 lines). Handles:
   - Currency: Dollar amounts
 
 #### d) AI Extraction Method
-- **Vision Mode** (from Puppeteer screenshots):
+- **Vision Mode** (from Playwright screenshots):
   - Google Gemini Flash 2.0 model
   - Multi-page processing
   - Array-like object handling (numeric keys)
@@ -209,10 +209,10 @@ Cron job orchestrator that:
 {
   "name": "Phoenix Building Permits",
   "url": "https://example.com/permits",
-  "usePuppeteer": true,           // Enable browser automation
+  "usePlaywright": true,          // Enable browser automation
   "useAI": true,                  // Enable AI extraction
   "aiPrompt": "Navigate to permits, fill date range, click search",
-  "puppeteerConfig": {            // Browser actions
+  "playwrightConfig": {           // Browser actions
     "actions": [
       { "type": "select", "selector": "#dateRange", "value": "last90days" },
       { "type": "fill", "selector": "#searchBox", "value": "{{KEYWORD}}" },

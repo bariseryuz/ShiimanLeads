@@ -100,7 +100,7 @@ The following complex services remain in index.js (to be extracted next):
 
 ### 🔜 scraper/ (Main Orchestration)
 - `scrapeForUser(userId, userSources)` - Main scraping orchestrator (~800 lines)
-- Browser/Puppeteer setup and configuration
+- Browser/Playwright setup and configuration
 - Screenshot capture functions
 - Field validation logic
 - Progress tracking and stop flags

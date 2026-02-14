@@ -258,28 +258,32 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 await page.waitForTimeout(3000);
               }
               
-              // Try networkidle first (best for most sites)
+              // Use domcontentloaded for faster, more reliable loading
               await page.goto(source.url, { 
-                waitUntil: 'networkidle',
-                timeout: 60000  // Reduced to 60s for networkidle
+                waitUntil: 'domcontentloaded',
+                timeout: 30000  // 30s timeout
               });
-              logger.info(`✅ Page loaded (networkidle): ${source.url}`);
+              logger.info(`✅ Page loaded (domcontentloaded): ${source.url}`);
+              
+              // Give JS time to initialize
+              await page.waitForTimeout(3000);
+              
               navigationSuccess = true;
               break;
             } catch (navError) {
               lastError = navError;
               
               if (navError.message.includes('Timeout') || navError.message.includes('timeout')) {
-                // Fallback: try with 'load' wait strategy for slow sites
-                logger.warn(`⚠️ networkidle timeout, retrying with 'load' strategy...`);
+                // Fallback: try with 'load' wait strategy for very slow sites
+                logger.warn(`⚠️ domcontentloaded timeout, retrying with 'load' strategy...`);
                 try {
                   await page.goto(source.url, { 
                     waitUntil: 'load',
-                    timeout: 90000 
+                    timeout: 60000 
                   });
                   logger.info(`✅ Page loaded (load): ${source.url}`);
                   // Give extra time for JS to initialize
-                  await page.waitForTimeout(5000);
+                  await page.waitForTimeout(3000);
                   navigationSuccess = true;
                   break;
                 } catch (loadError) {
@@ -333,11 +337,15 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           // === AI AUTONOMOUS NAVIGATION ===
           let paginationInfo = null;
-          if (source.aiPrompt && isNavigatorAvailable()) {
-            logger.info(`🤖 AI Prompt detected - starting autonomous navigation...`);
-            logger.info(`📝 Prompt: ${source.aiPrompt}`);
+          // Support both aiNavigationPrompts (array) and aiPrompt (string) for backward compatibility
+          const aiPrompts = source.aiNavigationPrompts || (source.aiPrompt ? [source.aiPrompt] : null);
+          
+          if (aiPrompts && aiPrompts.length > 0 && isNavigatorAvailable()) {
+            const navigationPrompt = aiPrompts.join('\n');
+            logger.info(`🤖 AI Navigation prompts detected (${aiPrompts.length} steps) - starting autonomous navigation...`);
+            logger.info(`📝 Prompts:\n${aiPrompts.map((p, i) => `  ${i + 1}. ${p}`).join('\n')}`);
             
-            const navResult = await navigateAutonomously(page, source.aiPrompt, {
+            const navResult = await navigateAutonomously(page, navigationPrompt, {
               maxRetries: 1,
               takeInitialScreenshot: true
             });
@@ -355,8 +363,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             
             // Wait for page to stabilize after navigation
             await page.waitForTimeout(2000);
-          } else if (source.aiPrompt && !isNavigatorAvailable()) {
-            logger.warn(`⚠️ AI Prompt provided but Gemini API not configured`);
+          } else if (aiPrompts && aiPrompts.length > 0 && !isNavigatorAvailable()) {
+            logger.warn(`⚠️ AI Navigation prompts provided but Gemini API not configured`);
             logger.warn(`⚠️ Set GEMINI_API_KEY in .env to enable autonomous navigation`);
           }
           
