@@ -70,6 +70,8 @@ async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, s
     const field1 = allFields[0] ? data[allFields[0]] : null;
     const field2 = allFields[1] ? data[allFields[1]] : null;
     const field3 = allFields[2] ? data[allFields[2]] : null;
+    // Ensure permit_number is always populated (some DBs enforce NOT NULL)
+    const permitNumber = data.permit_number || data.permitNumber || field1 || uniqueId;
     
     // Insert
     try {
@@ -85,7 +87,7 @@ async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, s
           sourceName || 'unknown',
           uniqueId,
           JSON.stringify(data),  // Store full extracted data as JSON
-          field1 || null,
+          permitNumber,
           field2 || null,
           field3 || null,
           JSON.stringify(importantFields).substring(0, 200) || null,
