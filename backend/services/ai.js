@@ -26,7 +26,17 @@ async function extractLeadWithAI(input, sourceName, fieldSchema = null, isRetry 
   return results || [];
 }
 
+// Re-export navigator functions for convenience
+const { 
+  navigateAutonomously, 
+  clickNextPage, 
+  isNavigatorAvailable 
+} = require('./ai/navigator');
+
 module.exports = {
   extractLeadWithAI,
-  isGeminiAvailable
+  isGeminiAvailable,
+  navigateAutonomously,
+  clickNextPage,
+  isNavigatorAvailable
 };

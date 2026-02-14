@@ -51,6 +51,7 @@ const { setupPopupBlocking, preventAllPopups } = require('./services/scraper/pre
 const { mergeLimits, logLimits, isPageLimitReached, isRowLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 // NOTE: Deduplication system - bulletproof implementation in services/deduplication.js
 const { SCREENSHOT_DIR } = require('./config/paths');
+const { navigateAutonomously, clickNextPage, isNavigatorAvailable } = require('./services/ai/navigator');
 
 // Proxy Configuration
 const PROXY_ENABLED = process.env.PROXY_ENABLED === 'true';
@@ -213,6 +214,35 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             retries: 2
           });
           
+          // === AI AUTONOMOUS NAVIGATION ===
+          let paginationInfo = null;
+          if (source.aiPrompt && isNavigatorAvailable()) {
+            logger.info(`🤖 AI Prompt detected - starting autonomous navigation...`);
+            logger.info(`📝 Prompt: ${source.aiPrompt}`);
+            
+            const navResult = await navigateAutonomously(page, source.aiPrompt, {
+              maxRetries: 1,
+              takeInitialScreenshot: true
+            });
+            
+            if (navResult.success) {
+              logger.info(`✅ AI navigation completed successfully`);
+              if (navResult.paginationInfo) {
+                paginationInfo = navResult.paginationInfo;
+                logger.info(`📄 Pagination detected: will process up to ${paginationInfo.maxPages} pages`);
+              }
+            } else {
+              logger.warn(`⚠️ AI navigation encountered issues: ${navResult.error || 'Unknown error'}`);
+              logger.info(`📸 Will continue with screenshot extraction...`);
+            }
+            
+            // Wait for page to stabilize after navigation
+            await page.waitForTimeout(2000);
+          } else if (source.aiPrompt && !isNavigatorAvailable()) {
+            logger.warn(`⚠️ AI Prompt provided but Gemini API not configured`);
+            logger.warn(`⚠️ Set GEMINI_API_KEY in .env to enable autonomous navigation`);
+          }
+          
           // === PAGINATION & FULL SCROLL SUPPORT ===
           if (source.useAI) {
             aiExtractionUsed = true;
@@ -358,7 +388,26 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 break;
               }
               
-              // === CHECK FOR NEXT PAGE ===
+              // === CHECK FOR NEXT PAGE (using AI navigator if available) ===
+              let nextPageExists = false;
+              
+              if (paginationInfo) {
+                // Use AI navigator's smart pagination
+                logger.info(`🤖 Using AI-guided pagination...`);
+                nextPageExists = await clickNextPage(page, paginationInfo);
+                
+                if (nextPageExists) {
+                  pageNumber++;
+                  logger.info(`✅ Navigated to page ${pageNumber}`);
+                  continue; // Skip to next iteration
+                } else {
+                  logger.info(`📄 No more pages (AI navigator)`);
+                  hasMorePages = false;
+                  break;
+                }
+              }
+              
+              // Fallback: Traditional pagination detection
               const nextPageFound = await page.evaluate(() => {
                 // Try multiple selectors for "Next" button - many sites use different conventions
                 const selectors = [
