@@ -205,36 +205,121 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           browser = await chromium.launch(launchOptions);
           context = await browser.newContext({
             viewport: { width: 2560, height: 1440 },
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            extraHTTPHeaders: {
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+              'Accept-Language': 'en-US,en;q=0.9',
+              'Accept-Encoding': 'gzip, deflate, br',
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
+              'Sec-Ch-Ua': '"Chromium";v="131", "Not_A Brand";v="24"',
+              'Sec-Ch-Ua-Mobile': '?0',
+              'Sec-Ch-Ua-Platform': '"Windows"',
+              'Sec-Fetch-Dest': 'document',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'none',
+              'Sec-Fetch-User': '?1',
+              'Upgrade-Insecure-Requests': '1'
+            },
+            ignoreHTTPSErrors: true
           });
           page = await context.newPage();
           
           // 🛡️ BLOCK POP-UPS BEFORE NAVIGATION
           await setupPopupBlocking(page);
           
+          // Quick connectivity check
+          logger.info(`🔍 Testing connectivity to ${source.url}...`);
+          try {
+            const testResponse = await axios.head(source.url, { 
+              timeout: 15000,
+              validateStatus: () => true, // Accept any status
+              maxRedirects: 5,
+              ...axiosProxyConfig
+            });
+            logger.info(`✅ Site reachable (HTTP ${testResponse.status})`);
+          } catch (testError) {
+            logger.warn(`⚠️ Pre-flight check failed: ${testError.message}`);
+            logger.warn(`⚠️ Will still attempt browser navigation...`);
+          }
+          
           // Navigate to page with proper wait strategy
           logger.info(`🌐 Navigating to ${source.url}...`);
-          try {
-            // Try networkidle first (best for most sites)
-            await page.goto(source.url, { 
-              waitUntil: 'networkidle',
-              timeout: 90000 
-            });
-            logger.info(`✅ Page loaded (networkidle): ${source.url}`);
-          } catch (navError) {
-            if (navError.message.includes('Timeout') || navError.message.includes('timeout')) {
-              // Fallback: try with 'load' wait strategy for slow sites
-              logger.warn(`⚠️ networkidle timeout, retrying with 'load' strategy...`);
+          
+          let navigationSuccess = false;
+          let lastError = null;
+          const maxRetries = 2;
+          
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+              if (attempt > 1) {
+                logger.info(`🔄 Navigation attempt ${attempt}/${maxRetries}...`);
+                // Wait a bit before retrying
+                await page.waitForTimeout(3000);
+              }
+              
+              // Try networkidle first (best for most sites)
               await page.goto(source.url, { 
-                waitUntil: 'load',
-                timeout: 120000 
+                waitUntil: 'networkidle',
+                timeout: 60000  // Reduced to 60s for networkidle
               });
-              logger.info(`✅ Page loaded (load): ${source.url}`);
-              // Give extra time for JS to initialize
-              await page.waitForTimeout(5000);
-            } else {
-              throw navError;
+              logger.info(`✅ Page loaded (networkidle): ${source.url}`);
+              navigationSuccess = true;
+              break;
+            } catch (navError) {
+              lastError = navError;
+              
+              if (navError.message.includes('Timeout') || navError.message.includes('timeout')) {
+                // Fallback: try with 'load' wait strategy for slow sites
+                logger.warn(`⚠️ networkidle timeout, retrying with 'load' strategy...`);
+                try {
+                  await page.goto(source.url, { 
+                    waitUntil: 'load',
+                    timeout: 90000 
+                  });
+                  logger.info(`✅ Page loaded (load): ${source.url}`);
+                  // Give extra time for JS to initialize
+                  await page.waitForTimeout(5000);
+                  navigationSuccess = true;
+                  break;
+                } catch (loadError) {
+                  lastError = loadError;
+                  logger.error(`❌ 'load' strategy also failed: ${loadError.message}`);
+                  
+                  if (attempt < maxRetries && !loadError.message.includes('ERR_CONNECTION')) {
+                    logger.info(`🔄 Will retry navigation...`);
+                    continue;
+                  }
+                }
+              } else if (navError.message.includes('ERR_CONNECTION') || navError.message.includes('net::')) {
+                logger.error(`❌ Network connection error: ${navError.message}`);
+                if (attempt < maxRetries) {
+                  logger.info(`⏳ Waiting 10 seconds before retry...`);
+                  await page.waitForTimeout(10000);
+                  continue;
+                }
+              } else {
+                throw navError;
+              }
             }
+          }
+          
+          if (!navigationSuccess) {
+            const errorMsg = lastError?.message || 'Unknown error';
+            logger.error(`❌ NAVIGATION FAILED after ${maxRetries} attempts`);
+            logger.error(`   URL: ${source.url}`);
+            logger.error(`   Error: ${errorMsg}`);
+            
+            // Provide helpful diagnostics
+            if (errorMsg.includes('ERR_CONNECTION_TIMED_OUT') || errorMsg.includes('ERR_CONNECTION')) {
+              logger.error(`   🔍 Possible causes:`);
+              logger.error(`      1. Site may be down or unreachable from this server`);
+              logger.error(`      2. Site may be blocking automated access`);
+              logger.error(`      3. Network firewall may be blocking the connection`);
+              logger.error(`      4. Try accessing the URL in a regular browser to verify it works`);
+            }
+            
+            throw new Error(`Failed to load page after ${maxRetries} attempts: ${errorMsg}`);
           }
           
           // Brief wait for JS-heavy sites to fully render
