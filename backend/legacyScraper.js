@@ -159,6 +159,12 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       if (source.usePlaywright || source.method === 'playwright') {
         logger.info(`Using Playwright for ${source.name}`);
         logger.info(`🔧 AI extraction enabled: ${source.useAI ? 'YES' : 'NO'}`);
+        if (source.aiPrompt) {
+          logger.info(`🤖 AI Autonomous Navigation: ENABLED`);
+          logger.info(`📝 User Prompt: "${source.aiPrompt.substring(0, 100)}${source.aiPrompt.length > 100 ? '...' : ''}"`);
+        } else {
+          logger.info(`🤖 AI Autonomous Navigation: DISABLED (no prompt provided)`);
+        }
         logger.info(`📸 Screenshot capture will be used for AI vision`);
         
         let browser, context, page;
@@ -199,18 +205,35 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           // Navigate to page with proper wait strategy
           logger.info(`🌐 Navigating to ${source.url}...`);
-          await page.goto(source.url, { 
-            waitUntil: 'networkidle',  // Wait for network to be mostly idle
-            timeout: 90000 
-          });
-          logger.info(`✅ Page loaded: ${source.url}`);
+          try {
+            // Try networkidle first (best for most sites)
+            await page.goto(source.url, { 
+              waitUntil: 'networkidle',
+              timeout: 90000 
+            });
+            logger.info(`✅ Page loaded (networkidle): ${source.url}`);
+          } catch (navError) {
+            if (navError.message.includes('Timeout') || navError.message.includes('timeout')) {
+              // Fallback: try with 'load' wait strategy for slow sites
+              logger.warn(`⚠️ networkidle timeout, retrying with 'load' strategy...`);
+              await page.goto(source.url, { 
+                waitUntil: 'load',
+                timeout: 120000 
+              });
+              logger.info(`✅ Page loaded (load): ${source.url}`);
+              // Give extra time for JS to initialize
+              await page.waitForTimeout(5000);
+            } else {
+              throw navError;
+            }
+          }
           
-          // Single wait for JS-heavy sites to fully render (consolidated)
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          // Brief wait for JS-heavy sites to fully render
+          await page.waitForTimeout(2000);
 
           // 🛡️ COMPREHENSIVE POP-UP REMOVAL (replaces manual consent handling)
           await preventAllPopups(page, {
-            waitBetweenSteps: 1500,
+            waitBetweenSteps: 1000,
             retries: 2
           });
           
