@@ -5,12 +5,13 @@
 
 const logger = require('../../utils/logger');
 const { getGeminiModel, isAIAvailable } = require('./geminiClient');
-const { NAVIGATION_SYSTEM_PROMPT, buildNavigationPrompt } = require('./prompts/navigation');
+const { NAVIGATION_SYSTEM_PROMPT, buildNavigationPrompt } = require('../../prompts/navigation');
 const { replaceDynamicDates } = require('../scraper/helpers');
 
 /**
  * Parse natural language instructions into actionable steps
  */
+
 async function parseNavigationSteps(instructions, pageUrl, screenshot) {
   if (!isAIAvailable()) {
     throw new Error('Gemini API not configured');

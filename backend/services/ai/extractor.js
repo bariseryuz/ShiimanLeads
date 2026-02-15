@@ -5,7 +5,7 @@
 
 const logger = require('../../utils/logger');
 const { getGeminiModel, isAIAvailable } = require('./geminiClient');
-const { buildExtractionPrompt } = require('./prompts/extraction');
+const { buildExtractionPrompt } = require('../../prompts/extraction');
 
 /**
  * Extract structured data from screenshot
