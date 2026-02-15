@@ -216,10 +216,10 @@ async function captureAllTilesAtPosition(page, scrollPosition, config) {
       }
       
       try {
-        // Scroll to tile position
-        await page.evaluate((x, y) => {
-          window.scrollTo(x, y);
-        }, tileScrollX, tileScrollY);
+        // ✅ FIX: Wrap coordinates in object (Playwright evaluate limitation)
+        await page.evaluate((coords) => {
+          window.scrollTo(coords.x, coords.y);
+        }, { x: tileScrollX, y: tileScrollY });
         
         // Small wait for rendering
         await page.waitForTimeout(300);
