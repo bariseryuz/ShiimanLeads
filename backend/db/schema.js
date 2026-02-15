@@ -136,7 +136,7 @@ function createIndexes(db) {
   // Note: 'seen' table doesn't exist in current schema, using dedup_hash from leads
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_dedup ON leads(dedup_hash)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_name)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_permit ON leads(permit_number)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_contractor ON leads(contractor_name)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_date ON leads(date_added DESC)`);

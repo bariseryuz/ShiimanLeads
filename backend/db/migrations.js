@@ -59,7 +59,8 @@ function runMigrations(db) {
     { column: 'link', type: 'TEXT' },
     { column: 'seen_count', type: 'INTEGER DEFAULT 1' },
     { column: 'last_seen_at', type: 'DATETIME' },
-    { column: 'screenshot_path', type: 'TEXT' }
+    { column: 'screenshot_path', type: 'TEXT' },
+    { column: 'source', type: 'TEXT' }  // Legacy source column
   ];
 
   leadsMigrations.forEach(({ column, type }) => {
@@ -234,6 +235,7 @@ function runMigrations(db) {
           canonical_hash TEXT,
           dedup_hash TEXT,
           screenshot_path TEXT,
+          source TEXT,
           
           -- Metadata
           is_new INTEGER DEFAULT 1,
@@ -282,6 +284,12 @@ function runMigrations(db) {
           link TEXT,
           seen_count INTEGER DEFAULT 1,
           last_seen_at TEXT,
+          hash TEXT,
+          address TEXT,
+          value TEXT,
+          description TEXT,
+          date_added TEXT,
+          raw_text TEXT,
           
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (source_id) REFERENCES user_sources(id) ON DELETE CASCADE
@@ -298,6 +306,7 @@ function runMigrations(db) {
           COALESCE(canonical_hash, ''),
           dedup_hash, 
           screenshot_path,
+          source,
           is_new, 
           created_at, 
           unique_id, 
@@ -341,7 +350,13 @@ function runMigrations(db) {
           company_name, 
           link, 
           seen_count, 
-          last_seen_at
+          last_seen_at,
+          hash,
+          address,
+          value,
+          description,
+          date_added,
+          raw_text
         FROM leads;
         
         DROP TABLE leads;
