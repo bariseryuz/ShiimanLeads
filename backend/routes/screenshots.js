@@ -108,4 +108,35 @@ router.get('/source/:sourceId', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * Delete a screenshot
+ * DELETE /api/screenshots/tiles-debug/:filename
+ */
+router.delete('/tiles-debug/:filename', requireAuth, async (req, res) => {
+  try {
+    const { filename } = req.params;
+    
+    // Sanitize filename for security
+    const sanitized = path.basename(filename);
+    
+    const filepath = path.join(__dirname, '../data/screenshots/tiles-debug', sanitized);
+    
+    // Check if file exists
+    if (!fs.existsSync(filepath)) {
+      logger.warn(`Screenshot not found for deletion: ${sanitized}`);
+      return res.status(404).json({ error: 'Screenshot not found' });
+    }
+    
+    // Delete file
+    fs.unlinkSync(filepath);
+    
+    logger.info(`Screenshot deleted: ${sanitized}`);
+    res.json({ success: true, message: 'Screenshot deleted' });
+    
+  } catch (err) {
+    logger.error('Error deleting screenshot:', err);
+    res.status(500).json({ error: 'Failed to delete screenshot' });
+  }
+});
+
 module.exports = router;
