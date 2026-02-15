@@ -507,12 +507,55 @@ async function scrapeWithSmartGrid(page, source, userConfig = {}) {
       await page.waitForTimeout(3000);
     }
     
-    // PHASE 3: Progressive capture with auto-load handling
+    // ============================================================================
+    // PHASE 3: UNIVERSAL FIELD MAPPING DETECTION
+    // ============================================================================
     logger.info(`\n📸 Phase 3: Progressive Tile Capture`);
     
-    const fieldMapping = typeof source.field_mapping === 'string'
-      ? JSON.parse(source.field_mapping)
-      : source.field_mapping;
+    // 🌐 UNIVERSAL: Check ALL possible field mapping locations
+    let fieldMapping = 
+      source.fieldSchema ||           // Most common (from source_data JSON)
+      source.field_schema ||          // Snake case variant
+      source.fieldMapping ||          // Camel case variant
+      source.field_mapping ||         // Legacy/alternative name
+      source.columnDetails ||         // Alternative name
+      source.column_details ||        // Snake case alternative
+      source.fields ||                // Simple name
+      source.schema;                  // Generic name
+    
+    // Parse if it's a JSON string
+    if (typeof fieldMapping === 'string') {
+      try {
+        fieldMapping = JSON.parse(fieldMapping);
+        logger.info(`✅ Parsed field mapping from JSON string`);
+      } catch (parseErr) {
+        logger.warn(`⚠️ Failed to parse field mapping string: ${parseErr.message}`);
+        fieldMapping = null;
+      }
+    }
+    
+    // Validate it's a proper object with fields
+    if (!fieldMapping || typeof fieldMapping !== 'object' || Object.keys(fieldMapping).length === 0) {
+      logger.warn(`⚠️ No field mapping found for "${source.name}"`);
+      logger.info(`   🔍 Checked: fieldSchema, field_schema, fieldMapping, field_mapping, columnDetails, column_details, fields, schema`);
+      logger.warn(`   Using generic fallback field mapping`);
+      
+      // Fallback to generic fields
+      fieldMapping = {
+        "item_id": "ID / Reference Number",
+        "title": "Title / Name",
+        "address": "Address / Location",
+        "contact": "Contact / Owner",
+        "value": "Value / Amount",
+        "date": "Date",
+        "description": "Description / Details"
+      };
+      logger.info(`   📋 Fallback fields: ${Object.keys(fieldMapping).join(', ')}`);
+    } else {
+      // Success - found field mapping
+      logger.info(`✅ Field Mapping Detected (${Object.keys(fieldMapping).length} fields):`);
+      logger.info(`   📋 Fields: ${Object.keys(fieldMapping).join(', ')}`);
+    }
     
     const allLeads = [];
     const allTiles = [];
@@ -622,6 +665,7 @@ async function scrapeWithSmartGrid(page, source, userConfig = {}) {
     logger.info(`   Invalid: ${validationResult.invalid.length}`);
     logger.info(`   Empty: ${validationResult.empty.length}`);
     logger.info(`   Success rate: ${validationResult.stats.validPercent}%`);
+    logger.info(`   Duration: ${duration}s`);
     
     return {
       success: true,
