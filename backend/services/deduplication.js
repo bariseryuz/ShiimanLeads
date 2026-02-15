@@ -70,37 +70,46 @@ function normalizeString(str) {
 function getFieldImportanceScore(fieldName) {
   if (!fieldName) return 0;
   
-  const name = fieldName.toLowerCase();
+  // ✅ CRITICAL: Normalize field name (remove underscores/hyphens)
+  const name = fieldName.toLowerCase().replace(/[_-]/g, '');
   
-  // 🚫 DOWNGRADE: Fields that contain "type" (usually not unique)
-  if (name.includes('type')) return 20;
+  // 🚫 BLACKLIST: Explicitly downgrade non-unique fields
+  if (name.includes('permittype') || name === 'type' || name === 'category' || name === 'status') {
+    return 5;  // Very low score
+  }
   
   // Primary identifiers (highest priority)
-  const primaryKeywords = ['id', 'number', 'permit_number', 'code', 'reference', 'folio'];
+  const primaryKeywords = ['id', 'number', 'permitnumber', 'licensenumber', 'code', 'reference', 'folio'];
   for (const keyword of primaryKeywords) {
     if (name.includes(keyword)) return 100;
   }
   
-  // Unique identifiers (high priority)
-  const uniqueKeywords = ['address', 'email', 'phone', 'location'];
+  // Unique identifiers (high priority) - Check for "address" OR "adress" (typo)
+  const uniqueKeywords = ['address', 'adress', 'email', 'phone', 'location'];
   for (const keyword of uniqueKeywords) {
     if (name.includes(keyword)) return 90;
   }
   
-  // Supporting identifiers (medium-high priority)
-  const supportKeywords = ['name', 'title', 'university', 'school', 'company'];
-  for (const keyword of supportKeywords) {
+  // Name fields (medium-high priority)
+  const nameKeywords = ['name', 'title', 'university', 'school', 'company', 'contractor', 'constructor'];
+  for (const keyword of nameKeywords) {
     if (name.includes(keyword)) return 70;
   }
   
-  // Supporting fields (medium priority)
-  const mediumKeywords = ['date', 'value', 'amount', 'price', 'fee', 'state', 'city'];
-  for (const keyword of mediumKeywords) {
+  // Value/Amount fields (medium priority)
+  const valueKeywords = ['cost', 'value', 'amount', 'price', 'fee'];
+  for (const keyword of valueKeywords) {
     if (name.includes(keyword)) return 50;
   }
   
+  // Date/Location fields (medium-low priority)
+  const supportKeywords = ['date', 'time', 'state', 'city', 'county'];
+  for (const keyword of supportKeywords) {
+    if (name.includes(keyword)) return 40;
+  }
+  
   // Generic fields (low priority)
-  const genericKeywords = ['description', 'notes', 'comments', 'status'];
+  const genericKeywords = ['description', 'notes', 'comments'];
   for (const keyword of genericKeywords) {
     if (name.includes(keyword)) return 15;
   }
