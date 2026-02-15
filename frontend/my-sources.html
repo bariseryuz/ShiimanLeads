@@ -1504,10 +1504,12 @@ async function loadScreenshots(sources) {
       const confirmDelete = window.confirm(`Delete screenshot ${shot.filename}?`);
       if (!confirmDelete) return;
 
-      try {
-        const response = await fetch(`/api/screenshots/${encodeURIComponent(shot.filename)}`, {
-          method: 'DELETE'
+            try {
+        const response = await fetch(`/api/screenshots/tiles-debug/${encodeURIComponent(shot.filename)}`, {
+          method: 'DELETE',
+          credentials: 'include'
         });
+        
 
         if (!response.ok) {
           throw new Error(`Delete failed (${response.status})`);
