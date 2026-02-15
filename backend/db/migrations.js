@@ -21,6 +21,7 @@ function runMigrations(db) {
     { column: 'primary_id', type: 'TEXT' },
     { column: 'title', type: 'TEXT' },
     { column: 'data', type: 'TEXT' },
+    { column: 'address', type: 'TEXT' },
     { column: 'date_issued', type: 'TEXT' },
     { column: 'phone', type: 'TEXT' },
     { column: 'page_url', type: 'TEXT' },
