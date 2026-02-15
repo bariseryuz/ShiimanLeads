@@ -6,6 +6,7 @@
  * - Playwright browser automation
  * - HTML parsing with Cheerio
  * - AI vision extraction (using new architecture)
+ * - Smart Grid Scraper (12-tile progressive capture)
  * - Block detection and rate limiting
  * - Lead insertion and deduplication
  */
@@ -32,6 +33,9 @@ const {
   navigateAutonomously,
   extractFromScreenshot 
 } = require('./services/ai');
+
+// ✅ SMART GRID SCRAPER (12-tile progressive capture)
+const { scrapeWithSmartGrid } = require('./services/scraper/smartGridScraper');
 
 const { captureEntirePage, captureTiledScreenshots } = require('./services/scraper/screenshot');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
@@ -154,11 +158,21 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       let aiExtractionUsed = false;
       let newLeads = 0;
       
-      // Playwright scraping
+      // ============================================================
+      // PLAYWRIGHT SCRAPING
+      // ============================================================
       if (source.usePlaywright || source.method === 'playwright') {
         logger.info(`Using Playwright for ${source.name}`);
         logger.info(`🔧 AI extraction enabled: ${source.useAI ? 'YES' : 'NO'}`);
-        logger.info(`📸 Screenshot capture will be used for AI vision`);
+        
+        // ✅ CHECK IF SMART GRID MODE IS ENABLED
+        const useSmartGrid = source.useSmartGrid !== false; // Default to true
+        
+        if (useSmartGrid) {
+          logger.info(`🎯 Using SMART GRID SCRAPER (12-tile mode)`);
+        } else {
+          logger.info(`📸 Using legacy screenshot capture`);
+        }
         
         let browser, context, page;
         
@@ -185,7 +199,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           logger.info(`🎬 Launching browser...`);
           browser = await chromium.launch(launchOptions);
           context = await browser.newContext({
-            viewport: { width: 2560, height: 1440 },
+            viewport: { width: 1920, height: 1080 }, // Optimized for 12 tiles
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             ignoreHTTPSErrors: true
           });
@@ -194,188 +208,271 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           // Block pop-ups
           await setupPopupBlocking(page);
           
-          // Navigate
-          logger.info(`🌐 Navigating to ${source.url}...`);
-          await page.goto(source.url, { 
-            waitUntil: 'domcontentloaded',
-            timeout: 30000
-          });
-          logger.info(`✅ Page loaded`);
-          
-          await page.waitForTimeout(3000);
-          await preventAllPopups(page);
-          
-          // === AI AUTONOMOUS NAVIGATION ===
-          const aiPrompts = source.aiNavigationPrompts || (source.aiPrompt ? [source.aiPrompt] : null);
-          
-          if (aiPrompts && aiPrompts.length > 0 && isAIAvailable()) {
-            const navigationPrompt = aiPrompts.join('\n');
-            logger.info(`🤖 AI Navigation: ${aiPrompts.length} steps`);
+          // ============================================================
+          // SMART GRID SCRAPER MODE
+          // ============================================================
+          if (useSmartGrid && source.useAI) {
+            logger.info(`\n🚀 ========================================`);
+            logger.info(`🚀 SMART GRID SCRAPER (12-TILE)`);
+            logger.info(`🚀 ========================================\n`);
             
-            const navResult = await navigateAutonomously(page, navigationPrompt, {
-              maxRetries: 1,
-              takeScreenshot: true
+            // Use smart grid scraper
+            const gridResult = await scrapeWithSmartGrid(page, source, {
+              // Tile configuration (12 tiles for high accuracy)
+              columns: 3,
+              rows: 4,
+              totalTiles: 12,
+              tileWidth: 640,
+              tileHeight: 270,
+              
+              // Target & limits
+              targetLeadCount: limits.maxTotalRows || 500,
+              maxScrolls: 50,
+              
+              // Scrolling behavior
+              scrollAmount: 1080,
+              waitAfterScroll: 2000,
+              stableChecks: 3,
+              
+              // Performance
+              delayBetweenTiles: 400,
+              screenshotTimeout: 3000
             });
             
-            if (navResult.success) {
-              logger.info(`✅ AI navigation complete`);
+            if (gridResult.success) {
+              logger.info(`\n✅ Smart grid scraper completed successfully`);
+              logger.info(`   Valid leads: ${gridResult.records.length}`);
+              logger.info(`   Duration: ${gridResult.stats.duration}s`);
+              logger.info(`   Success rate: ${gridResult.stats.successRate}%`);
+              
+              // Insert leads into database
+              let inserted = 0;
+              for (const lead of gridResult.records) {
+                // Remove metadata fields before saving
+                const cleanLead = { ...lead };
+                delete cleanLead._metadata;
+                delete cleanLead._tile;
+                delete cleanLead._tileIndex;
+                delete cleanLead._fillRate;
+                
+                if (await insertLeadIfNew({
+                  raw: JSON.stringify(cleanLead),
+                  sourceName: source.name,
+                  lead: cleanLead,
+                  extractedData: cleanLead,
+                  userId,
+                  sourceId: source._sourceId || source.id,
+                  sourceUrl: source.url
+                })) {
+                  inserted++;
+                  newLeads++;
+                }
+              }
+              
+              logger.info(`💾 Inserted ${inserted} new leads (${gridResult.records.length - inserted} duplicates skipped)`);
+              
+              aiExtractionUsed = true;
+              
             } else {
-              logger.warn(`⚠️ AI navigation issues: ${navResult.error}`);
+              logger.error(`❌ Smart grid scraper failed: ${gridResult.error}`);
+              logger.warn(`⚠️ Falling back to legacy scraping method...`);
+              // Will fall through to legacy method below
             }
             
-            await page.waitForTimeout(2000);
-          } else if (aiPrompts && aiPrompts.length > 0) {
-            logger.warn(`⚠️ AI prompts provided but Gemini not configured`);
           }
           
-          // === MULTI-PAGE EXTRACTION ===
-          if (source.useAI) {
-            aiExtractionUsed = true;
-            logger.info(`📸 Starting multi-page extraction...`);
+          // ============================================================
+          // LEGACY SCRAPING MODE (fallback or if smart grid disabled)
+          // ============================================================
+          if (!useSmartGrid || !aiExtractionUsed) {
+            logger.info(`\n📸 Using legacy multi-page extraction...`);
             
-            let pageNumber = 1;
-            let hasMorePages = true;
-            let totalRowsExtracted = 0;
+            // Navigate
+            logger.info(`🌐 Navigating to ${source.url}...`);
+            await page.goto(source.url, { 
+              waitUntil: 'domcontentloaded',
+              timeout: 30000
+            });
+            logger.info(`✅ Page loaded`);
             
-            while (hasMorePages && !isPageLimitReached(pageNumber, limits)) {
-              logger.info(`📄 Processing page ${pageNumber}/${limits.maxPages}...`);
+            await page.waitForTimeout(3000);
+            await preventAllPopups(page);
+            
+            // === AI AUTONOMOUS NAVIGATION ===
+            const aiPrompts = source.aiNavigationPrompts || (source.aiPrompt ? [source.aiPrompt] : null);
+            
+            if (aiPrompts && aiPrompts.length > 0 && isAIAvailable()) {
+              const navigationPrompt = aiPrompts.join('\n');
+              logger.info(`🤖 AI Navigation: ${aiPrompts.length} steps`);
               
-              // Capture screenshot
-              const screenshotData = await captureTiledScreenshots(page, {
-                maxScrolls: 25,
-                scrollDelay: 2000,
-                loadWaitTime: 5000,
-                useFullPage: true,
-                tileRows: 2,
-                tileCols: 3,
-                overlapPct: 0.1,
-                maxTiles: 6
+              const navResult = await navigateAutonomously(page, navigationPrompt, {
+                maxRetries: 1,
+                takeScreenshot: true
               });
               
-              const screenshot = screenshotData?.compositeBuffer || 
-                                screenshotData?.tiles?.[0]?.buffer || 
-                                screenshotData;
-              
-              // Save screenshot
-              try {
-                if (!fs.existsSync(SCREENSHOT_DIR)) {
-                  fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
-                }
-                
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-                const screenshotPath = path.join(
-                  SCREENSHOT_DIR, 
-                  `${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`
-                );
-                
-                fs.writeFileSync(screenshotPath, screenshot);
-                logger.info(`💾 Screenshot saved: ${screenshotPath}`);
-              } catch (screenshotError) {
-                logger.error(`❌ Failed to save screenshot: ${screenshotError.message}`);
-              }
-              
-              // ✅ Extract with new AI architecture
-              logger.info(`🤖 Extracting leads from page ${pageNumber}...`);
-              const aiLeads = await extractFromScreenshot(
-                screenshot,
-                source.name,
-                source.fieldSchema || {}
-              );
-              
-              if (aiLeads && Array.isArray(aiLeads)) {
-                logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);
-                
-                let rowsThisPage = 0;
-                for (const lead of aiLeads) {
-                  if (isRowLimitReached(rowsThisPage, limits)) {
-                    logger.info(`⚠️ Per-page limit reached: ${rowsThisPage} rows`);
-                    break;
-                  }
-                  
-                  if (isTotalRowLimitReached(totalRowsExtracted, limits)) {
-                    logger.info(`⚠️ Total limit reached: ${totalRowsExtracted} rows`);
-                    hasMorePages = false;
-                    break;
-                  }
-                  
-                  if (await insertLeadIfNew({
-                    raw: JSON.stringify(lead),
-                    sourceName: source.name,
-                    lead,
-                    extractedData: lead,
-                    userId,
-                    sourceId: source._sourceId || source.id,
-                    sourceUrl: source.url
-                  })) {
-                    newLeads++;
-                    rowsThisPage++;
-                    totalRowsExtracted++;
-                  }
-                }
-                
-                logger.info(`✅ Page ${pageNumber}: ${rowsThisPage} rows (total: ${totalRowsExtracted})`);
+              if (navResult.success) {
+                logger.info(`✅ AI navigation complete`);
               } else {
-                logger.warn(`⚠️ No leads extracted from page ${pageNumber}`);
+                logger.warn(`⚠️ AI navigation issues: ${navResult.error}`);
               }
               
-              if (isTotalRowLimitReached(totalRowsExtracted, limits)) {
-                break;
-              }
-              
-              // === CHECK FOR NEXT PAGE ===
-              const nextPageFound = await page.evaluate(() => {
-                const selectors = [
-                  'button[aria-label="Next page"]',
-                  'button[title="Next page"]',
-                  '.pagination a.next:not(.disabled)',
-                  'button.next:not(:disabled)'
-                ];
-                
-                for (const sel of selectors) {
-                  try {
-                    const elem = document.querySelector(sel);
-                    if (elem && !elem.disabled && !elem.classList.contains('disabled')) {
-                      return { found: true, selector: sel };
-                    }
-                  } catch(e) {}
-                }
-                
-                return { found: false };
-              });
-              
-              logger.info(`📍 Next page: ${nextPageFound.found}`);
-              
-              if (nextPageFound.found) {
-                try {
-                  await page.click(nextPageFound.selector);
-                  await page.waitForTimeout(3000);
-                  logger.info(`✅ Navigated to page ${pageNumber + 1}`);
-                  pageNumber++;
-                } catch (navErr) {
-                  logger.warn(`⚠️ Failed to navigate: ${navErr.message}`);
-                  hasMorePages = false;
-                }
-              } else {
-                logger.info(`✓ No more pages (processed ${pageNumber} total)`);
-                hasMorePages = false;
-              }
+              await page.waitForTimeout(2000);
+            } else if (aiPrompts && aiPrompts.length > 0) {
+              logger.warn(`⚠️ AI prompts provided but Gemini not configured`);
             }
             
-            logger.info(`✅ Extraction complete: ${newLeads} leads from ${pageNumber} page(s)`);
+            // === MULTI-PAGE EXTRACTION (LEGACY) ===
+            if (source.useAI) {
+              aiExtractionUsed = true;
+              logger.info(`📸 Starting legacy multi-page extraction...`);
+              
+              let pageNumber = 1;
+              let hasMorePages = true;
+              let totalRowsExtracted = 0;
+              
+              while (hasMorePages && !isPageLimitReached(pageNumber, limits)) {
+                logger.info(`📄 Processing page ${pageNumber}/${limits.maxPages}...`);
+                
+                // Capture screenshot
+                const screenshotData = await captureTiledScreenshots(page, {
+                  maxScrolls: 25,
+                  scrollDelay: 2000,
+                  loadWaitTime: 5000,
+                  useFullPage: true,
+                  tileRows: 2,
+                  tileCols: 3,
+                  overlapPct: 0.1,
+                  maxTiles: 6
+                });
+                
+                const screenshot = screenshotData?.compositeBuffer || 
+                                  screenshotData?.tiles?.[0]?.buffer || 
+                                  screenshotData;
+                
+                // Save screenshot
+                try {
+                  if (!fs.existsSync(SCREENSHOT_DIR)) {
+                    fs.mkdirSync(SCREENSHOT_DIR, { recursive: true });
+                  }
+                  
+                  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                  const screenshotPath = path.join(
+                    SCREENSHOT_DIR, 
+                    `${source.name.replace(/[^a-z0-9]/gi, '_')}-page${pageNumber}-${timestamp}.png`
+                  );
+                  
+                  fs.writeFileSync(screenshotPath, screenshot);
+                  logger.info(`💾 Screenshot saved: ${screenshotPath}`);
+                } catch (screenshotError) {
+                  logger.error(`❌ Failed to save screenshot: ${screenshotError.message}`);
+                }
+                
+                // Extract with AI
+                logger.info(`🤖 Extracting leads from page ${pageNumber}...`);
+                const aiLeads = await extractFromScreenshot(
+                  screenshot,
+                  source.name,
+                  source.fieldSchema || {}
+                );
+                
+                if (aiLeads && Array.isArray(aiLeads)) {
+                  logger.info(`✅ AI extracted ${aiLeads.length} leads from page ${pageNumber}`);
+                  
+                  let rowsThisPage = 0;
+                  for (const lead of aiLeads) {
+                    if (isRowLimitReached(rowsThisPage, limits)) {
+                      logger.info(`⚠️ Per-page limit reached: ${rowsThisPage} rows`);
+                      break;
+                    }
+                    
+                    if (isTotalRowLimitReached(totalRowsExtracted, limits)) {
+                      logger.info(`⚠️ Total limit reached: ${totalRowsExtracted} rows`);
+                      hasMorePages = false;
+                      break;
+                    }
+                    
+                    if (await insertLeadIfNew({
+                      raw: JSON.stringify(lead),
+                      sourceName: source.name,
+                      lead,
+                      extractedData: lead,
+                      userId,
+                      sourceId: source._sourceId || source.id,
+                      sourceUrl: source.url
+                    })) {
+                      newLeads++;
+                      rowsThisPage++;
+                      totalRowsExtracted++;
+                    }
+                  }
+                  
+                  logger.info(`✅ Page ${pageNumber}: ${rowsThisPage} rows (total: ${totalRowsExtracted})`);
+                } else {
+                  logger.warn(`⚠️ No leads extracted from page ${pageNumber}`);
+                }
+                
+                if (isTotalRowLimitReached(totalRowsExtracted, limits)) {
+                  break;
+                }
+                
+                // === CHECK FOR NEXT PAGE ===
+                const nextPageFound = await page.evaluate(() => {
+                  const selectors = [
+                    'button[aria-label="Next page"]',
+                    'button[title="Next page"]',
+                    '.pagination a.next:not(.disabled)',
+                    'button.next:not(:disabled)'
+                  ];
+                  
+                  for (const sel of selectors) {
+                    try {
+                      const elem = document.querySelector(sel);
+                      if (elem && !elem.disabled && !elem.classList.contains('disabled')) {
+                        return { found: true, selector: sel };
+                      }
+                    } catch(e) {}
+                  }
+                  
+                  return { found: false };
+                });
+                
+                logger.info(`📍 Next page: ${nextPageFound.found}`);
+                
+                if (nextPageFound.found) {
+                  try {
+                    await page.click(nextPageFound.selector);
+                    await page.waitForTimeout(3000);
+                    logger.info(`✅ Navigated to page ${pageNumber + 1}`);
+                    pageNumber++;
+                  } catch (navErr) {
+                    logger.warn(`⚠️ Failed to navigate: ${navErr.message}`);
+                    hasMorePages = false;
+                  }
+                } else {
+                  logger.info(`✓ No more pages (processed ${pageNumber} total)`);
+                  hasMorePages = false;
+                }
+              }
+              
+              logger.info(`✅ Legacy extraction complete: ${newLeads} leads from ${pageNumber} page(s)`);
+            }
           }
           
         } catch (err) {
           logger.error(`Playwright failed: ${err.message}`);
+          logger.error(err.stack);
         } finally {
           if (page) await page.close().catch(() => {});
           if (context) await context.close().catch(() => {});
           if (browser) await browser.close().catch(() => {});
         }
+        
+        usedPlaywright = true;
       }
       
       // Track success
       totalInserted += newLeads;
-      logger.info(`✅ ${source.name}: ${newLeads} new leads`);
+      logger.info(`\n✅ ${source.name}: ${newLeads} new leads`);
       
       const isSuccess = newLeads > 0 || aiExtractionUsed;
       await trackSourceReliability(source._sourceId || source.id, source.name, isSuccess, newLeads);
