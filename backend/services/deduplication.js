@@ -72,28 +72,37 @@ function getFieldImportanceScore(fieldName) {
   
   const name = fieldName.toLowerCase();
   
+  // 🚫 DOWNGRADE: Fields that contain "type" (usually not unique)
+  if (name.includes('type')) return 20;
+  
   // Primary identifiers (highest priority)
-  const primaryKeywords = ['id', 'number', 'permit', 'code', 'reference', 'folio'];
+  const primaryKeywords = ['id', 'number', 'permit_number', 'code', 'reference', 'folio'];
   for (const keyword of primaryKeywords) {
     if (name.includes(keyword)) return 100;
   }
   
   // Unique identifiers (high priority)
-  const uniqueKeywords = ['name', 'title', 'university', 'school', 'company', 'address', 'email'];
+  const uniqueKeywords = ['address', 'email', 'phone', 'location'];
   for (const keyword of uniqueKeywords) {
-    if (name.includes(keyword)) return 80;
+    if (name.includes(keyword)) return 90;
+  }
+  
+  // Supporting identifiers (medium-high priority)
+  const supportKeywords = ['name', 'title', 'university', 'school', 'company'];
+  for (const keyword of supportKeywords) {
+    if (name.includes(keyword)) return 70;
   }
   
   // Supporting fields (medium priority)
-  const supportKeywords = ['date', 'value', 'amount', 'price', 'fee', 'location', 'state', 'city'];
-  for (const keyword of supportKeywords) {
+  const mediumKeywords = ['date', 'value', 'amount', 'price', 'fee', 'state', 'city'];
+  for (const keyword of mediumKeywords) {
     if (name.includes(keyword)) return 50;
   }
   
   // Generic fields (low priority)
-  const genericKeywords = ['description', 'notes', 'comments', 'type', 'status'];
+  const genericKeywords = ['description', 'notes', 'comments', 'status'];
   for (const keyword of genericKeywords) {
-    if (name.includes(keyword)) return 20;
+    if (name.includes(keyword)) return 15;
   }
   
   // Unknown field
@@ -111,9 +120,30 @@ function extractImportantFields(lead) {
     
     const fields = [];
     
+    // 🚫 BLACKLIST: Skip fields that are commonly non-unique
+    const BLACKLIST = [
+      'permit_type',
+      'type',
+      'category',
+      'status',
+      'description',
+      'notes'
+    ];
+    
     for (const [fieldName, value] of Object.entries(lead)) {
       // Skip internal/metadata fields
       if (fieldName.startsWith('_')) continue;
+      
+      // 🚫 SKIP BLACKLISTED FIELDS
+      const fieldLower = fieldName.toLowerCase().replace(/[_-]/g, '');
+      const isBlacklisted = BLACKLIST.some(banned => 
+        fieldLower.includes(banned.toLowerCase().replace(/[_-]/g, ''))
+      );
+      
+      if (isBlacklisted) {
+        logger.debug(`   ⏭️  Skipping blacklisted field: ${fieldName}`);
+        continue;
+      }
       
       const strValue = safeString(value).trim();
       
@@ -136,6 +166,14 @@ function extractImportantFields(lead) {
     // Sort by score (highest first)
     fields.sort((a, b) => b.score - a.score);
     
+    // 🐛 DEBUG: Show top 3 fields chosen
+    if (fields.length > 0) {
+      logger.info(`   📊 Top fields for deduplication:`);
+      fields.slice(0, 3).forEach((f, i) => {
+        logger.info(`      ${i + 1}. ${f.field} (score: ${f.score}): "${f.value.substring(0, 40)}..."`);
+      });
+    }
+    
     return fields;
     
   } catch (err) {
@@ -143,7 +181,6 @@ function extractImportantFields(lead) {
     return [];
   }
 }
-
 
 /**
  * Generate unique ID using universal strategy
@@ -167,7 +204,7 @@ function generateUniqueId(lead, strategy = 'smart') {
         // Use the single most important field
         const primary = importantFields[0];
         
-        if (primary && primary.score >= 80) {
+        if (primary && primary.score >= 70) {  // ← Lowered from 80 to catch more fields
           // High-confidence unique identifier
           const id = primary.normalized.substring(0, 100);
           logger.debug(`🔑 Generated smart ID from '${primary.field}': ${id}`);
