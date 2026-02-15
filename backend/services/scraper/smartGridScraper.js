@@ -5,6 +5,7 @@
 
 const logger = require('../../utils/logger');
 const { navigateAutonomously, extractFromScreenshot } = require('../ai');
+const { deduplicateBatch } = require('../deduplication');
 
 // ============================================================================
 // SECTION 1: CONFIGURATION
@@ -333,56 +334,26 @@ async function extractFromAllTiles(tiles, sourceName, fieldMapping, config) {
 // ============================================================================
 
 /**
- * Remove duplicate records
+ * Remove duplicate records (using universal dedup system)
  */
 function deduplicateRecords(records, fieldMapping) {
   if (!records || records.length === 0) {
     return { unique: [], duplicates: [], stats: { original: 0, unique: 0, duplicatesRemoved: 0 } };
   }
   
-  logger.info(`🔍 Deduplicating ${records.length} records...`);
+  logger.info(`🔍 Deduplicating ${records.length} records (universal system)...`);
   
-  // Use first field as primary key
-  const fieldNames = Object.keys(fieldMapping);
-  const primaryKeyField = fieldNames[0];
+  // Use universal deduplication system
+  const dedupeResult = deduplicateBatch(records);
   
-  logger.info(`   Using primary key: "${primaryKeyField}"`);
-  
-  const seen = new Map();
-  const unique = [];
-  const duplicates = [];
-  
-  for (const record of records) {
-    const keyValue = record[primaryKeyField];
-    
-    // Skip records with no primary key
-    if (!keyValue || keyValue === '-' || keyValue === '' || keyValue === null) {
-      continue;
-    }
-    
-    // Normalize key
-    const normalizedKey = String(keyValue).toLowerCase().trim().replace(/\s+/g, ' ');
-    
-    if (!seen.has(normalizedKey)) {
-      seen.set(normalizedKey, record);
-      unique.push(record);
-    } else {
-      duplicates.push(record);
-    }
-  }
-  
-  logger.info(`✅ Deduplication complete:`);
-  logger.info(`   Original: ${records.length}`);
-  logger.info(`   Unique: ${unique.length}`);
-  logger.info(`   Duplicates removed: ${duplicates.length}`);
-  
+  // Convert to expected format
   return {
-    unique: unique,
-    duplicates: duplicates,
+    unique: dedupeResult.unique,
+    duplicates: dedupeResult.duplicates.map(d => d.lead), // Extract lead objects
     stats: {
-      original: records.length,
-      unique: unique.length,
-      duplicatesRemoved: duplicates.length
+      original: dedupeResult.stats.total,
+      unique: dedupeResult.stats.unique,
+      duplicatesRemoved: dedupeResult.stats.duplicates
     }
   };
 }
