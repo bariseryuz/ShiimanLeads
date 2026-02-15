@@ -18,6 +18,21 @@ async function extractFromScreenshot(screenshot, sourceName, fieldSchema) {
   try {
     logger.info(`🤖 [Extractor] Extracting from "${sourceName}"`);
 
+    // ✅ FIX: Validate and provide default fieldSchema
+    if (!fieldSchema || typeof fieldSchema !== 'object' || Object.keys(fieldSchema).length === 0) {
+      logger.warn(`⚠️ No fieldSchema provided for "${sourceName}" - using generic defaults`);
+      fieldSchema = {
+        "item_id": "ID / Reference Number",
+        "title": "Title / Name",
+        "address": "Address / Location",
+        "contact": "Contact / Owner",
+        "value": "Value / Amount",
+        "date": "Date",
+        "description": "Description / Details"
+      };
+      logger.info(`   Using default fields: ${Object.keys(fieldSchema).join(', ')}`);
+    }
+
     // Handle different screenshot formats
     let screenshotBuffer;
     if (Buffer.isBuffer(screenshot)) {
@@ -91,7 +106,7 @@ async function extractFromScreenshot(screenshot, sourceName, fieldSchema) {
       parsed = [parsed];
     }
 
-    // Validate records
+    // ✅ FIX: Safe field validation (fieldSchema is now guaranteed to exist)
     const fields = Object.keys(fieldSchema);
     const valid = parsed.filter(record => {
       return record && typeof record === 'object' &&
@@ -108,6 +123,7 @@ async function extractFromScreenshot(screenshot, sourceName, fieldSchema) {
 
   } catch (error) {
     logger.error(`❌ [Extractor] Failed: ${error.message}`);
+    logger.error(error.stack);
     return [];
   }
 }
