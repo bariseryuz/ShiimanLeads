@@ -108,7 +108,77 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
   let totalInserted = 0;
   const SOURCES = userSources;
   
-  for (const source of SOURCES) {
+  logger.info(`\n📊 Starting scrape for user ${userId}`);
+  logger.info(`Found ${SOURCES.length} sources to scrape\n`);
+  
+  for (const sourceRow of SOURCES) {
+    // ========================================
+    // 🐛 DEBUG: INSPECT SOURCE STRUCTURE
+    // ========================================
+    logger.info(`\n🔍 ========================================`);
+    logger.info(`🔍 DEBUG: RAW SOURCE FROM DATABASE`);
+    logger.info(`🔍 ========================================`);
+    logger.info(`Source ID: ${sourceRow.id}`);
+    logger.info(`Raw source keys: ${Object.keys(sourceRow).join(', ')}`);
+    
+    let source;
+    
+    // Check if source_data field exists
+    if (sourceRow.source_data) {
+      logger.info(`✅ Has source_data field`);
+      logger.info(`   Type: ${typeof sourceRow.source_data}`);
+      
+      if (typeof sourceRow.source_data === 'string') {
+        logger.info(`   Attempting to parse JSON...`);
+        try {
+          source = JSON.parse(sourceRow.source_data);
+          logger.info(`   ✅ Parsed successfully!`);
+          logger.info(`   Parsed keys: ${Object.keys(source).join(', ')}`);
+          logger.info(`   Name: ${source.name}`);
+          logger.info(`   URL: ${source.url}`);
+          logger.info(`   Has fieldSchema: ${!!source.fieldSchema}`);
+          logger.info(`   Has field_mapping: ${!!source.field_mapping}`);
+          logger.info(`   Has field_schema: ${!!source.field_schema}`);
+          
+          if (source.fieldSchema) {
+            logger.info(`   fieldSchema type: ${typeof source.fieldSchema}`);
+            if (typeof source.fieldSchema === 'object') {
+              logger.info(`   fieldSchema keys: ${Object.keys(source.fieldSchema).join(', ')}`);
+            }
+          }
+          if (source.field_mapping) {
+            logger.info(`   field_mapping type: ${typeof source.field_mapping}`);
+          }
+          
+          // Add back database IDs
+          source._sourceId = sourceRow.id;
+          source._userId = sourceRow.user_id;
+          source.id = sourceRow.id;
+          
+        } catch (parseErr) {
+          logger.error(`   ❌ Parse failed: ${parseErr.message}`);
+          logger.error(`   First 300 chars: ${sourceRow.source_data.substring(0, 300)}`);
+          continue; // Skip this source
+        }
+      } else if (typeof sourceRow.source_data === 'object') {
+        logger.info(`   Already an object!`);
+        source = sourceRow.source_data;
+        source._sourceId = sourceRow.id;
+        source._userId = sourceRow.user_id;
+        source.id = sourceRow.id;
+        logger.info(`   Keys: ${Object.keys(source).join(', ')}`);
+      }
+    } else {
+      logger.info(`❌ No source_data field - using source as-is`);
+      source = sourceRow;
+      logger.info(`   Direct keys: ${Object.keys(source).join(', ')}`);
+      logger.info(`   Has name: ${!!source.name}`);
+      logger.info(`   Has fieldSchema: ${!!source.fieldSchema}`);
+      logger.info(`   Has field_mapping: ${!!source.field_mapping}`);
+    }
+    
+    logger.info(`🔍 ========================================\n`);
+    
     // Check if user requested stop
     if (shouldStopScraping(userId)) {
       logger.info(`🛑 Scraping stopped by user ${userId} request`);
@@ -133,7 +203,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
     try {
       // Random delay between sources
       const delayBetweenSources = Math.random() * 20000 + 10000;
-      if (SOURCES.indexOf(source) > 0) {
+      if (SOURCES.indexOf(sourceRow) > 0) {
         logger.info(`⏳ Random delay: ${Math.round(delayBetweenSources/1000)}s before scraping ${source.name}`);
         await new Promise(resolve => setTimeout(resolve, delayBetweenSources));
       }
@@ -372,7 +442,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 const aiLeads = await extractFromScreenshot(
                   screenshot,
                   source.name,
-                  source.fieldSchema || {}
+                  source.fieldSchema || source.field_mapping || source.field_schema || {}
                 );
                 
                 if (aiLeads && Array.isArray(aiLeads)) {
@@ -506,7 +576,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
   });
   
   if (userSources.length > 0) {
-    const sourceNames = userSources.map(s => s.name).join(', ');
+    const sourceNames = userSources.map(s => s.name || 'Unknown').join(', ');
     if (totalInserted > 0) {
       await createNotification(
         userId,
