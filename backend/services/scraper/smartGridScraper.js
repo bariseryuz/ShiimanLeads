@@ -6,6 +6,9 @@
 const logger = require('../../utils/logger');
 const { navigateAutonomously, extractFromScreenshot } = require('../ai');
 const { deduplicateBatch } = require('../deduplication');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 
 // ============================================================================
 // SECTION 1: CONFIGURATION
@@ -614,6 +617,146 @@ async function scrapeWithSmartGrid(page, source, userConfig = {}) {
     logger.info(`\n🔄 Phase 4: Processing Results`);
     logger.info(`   Total tiles captured: ${allTiles.length}`);
     logger.info(`   Raw leads extracted: ${allLeads.length}`);
+    
+    // =============================================================================
+    // 💾 SAVE TILES FOR MANUAL VERIFICATION (TEMPORARY DEBUG)
+    // =============================================================================
+    
+    logger.info(`\n💾 ========================================`);
+    logger.info(`💾 SAVING TILES FOR MANUAL VERIFICATION`);
+    logger.info(`💾 ========================================`);
+    
+    try {
+      // Create debug directory
+      const screenshotDir = path.join(__dirname, '../../data/screenshots/tiles-debug');
+      
+      if (!fs.existsSync(screenshotDir)) {
+        fs.mkdirSync(screenshotDir, { recursive: true });
+        logger.info(`   📁 Created directory: ${screenshotDir}`);
+      }
+      
+      const timestamp = Date.now();
+      const sourceSlug = (source.name || 'unknown').toLowerCase().replace(/[^a-z0-9]/g, '-');
+      
+      // Calculate hash for each tile to detect duplicates
+      const tileHashes = new Map();
+      const fileSizes = [];
+      let savedCount = 0;
+      let duplicateCount = 0;
+      
+      allTiles.forEach((tile, index) => {
+        // Calculate hash of screenshot
+        const tileHash = crypto.createHash('md5')
+          .update(tile.screenshot)
+          .digest('hex')
+          .substring(0, 16);
+        
+        // Check if we've seen this exact screenshot before
+        if (tileHashes.has(tileHash)) {
+          duplicateCount++;
+          const originalIndex = tileHashes.get(tileHash);
+          logger.warn(`   ⚠️  [${index}] DUPLICATE of tile ${originalIndex} (hash: ${tileHash})`);
+        } else {
+          tileHashes.set(tileHash, index);
+        }
+        
+        const filename = `${sourceSlug}_${timestamp}_scroll${tile.scrollY}_row${tile.row}_col${tile.col}_idx${index}_hash${tileHash}.png`;
+        const filepath = path.join(screenshotDir, filename);
+        
+        // Write screenshot file
+        fs.writeFileSync(filepath, tile.screenshot);
+        
+        const sizeKB = (tile.screenshot.length / 1024).toFixed(1);
+        fileSizes.push(parseFloat(sizeKB));
+        savedCount++;
+        
+        // Log first 5 and last 5
+        if (index < 5 || index >= allTiles.length - 5) {
+          logger.info(`   💾 [${index + 1}/${allTiles.length}] ${filename.substring(0, 60)}... - ${sizeKB}KB`);
+        } else if (index === 5) {
+          logger.info(`   💾 ... (saving ${allTiles.length - 10} more tiles) ...`);
+        }
+      });
+      
+      // Calculate statistics
+      const uniqueHashes = tileHashes.size;
+      const avgSize = (fileSizes.reduce((a, b) => a + b, 0) / fileSizes.length).toFixed(1);
+      const minSize = Math.min(...fileSizes).toFixed(1);
+      const maxSize = Math.max(...fileSizes).toFixed(1);
+      const uniqueSizes = [...new Set(fileSizes.map(s => s.toFixed(1)))].length;
+      
+      logger.info(`\n   📊 Screenshot Statistics:`);
+      logger.info(`      Total saved: ${savedCount} tiles`);
+      logger.info(`      Unique screenshots: ${uniqueHashes} (${duplicateCount} duplicates)`);
+      logger.info(`      Size range: ${minSize}KB - ${maxSize}KB`);
+      logger.info(`      Average size: ${avgSize}KB`);
+      logger.info(`      Unique sizes: ${uniqueSizes}/${savedCount}`);
+      
+      // ⚠️ ANALYSIS: Detect problems
+      if (uniqueHashes === 1 && savedCount > 1) {
+        logger.error(`\n   🚨 CRITICAL: ALL ${savedCount} TILES ARE IDENTICAL!`);
+        logger.error(`      This means the page is NOT scrolling or updating!`);
+        logger.error(`      Problem: Screenshot capture is broken or page is static`);
+      } else if (duplicateCount > savedCount * 0.5) {
+        logger.warn(`\n   ⚠️  WARNING: ${duplicateCount} duplicate screenshots (${(duplicateCount/savedCount*100).toFixed(1)}%)`);
+        logger.warn(`      Over 50% of tiles are duplicates!`);
+        logger.warn(`      Problem: Page may not be scrolling properly`);
+      } else if (uniqueSizes === 1) {
+        logger.warn(`\n   ⚠️  WARNING: All tiles are EXACTLY the same size!`);
+        logger.warn(`      This could indicate identical content`);
+      } else if (duplicateCount > 0) {
+        logger.info(`\n   ℹ️  Found ${duplicateCount} duplicate tiles (${(duplicateCount/savedCount*100).toFixed(1)}%)`);
+        logger.info(`      Some overlap is normal for tile-based capture`);
+      } else {
+        logger.info(`\n   ✅ All ${savedCount} screenshots are unique!`);
+        logger.info(`      Tile capture appears to be working correctly`);
+      }
+      
+      logger.info(`\n   📁 Saved to: ${screenshotDir}`);
+      logger.info(`\n   📥 Download commands:`);
+      logger.info(`      railway run "tar -czf /tmp/tiles.tar.gz /app/backend/data/screenshots/tiles-debug"`);
+      logger.info(`      railway run cat /tmp/tiles.tar.gz > tiles-debug-${timestamp}.tar.gz`);
+      logger.info(`      tar -xzf tiles-debug-${timestamp}.tar.gz`);
+      logger.info(`\n   🔍 Quick check file sizes:`);
+      logger.info(`      railway run "ls -lh /app/backend/data/screenshots/tiles-debug/ | head -20"`);
+      
+      // Create summary file
+      const summaryPath = path.join(screenshotDir, `_SUMMARY_${timestamp}.txt`);
+      const summaryContent = `
+SCREENSHOT CAPTURE SUMMARY
+Generated: ${new Date().toISOString()}
+Source: ${source.name}
+
+STATISTICS:
+- Total tiles saved: ${savedCount}
+- Unique screenshots: ${uniqueHashes}
+- Duplicate screenshots: ${duplicateCount}
+- Duplicate rate: ${(duplicateCount/savedCount*100).toFixed(1)}%
+- Size range: ${minSize}KB - ${maxSize}KB
+- Average size: ${avgSize}KB
+- Unique file sizes: ${uniqueSizes}
+
+DIAGNOSIS:
+${uniqueHashes === 1 && savedCount > 1 ? '🚨 CRITICAL: All tiles identical - page not scrolling!' : ''}
+${duplicateCount > savedCount * 0.5 ? '⚠️  WARNING: >50% duplicates - scroll may be broken' : ''}
+${duplicateCount === 0 ? '✅ GOOD: All screenshots unique' : ''}
+
+TILE DETAILS:
+${Array.from(tileHashes.entries()).map(([hash, idx]) => {
+  const tile = allTiles[idx];
+  return `[${idx}] Hash: ${hash} | Row: ${tile.row}, Col: ${tile.col} | Scroll: ${tile.scrollY}px | Size: ${(tile.screenshot.length/1024).toFixed(1)}KB`;
+}).join('\n')}
+`;
+      
+      fs.writeFileSync(summaryPath, summaryContent);
+      logger.info(`   📄 Summary saved: _SUMMARY_${timestamp}.txt`);
+      
+    } catch (err) {
+      logger.error(`\n   ❌ Failed to save debug screenshots: ${err.message}`);
+      logger.error(err.stack);
+    }
+    
+    logger.info(`💾 ========================================\n`);
     
     // Deduplicate
     const dedupeResult = deduplicateRecords(allLeads, fieldMapping);
