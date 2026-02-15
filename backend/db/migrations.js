@@ -59,7 +59,7 @@ function runMigrations(db) {
     { column: 'link', type: 'TEXT' },
     { column: 'seen_count', type: 'INTEGER DEFAULT 1' },
     { column: 'last_seen_at', type: 'DATETIME' },
-    { column: 'screenshot_path', type: 'TEXT' }  // For screenshot feature
+    { column: 'screenshot_path', type: 'TEXT' }
   ];
 
   leadsMigrations.forEach(({ column, type }) => {
@@ -78,7 +78,6 @@ function runMigrations(db) {
   try {
     logger.info('🔄 Checking for hardcoded UNIQUE constraints...');
     
-    // Check if the problematic index exists
     const indexes = db.prepare(`
       SELECT name FROM sqlite_master 
       WHERE type='index' 
@@ -89,7 +88,6 @@ function runMigrations(db) {
     if (indexes.length > 0) {
       logger.info('⚠️  Found hardcoded permit constraint, removing...');
       
-      // Drop problematic indexes
       indexes.forEach(idx => {
         try {
           db.exec(`DROP INDEX IF EXISTS ${idx.name}`);
@@ -109,7 +107,6 @@ function runMigrations(db) {
   // ============================================================================
   
   try {
-    // Create universal unique constraint (works for ANY source)
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_user_source_canonical 
       ON leads(user_id, source_id, canonical_hash)
@@ -193,7 +190,6 @@ function runMigrations(db) {
     if (duplicates.length > 0) {
       logger.warn(`⚠️  Found ${duplicates.length} duplicate hash groups, keeping newest records...`);
       
-      // Keep only the newest record for each hash
       db.exec(`
         DELETE FROM leads
         WHERE id NOT IN (
@@ -218,14 +214,11 @@ function runMigrations(db) {
   logger.info('🔄 Ensuring universal deduplication system...');
   
   try {
-    // Check if table has ANY field-specific UNIQUE constraints
     const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='leads'").get();
     
     if (tableInfo && tableInfo.sql && (tableInfo.sql.includes('UNIQUE(user_id, permit_number)') || tableInfo.sql.includes('permit_number TEXT UNIQUE'))) {
       logger.info('⚠️  Found field-specific UNIQUE constraints, migrating to universal content-based deduplication...');
       
-      // Recreate table with NO field-specific constraints
-      // Only content-based deduplication via canonical_hash
       db.exec(`
         BEGIN TRANSACTION;
         
@@ -234,13 +227,11 @@ function runMigrations(db) {
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL,
           source_id INTEGER NOT NULL,
-          
-          -- Legacy field for backward compatibility (NO UNIQUE constraint!)
           permit_number TEXT,
           
-          -- Universal fields for ANY data type
-          data TEXT NOT NULL,
-          canonical_hash TEXT NOT NULL,
+          -- Universal fields (allow NULL for migration compatibility)
+          data TEXT,
+          canonical_hash TEXT,
           dedup_hash TEXT,
           screenshot_path TEXT,
           
@@ -248,7 +239,7 @@ function runMigrations(db) {
           is_new INTEGER DEFAULT 1,
           created_at TEXT DEFAULT (datetime('now')),
           
-          -- All other existing columns (preserve everything)
+          -- All other columns
           unique_id TEXT,
           source_name TEXT,
           raw_data TEXT,
@@ -292,28 +283,68 @@ function runMigrations(db) {
           seen_count INTEGER DEFAULT 1,
           last_seen_at TEXT,
           
-          -- Foreign keys
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (source_id) REFERENCES user_sources(id) ON DELETE CASCADE
         );
         
-        -- Copy all existing data (dynamic - only copy columns that exist)
+        -- Copy all existing data with COALESCE to handle NULLs
         INSERT INTO leads_new 
         SELECT 
-          id, user_id, source_id, permit_number, data, canonical_hash, dedup_hash, screenshot_path,
-          is_new, created_at, unique_id, source_name, raw_data, estimated_value, updated_at,
-          primary_id, title, date_issued, phone, page_url, application_date, owner_name,
-          contractor_name, contractor_address, contractor_city, contractor_state, contractor_zip,
-          contractor_phone, square_footage, units, floors, parcel_number, permit_type,
-          permit_subtype, work_description, purpose, city, state, zip_code, latitude, longitude,
-          status, record_type, project_name, extracted_data, raw, ai_confidence, ai_validated,
-          company_name, link, seen_count, last_seen_at
+          id, 
+          user_id, 
+          source_id, 
+          permit_number, 
+          COALESCE(data, '{}'),
+          COALESCE(canonical_hash, ''),
+          dedup_hash, 
+          screenshot_path,
+          is_new, 
+          created_at, 
+          unique_id, 
+          source_name, 
+          raw_data, 
+          estimated_value, 
+          updated_at,
+          primary_id, 
+          title, 
+          date_issued, 
+          phone, 
+          page_url, 
+          application_date, 
+          owner_name,
+          contractor_name, 
+          contractor_address, 
+          contractor_city, 
+          contractor_state, 
+          contractor_zip,
+          contractor_phone, 
+          square_footage, 
+          units, 
+          floors, 
+          parcel_number, 
+          permit_type,
+          permit_subtype, 
+          work_description, 
+          purpose, 
+          city, 
+          state, 
+          zip_code, 
+          latitude, 
+          longitude,
+          status, 
+          record_type, 
+          project_name, 
+          extracted_data, 
+          raw, 
+          ai_confidence, 
+          ai_validated,
+          company_name, 
+          link, 
+          seen_count, 
+          last_seen_at
         FROM leads;
         
-        -- Drop old table
         DROP TABLE leads;
-        
-        -- Rename new table
         ALTER TABLE leads_new RENAME TO leads;
         
         COMMIT;
