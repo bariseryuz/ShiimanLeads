@@ -129,22 +129,35 @@ function createTables(db) {
 
 /**
  * Create database indexes for performance
+ * All wrapped in try-catch to handle missing columns gracefully
  */
 function createIndexes(db) {
   logger.info('📇 Creating database indexes...');
 
-  // Note: 'seen' table doesn't exist in current schema, using dedup_hash from leads
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_dedup ON leads(dedup_hash)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_name)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_permit ON leads(permit_number)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_contractor ON leads(contractor_name)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_date ON leads(date_added DESC)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_user_sources_user ON user_sources(user_id)`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_source_reliability_source ON source_reliability(source_id)`);
+  const indexes = [
+    { name: 'idx_leads_dedup', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_dedup ON leads(dedup_hash)' },
+    { name: 'idx_leads_user', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)' },
+    { name: 'idx_leads_source', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_name)' },
+    { name: 'idx_leads_permit', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_permit ON leads(permit_number)' },
+    { name: 'idx_leads_contractor', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_contractor ON leads(contractor_name)' },
+    { name: 'idx_leads_created', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at DESC)' },
+    { name: 'idx_leads_date_added', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_date_added ON leads(date_added DESC)' },
+    { name: 'idx_notifications_user', sql: 'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)' },
+    { name: 'idx_user_sources_user', sql: 'CREATE INDEX IF NOT EXISTS idx_user_sources_user ON user_sources(user_id)' },
+    { name: 'idx_source_reliability_source', sql: 'CREATE INDEX IF NOT EXISTS idx_source_reliability_source ON source_reliability(source_id)' }
+  ];
 
-  logger.info('✅ Indexes created successfully');
+  indexes.forEach(({ name, sql }) => {
+    try {
+      db.exec(sql);
+      logger.info(`✅ Created index: ${name}`);
+    } catch (err) {
+      // Column might not exist yet - migrations will add it
+      logger.warn(`⚠️  Could not create ${name}: ${err.message}`);
+    }
+  });
+
+  logger.info('✅ Indexes creation completed');
 }
 
 module.exports = {
