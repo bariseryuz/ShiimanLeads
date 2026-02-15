@@ -211,6 +211,125 @@ function runMigrations(db) {
     logger.warn(`⚠️  Could not clean up duplicates: ${err.message}`);
   }
 
+  // ============================================================================
+  // MIGRATION 8: Remove field-specific UNIQUE constraints for universal deduplication
+  // ============================================================================
+  
+  logger.info('🔄 Ensuring universal deduplication system...');
+  
+  try {
+    // Check if table has ANY field-specific UNIQUE constraints
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='leads'").get();
+    
+    if (tableInfo && tableInfo.sql && (tableInfo.sql.includes('UNIQUE(user_id, permit_number)') || tableInfo.sql.includes('permit_number TEXT UNIQUE'))) {
+      logger.info('⚠️  Found field-specific UNIQUE constraints, migrating to universal content-based deduplication...');
+      
+      // Recreate table with NO field-specific constraints
+      // Only content-based deduplication via canonical_hash
+      db.exec(`
+        BEGIN TRANSACTION;
+        
+        -- Create new table with universal schema (no field-specific UNIQUE constraints)
+        CREATE TABLE leads_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          source_id INTEGER NOT NULL,
+          
+          -- Legacy field for backward compatibility (NO UNIQUE constraint!)
+          permit_number TEXT,
+          
+          -- Universal fields for ANY data type
+          data TEXT NOT NULL,
+          canonical_hash TEXT NOT NULL,
+          dedup_hash TEXT,
+          screenshot_path TEXT,
+          
+          -- Metadata
+          is_new INTEGER DEFAULT 1,
+          created_at TEXT DEFAULT (datetime('now')),
+          
+          -- All other existing columns (preserve everything)
+          unique_id TEXT,
+          source_name TEXT,
+          raw_data TEXT,
+          estimated_value TEXT,
+          updated_at TEXT,
+          primary_id TEXT,
+          title TEXT,
+          date_issued TEXT,
+          phone TEXT,
+          page_url TEXT,
+          application_date TEXT,
+          owner_name TEXT,
+          contractor_name TEXT,
+          contractor_address TEXT,
+          contractor_city TEXT,
+          contractor_state TEXT,
+          contractor_zip TEXT,
+          contractor_phone TEXT,
+          square_footage TEXT,
+          units TEXT,
+          floors TEXT,
+          parcel_number TEXT,
+          permit_type TEXT,
+          permit_subtype TEXT,
+          work_description TEXT,
+          purpose TEXT,
+          city TEXT,
+          state TEXT,
+          zip_code TEXT,
+          latitude TEXT,
+          longitude TEXT,
+          status TEXT,
+          record_type TEXT,
+          project_name TEXT,
+          extracted_data TEXT,
+          raw TEXT,
+          ai_confidence REAL,
+          ai_validated INTEGER DEFAULT 0,
+          company_name TEXT,
+          link TEXT,
+          seen_count INTEGER DEFAULT 1,
+          last_seen_at TEXT,
+          
+          -- Foreign keys
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (source_id) REFERENCES user_sources(id) ON DELETE CASCADE
+        );
+        
+        -- Copy all existing data (dynamic - only copy columns that exist)
+        INSERT INTO leads_new 
+        SELECT 
+          id, user_id, source_id, permit_number, data, canonical_hash, dedup_hash, screenshot_path,
+          is_new, created_at, unique_id, source_name, raw_data, estimated_value, updated_at,
+          primary_id, title, date_issued, phone, page_url, application_date, owner_name,
+          contractor_name, contractor_address, contractor_city, contractor_state, contractor_zip,
+          contractor_phone, square_footage, units, floors, parcel_number, permit_type,
+          permit_subtype, work_description, purpose, city, state, zip_code, latitude, longitude,
+          status, record_type, project_name, extracted_data, raw, ai_confidence, ai_validated,
+          company_name, link, seen_count, last_seen_at
+        FROM leads;
+        
+        -- Drop old table
+        DROP TABLE leads;
+        
+        -- Rename new table
+        ALTER TABLE leads_new RENAME TO leads;
+        
+        COMMIT;
+      `);
+      
+      logger.info('✅ Migrated to universal content-based deduplication');
+      logger.info('✅ No field-specific constraints - works for ANY data type');
+      logger.info('✅ Deduplication: user_id + source_id + canonical_hash');
+    } else {
+      logger.info('✅ Table already uses universal deduplication');
+    }
+  } catch (err) {
+    logger.warn(`⚠️  Could not migrate to universal deduplication: ${err.message}`);
+    logger.warn('⚠️  This may cause issues with non-permit data sources');
+  }
+
   logger.info('✅ Migrations completed');
 }
 

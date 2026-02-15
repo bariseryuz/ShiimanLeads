@@ -1322,44 +1322,44 @@
         alert('Failed to load sources');
       }
     }
-
-    async function loadScreenshots(sources) {
+async function loadScreenshots(sources) {
+  try {
+    // Initialize global screenshot storage
+    if (!window.sourceScreenshots) {
+      window.sourceScreenshots = {};
+    }
+    
+    // Load screenshots for each source individually
+    for (const source of sources) {
+      if (!source || !source.id) continue;
+      
       try {
-        const response = await fetch('/api/screenshots');
-        if (!response.ok) return;
+        const response = await fetch(`/api/screenshots/source/${source.id}`, {
+          credentials: 'include'
+        });
+        
+        if (!response.ok) continue;
         
         const data = await response.json();
-        if (!data.screenshots || data.screenshots.length === 0) return;
+        const screenshots = data.screenshots || [];
         
-        // Initialize global screenshot storage
-        if (!window.sourceScreenshots) {
-          window.sourceScreenshots = {};
+        // Store screenshots globally for lightbox access
+        if (screenshots.length > 0) {
+          window.sourceScreenshots[source.id] = screenshots;
         }
         
-        // Group screenshots by source name (extracted from filename)
-        sources.forEach(source => {
-          if (!source || !source.data || !source.data.name) return;
-          const sourceName = source.data.name.toLowerCase().replace(/[^a-z0-9]/gi, '_');
-          
-          const screenshots = data.screenshots
-            .filter(s => s.filename.toLowerCase().includes(sourceName))
-            .sort((a, b) => new Date(b.created) - new Date(a.created));
-
-          // Store screenshots globally for lightbox access
-          if (screenshots.length > 0) {
-            window.sourceScreenshots[source.id] = screenshots;
-          }
-
-          const container = document.getElementById(`screenshot-${source.id}`);
-          if (!container) return;
-
-          renderScreenshotsForSource(container, source.id, screenshots);
-        });
+        const container = document.getElementById(`screenshot-${source.id}`);
+        if (!container) continue;
+        
+        renderScreenshotsForSource(container, source.id, screenshots);
       } catch (error) {
-        console.error('Error loading screenshots:', error);
+        console.error(`Error loading screenshots for source ${source.id}:`, error);
       }
     }
-
+  } catch (error) {
+    console.error('Error loading screenshots:', error);
+  }
+}
     function renderScreenshotsForSource(container, sourceId, screenshots) {
       if (!container) return;
 
