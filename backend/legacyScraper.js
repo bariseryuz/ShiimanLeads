@@ -457,6 +457,16 @@ else if (useSmartGrid && source.useAI) {
             if (aiPrompts && aiPrompts.length > 0 && isAIAvailable()) {
               const navigationPrompt = aiPrompts.join('\n');
               logger.info(`🤖 AI Navigation: ${aiPrompts.length} steps`);
+              logger.info(`📸 Preparing screenshot before navigation...`);
+              
+              // Wait for stability before screenshot
+              try {
+                await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
+                  logger.debug(`⚠️ Network not fully idle, continuing anyway`);
+                });
+              } catch (e) {
+                logger.debug(`Network wait skipped`);
+              }
               
               const navResult = await navigateAutonomously(page, navigationPrompt, {
                 maxRetries: 1,

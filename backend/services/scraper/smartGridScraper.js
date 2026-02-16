@@ -9,6 +9,7 @@ const { deduplicateBatch } = require('../deduplication');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const Sharp = require('sharp');
 
 // ============================================================================
 // SECTION 1: CONFIGURATION
@@ -193,6 +194,7 @@ async function detectAndClickLoadMore(page) {
 
 /**
  * Capture all tiles at current scroll position
+ * Strategy: Scroll vertically, capture full-width screenshot, crop into horizontal tiles
  */
 async function captureAllTilesAtPosition(page, scrollPosition, config) {
   const { columns, rows, tileWidth, tileHeight } = config;
@@ -204,57 +206,101 @@ async function captureAllTilesAtPosition(page, scrollPosition, config) {
   // Get current page dimensions
   const dimensions = await page.evaluate(() => ({
     scrollHeight: document.body.scrollHeight,
-    scrollWidth: document.body.scrollWidth
+    scrollWidth: document.body.scrollWidth,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight
   }));
   
-  // Capture each tile in the grid
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < columns; col++) {
-      const tileScrollY = scrollPosition + (row * tileHeight);
-      const tileScrollX = col * tileWidth;
-      
-      // Check if this tile is within page bounds
-      if (tileScrollY >= dimensions.scrollHeight) {
-        logger.debug(`   ⏭️  Tile [${row},${col}] beyond page height, skipping`);
-        continue;
-      }
-      
-      try {
-        // ✅ FIX: Wrap coordinates in object (Playwright evaluate limitation)
-        await page.evaluate((coords) => {
-          window.scrollTo(coords.x, coords.y);
-        }, { x: tileScrollX, y: tileScrollY });
+  logger.debug(`   📐 Page dims: ${dimensions.scrollWidth}×${dimensions.scrollHeight}, Viewport: ${dimensions.viewportWidth}×${dimensions.viewportHeight}`);
+  
+  try {
+    // Scroll to Y position for first row
+    await page.evaluate((yPos) => {
+      window.scrollTo(0, yPos);
+    }, scrollPosition);
+    
+    // Wait for render
+    await page.waitForTimeout(500);
+    
+    // Take ONE full-width screenshot at this vertical position
+    const fullWidthScreenshot = await page.screenshot({
+      fullPage: false,
+      type: 'png',
+      timeout: config.screenshotTimeout
+    });
+    
+    logger.info(`   📸 Full-width screenshot: ${(fullWidthScreenshot.length / 1024).toFixed(1)}KB`);
+    
+    // Now crop horizontally for each tile
+    const Sharp = require('sharp');
+    
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < columns; col++) {
+        const tileScrollY = scrollPosition + (row * tileHeight);
         
-        // Small wait for rendering
-        await page.waitForTimeout(300);
+        // Check bounds
+        if (tileScrollY >= dimensions.scrollHeight) {
+          logger.debug(`   ⏭️  Tile [${row},${col}] beyond page height`);
+          continue;
+        }
         
-        // Take screenshot
-        const screenshot = await page.screenshot({
-          fullPage: false,
-          type: 'png',
-          timeout: config.screenshotTimeout
-        });
-        
-        const tileIndex = tiles.length;
-        const sizeKB = (screenshot.length / 1024).toFixed(1);
-        
-        logger.info(`   📸 Tile ${tileIndex + 1}: [Row ${row}, Col ${col}] - ${sizeKB}KB`);
-        
-        tiles.push({
-          index: tileIndex,
-          row: row,
-          col: col,
-          scrollX: tileScrollX,
-          scrollY: tileScrollY,
-          screenshot: screenshot,
-          sizeBytes: screenshot.length,
-          label: `[Row ${row}, Col ${col}]`
-        });
-        
-      } catch (error) {
-        logger.error(`   ❌ Failed to capture tile [${row},${col}]: ${error.message}`);
+        try {
+          // For row 0, use the full screenshot we just captured
+          // For rows 1+, we'll need to scroll down first
+          let tileScreenshot = fullWidthScreenshot;
+          
+          if (row > 0) {
+            // Scroll down and recapture for this row
+            await page.evaluate((yPos) => {
+              window.scrollTo(0, yPos);
+            }, tileScrollY);
+            
+            await page.waitForTimeout(400);
+            
+            tileScreenshot = await page.screenshot({
+              fullPage: false,
+              type: 'png',
+              timeout: config.screenshotTimeout
+            });
+          }
+          
+          // Crop horizontally
+          const cropLeft = col * tileWidth;
+          const cropWidth = Math.min(tileWidth, dimensions.viewportWidth - cropLeft);
+          const cropHeight = tileHeight;
+          
+          const croppedImage = await Sharp(tileScreenshot)
+            .extract({
+              left: Math.max(0, cropLeft),
+              top: 0,
+              width: Math.max(1, cropWidth),
+              height: Math.min(cropHeight, dimensions.viewportHeight)
+            })
+            .png()
+            .toBuffer();
+          
+          const tileIndex = tiles.length;
+          logger.info(`   📸 Tile ${tileIndex + 1}: [Row ${row}, Col ${col}] - ${(croppedImage.length / 1024).toFixed(1)}KB`);
+          
+          tiles.push({
+            index: tileIndex,
+            row: row,
+            col: col,
+            scrollX: cropLeft,
+            scrollY: tileScrollY,
+            screenshot: croppedImage,
+            sizeBytes: croppedImage.length,
+            label: `[Row ${row}, Col ${col}]`
+          });
+          
+        } catch (cropError) {
+          logger.error(`   ❌ Failed to crop tile [${row},${col}]: ${cropError.message}`);
+        }
       }
     }
+    
+  } catch (error) {
+    logger.error(`   ❌ Tile capture failed: ${error.message}`);
   }
   
   logger.info(`✅ Captured ${tiles.length} tiles at position Y=${scrollPosition}`);

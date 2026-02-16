@@ -26,8 +26,8 @@ function getGeminiModel(purpose = 'extraction') {
 
   const modelConfigs = {
     navigation: {
-      // ✅ CHANGED: gemini-2.5-flash → gemini-2.0-flash-exp (99% cheaper!)
-      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-1.5-flash-8b',
+      // ✅ CHANGED: Using gemini-2.0-flash-lite
+      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-2.0-flash-lite',
       config: {
         temperature: 0.1,      // Low - precise actions
         maxOutputTokens: 2048, // ✅ REDUCED: 8192 → 2048 (navigation needs less)
@@ -37,8 +37,8 @@ function getGeminiModel(purpose = 'extraction') {
       }
     },
     extraction: {
-      // ✅ CHANGED: gemini-2.5-flash → gemini-2.0-flash-exp (99% cheaper!)
-      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-1.5-flash-8b',
+      // ✅ CHANGED: Using gemini-2.0-flash-lite
+      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.0-flash-lite',
       config: {
         temperature: 0.1,      // Low - accurate data
         maxOutputTokens: 8192, // ✅ REDUCED: 16384 → 8192 (enough for 20 records)
@@ -91,16 +91,16 @@ function isAIAvailable() {
 function getModelInfo(purpose = 'extraction') {
   const modelConfigs = {
     navigation: {
-      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-1.5-flash-8b'
+      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-2.0-flash-lite'
     },
     extraction: {
-      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-1.5-flash-8b'
+      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.0-flash-lite'
     }
   };
   
   return {
     purpose,
-    model: modelConfigs[purpose]?.model || 'gemini-1.5-flash-8b',
+    model: modelConfigs[purpose]?.model || 'gemini-2.0-flash-lite',
     available: isAIAvailable(),
     apiKeyPresent: !!process.env.GEMINI_API_KEY
   };

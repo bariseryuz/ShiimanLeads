@@ -14,6 +14,9 @@ const { replaceDynamicDates } = require('../scraper/helpers');
 
 async function parseNavigationSteps(instructions, pageUrl, screenshot) {
   if (!isAIAvailable()) {
+    logger.error(`❌ [Navigator] Gemini API not configured`);
+    logger.error(`   Set in .env: GEMINI_API_KEY=your-key`);
+    logger.error(`   Optional: GEMINI_NAVIGATOR_MODEL=gemini-2.0-flash-lite`);
     throw new Error('Gemini API not configured');
   }
 
@@ -144,6 +147,7 @@ async function executeAction(page, action) {
  */
 async function navigateAutonomously(page, instructions, options = {}) {
   if (!isAIAvailable()) {
+    logger.error(`❌ [Navigator] Gemini API not available - set GEMINI_API_KEY in .env`);
     throw new Error('AI Navigator not available');
   }
 
@@ -155,7 +159,9 @@ async function navigateAutonomously(page, instructions, options = {}) {
     let screenshot = null;
     if (takeScreenshot) {
       logger.info(`📸 Capturing page state...`);
-      screenshot = await page.screenshot({ fullPage: false, type: 'png' });
+      // Capture full page to ensure elements are visible to AI
+      screenshot = await page.screenshot({ fullPage: true, type: 'png' });
+      logger.info(`📸 Screenshot: ${(screenshot.length / 1024).toFixed(1)}KB`);
     }
 
     const actions = await parseNavigationSteps(instructions, page.url(), screenshot);
