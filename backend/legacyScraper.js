@@ -36,6 +36,8 @@ const {
 
 // ✅ SMART GRID SCRAPER (12-tile progressive capture)
 const { scrapeWithSmartGrid } = require('./services/scraper/smartGridScraper');
+// ✅ SCREENSHOT CAPTURE SERVICE
+const { captureTiledScreenshots } = require('./services/scraper/screenshot');
 
 
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
