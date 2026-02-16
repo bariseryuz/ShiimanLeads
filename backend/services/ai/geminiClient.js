@@ -26,21 +26,25 @@ function getGeminiModel(purpose = 'extraction') {
 
   const modelConfigs = {
     navigation: {
-      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-2.5-flash',
+      // ✅ CHANGED: gemini-2.5-flash → gemini-2.0-flash-exp (99% cheaper!)
+      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-2.0-flash-exp',
       config: {
         temperature: 0.1,      // Low - precise actions
-        maxOutputTokens: 8192, // Medium - action lists
+        maxOutputTokens: 2048, // ✅ REDUCED: 8192 → 2048 (navigation needs less)
         topP: 0.95,
-        topK: 40
+        topK: 40,
+        responseMimeType: 'text/plain'  // ✅ ADDED: Plain text for code
       }
     },
     extraction: {
-      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.5-flash',
+      // ✅ CHANGED: gemini-2.5-flash → gemini-2.0-flash-exp (99% cheaper!)
+      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.0-flash-exp',
       config: {
         temperature: 0.1,      // Low - accurate data
-        maxOutputTokens: 16384, // High - large datasets
+        maxOutputTokens: 8192, // ✅ REDUCED: 16384 → 8192 (enough for 20 records)
         topP: 0.95,
-        topK: 40
+        topK: 40,
+        responseMimeType: 'application/json'  // ✅ ADDED: Force JSON output
       }
     }
   };
@@ -51,7 +55,26 @@ function getGeminiModel(purpose = 'extraction') {
 
   return genAI.getGenerativeModel({
     model: config.model,
-    generationConfig: config.config
+    generationConfig: config.config,
+    // ✅ ADDED: Safety settings (prevent blocking legitimate content)
+    safetySettings: [
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: 'BLOCK_NONE'
+      },
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: 'BLOCK_NONE'
+      },
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold: 'BLOCK_NONE'
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold: 'BLOCK_NONE'
+      }
+    ]
   });
 }
 
@@ -62,8 +85,30 @@ function isAIAvailable() {
   return !!genAI;
 }
 
+/**
+ * Get model info for debugging
+ */
+function getModelInfo(purpose = 'extraction') {
+  const modelConfigs = {
+    navigation: {
+      model: process.env.GEMINI_NAVIGATOR_MODEL || 'gemini-2.0-flash-exp'
+    },
+    extraction: {
+      model: process.env.GEMINI_EXTRACTION_MODEL || 'gemini-2.0-flash-exp'
+    }
+  };
+  
+  return {
+    purpose,
+    model: modelConfigs[purpose]?.model || 'gemini-2.0-flash-exp',
+    available: isAIAvailable(),
+    apiKeyPresent: !!process.env.GEMINI_API_KEY
+  };
+}
+
 module.exports = {
   genAI,
   getGeminiModel,
-  isAIAvailable
+  isAIAvailable,
+  getModelInfo  // ✅ ADDED: For debugging
 };
