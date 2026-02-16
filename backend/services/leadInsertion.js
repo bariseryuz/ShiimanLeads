@@ -60,40 +60,19 @@ async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, s
       return false;
     }
     
-    // Extract first few important fields for storage
-    const importantFields = dedupInfo.topField 
-      ? { [dedupInfo.topField.field]: dedupInfo.topField.value }
-      : {};
-    
-    // Prepare flexible field mapping
-    const allFields = Object.keys(data);
-    const field1 = allFields[0] ? data[allFields[0]] : null;
-    const field2 = allFields[1] ? data[allFields[1]] : null;
-    const field3 = allFields[2] ? data[allFields[2]] : null;
-    // Ensure permit_number is always populated (some DBs enforce NOT NULL)
-    const permitNumber = data.permit_number || data.permitNumber || field1 || uniqueId;
-    
-    // Insert
+    // ✅ UNIVERSAL INSERT - Only essential columns
     try {
       const result = await dbRun(
         `INSERT INTO leads (
-          user_id, source_id, source_name, unique_id, raw_data,
-          permit_number, address, estimated_value, description,
-          application_date, phone, page_url, is_new, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+          user_id, source_id, source_name, unique_id, 
+          raw_data, is_new, created_at
+        ) VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
         [
           userId,
           sourceId,
           sourceName || 'unknown',
           uniqueId,
-          JSON.stringify(data),  // Store full extracted data as JSON
-          permitNumber,
-          field2 || null,
-          field3 || null,
-          JSON.stringify(importantFields).substring(0, 200) || null,
-          new Date().toISOString(),
-          null,
-          sourceUrl || null
+          JSON.stringify(data)  // Store ALL extracted data as JSON
         ]
       );
       

@@ -6,60 +6,24 @@ const logger = require('../utils/logger');
 function createTables(db) {
   logger.info('📊 Creating database tables...');
 
-  // Unified leads table
+  // ✅ UNIVERSAL leads table - works with ANY data type
   db.exec(`CREATE TABLE IF NOT EXISTS leads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
     source_id INTEGER NOT NULL,
     unique_id TEXT NOT NULL,
     source_name TEXT,
-    hash TEXT,
-    primary_id TEXT,
-    title TEXT,
-    data TEXT,
-    raw_text TEXT,
-    raw_data TEXT,
-    permit_number TEXT,
-    address TEXT,
-    value TEXT,
-    estimated_value TEXT,
-    description TEXT,
-    source TEXT,
-    date_added TEXT,
-    date_issued TEXT,
-    phone TEXT,
-    page_url TEXT,
-    application_date TEXT,
-    owner_name TEXT,
-    contractor_name TEXT,
-    company_name TEXT,
-    contractor_address TEXT,
-    contractor_city TEXT,
-    contractor_state TEXT,
-    contractor_zip TEXT,
-    contractor_phone TEXT,
-    square_footage TEXT,
-    units TEXT,
-    floors TEXT,
-    parcel_number TEXT,
-    permit_type TEXT,
-    permit_subtype TEXT,
-    work_description TEXT,
-    purpose TEXT,
-    city TEXT,
-    state TEXT,
-    zip_code TEXT,
-    latitude TEXT,
-    longitude TEXT,
-    status TEXT,
-    record_type TEXT,
-    project_name TEXT,
+    
+    -- All scraped data stored as JSON (universal!)
+    raw_data TEXT NOT NULL,
+    
+    -- Metadata
     is_new INTEGER DEFAULT 1,
     seen_count INTEGER DEFAULT 1,
     last_seen_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    link TEXT,
+    
     UNIQUE(user_id, source_id, unique_id)
   )`);
 
@@ -129,19 +93,15 @@ function createTables(db) {
 
 /**
  * Create database indexes for performance
- * All wrapped in try-catch to handle missing columns gracefully
  */
 function createIndexes(db) {
   logger.info('📇 Creating database indexes...');
 
   const indexes = [
-    { name: 'idx_leads_dedup', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_dedup ON leads(dedup_hash)' },
     { name: 'idx_leads_user', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_user ON leads(user_id)' },
-    { name: 'idx_leads_source', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_name)' },
-    { name: 'idx_leads_permit', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_permit ON leads(permit_number)' },
-    { name: 'idx_leads_contractor', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_contractor ON leads(contractor_name)' },
+    { name: 'idx_leads_source', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_source ON leads(user_id, source_id)' },
     { name: 'idx_leads_created', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at DESC)' },
-    { name: 'idx_leads_date_added', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_date_added ON leads(date_added DESC)' },
+    { name: 'idx_leads_unique', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_unique ON leads(unique_id)' },
     { name: 'idx_notifications_user', sql: 'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)' },
     { name: 'idx_user_sources_user', sql: 'CREATE INDEX IF NOT EXISTS idx_user_sources_user ON user_sources(user_id)' },
     { name: 'idx_source_reliability_source', sql: 'CREATE INDEX IF NOT EXISTS idx_source_reliability_source ON source_reliability(source_id)' }
@@ -152,7 +112,6 @@ function createIndexes(db) {
       db.exec(sql);
       logger.info(`✅ Created index: ${name}`);
     } catch (err) {
-      // Column might not exist yet - migrations will add it
       logger.warn(`⚠️  Could not create ${name}: ${err.message}`);
     }
   });
