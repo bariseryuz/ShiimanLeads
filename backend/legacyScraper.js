@@ -38,6 +38,7 @@ const {
 const { scrapeWithSmartGrid } = require('./services/scraper/smartGridScraper');
 // ✅ SCREENSHOT CAPTURE SERVICE
 const { captureTiledScreenshots } = require('./services/scraper/screenshot');
+const { captureGridScrollScreenshots } = require('./services/scraper/gridScrollScraper');
 
 
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
@@ -237,15 +238,23 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         logger.info(`Using Playwright for ${source.name}`);
         logger.info(`🔧 AI extraction enabled: ${source.useAI ? 'YES' : 'NO'}`);
         
-        // ✅ CHECK IF SMART GRID MODE IS ENABLED
-        const useSmartGrid = source.useSmartGrid !== false; // Default to true
-        
-        if (useSmartGrid) {
-          logger.info(`🎯 Using SMART GRID SCRAPER (12-tile mode)`);
-        } else {
-          logger.info(`📸 Using legacy screenshot capture`);
-        }
-        
+      // ============================================
+// ✅ CHECK SCRAPING MODE
+// ============================================
+
+// Priority 1: Check for 2D Grid Scroll (horizontal + vertical)
+const useGridScroll = source.useGridScroll === true;
+
+// Priority 2: Check for Smart Grid (vertical only)
+const useSmartGrid = !useGridScroll && (source.useSmartGrid !== false);
+
+if (useGridScroll) {
+  logger.info(`🎯 Using 2D GRID SCROLL SCRAPER (horizontal + vertical)`);
+} else if (useSmartGrid) {
+  logger.info(`🎯 Using SMART GRID SCRAPER (12-tile vertical)`);
+} else {
+  logger.info(`📸 Using legacy screenshot capture`);
+}
         let browser, context, page;
         
         try {
@@ -279,84 +288,156 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           // Block pop-ups
           await setupPopupBlocking(page);
+
+          // ============================================================
+// 2D GRID SCROLL SCRAPER MODE (NEW!)
+// ============================================================
+if (useGridScroll && source.useAI) {
+  logger.info(`\n🚀 ========================================`);
+  logger.info(`🚀 2D GRID SCROLL SCRAPER`);
+  logger.info(`🚀 ========================================\n`);
+  
+  try {
+    // Navigate to page first
+    logger.info(`🌐 Navigating to ${source.url}...`);
+    await page.goto(source.url, { 
+      waitUntil: 'domcontentloaded',
+      timeout: 30000
+    });
+    logger.info(`✅ Page loaded`);
+    await page.waitForTimeout(3000);
+    
+    // Capture with 2D grid scrolling
+    const gridResult = await captureGridScrollScreenshots(page, {
+      horizontalScrollStep: source.horizontalScrollStep || 800,
+      verticalScrollStep: source.verticalScrollStep || 1000,
+      maxHorizontalScrolls: source.maxHorizontalScrolls || 5,
+      maxVerticalScrolls: source.maxVerticalScrolls || 20,
+      scrollDelay: source.scrollDelay || 1500,
+      selector: source.tableSelector || 'table'
+    });
+    
+    logger.info(`✅ Captured ${gridResult.tiles.length} tiles`);
+    
+    // Extract data from each tile
+    let inserted = 0;
+    for (const tile of gridResult.tiles) {
+      logger.info(`🤖 Extracting tile ${tile.index + 1}/${gridResult.tiles.length}`);
+      
+      try {
+        const aiLeads = await extractFromScreenshot(
+          tile.buffer,
+          source.name,
+          source.fieldSchema || source.field_mapping || {}
+        );
+        
+        if (aiLeads && Array.isArray(aiLeads) && aiLeads.length > 0) {
+          logger.info(`✅ Found ${aiLeads.length} leads in tile ${tile.index + 1}`);
           
-          // ============================================================
-          // SMART GRID SCRAPER MODE
-          // ============================================================
-          if (useSmartGrid && source.useAI) {
-            logger.info(`\n🚀 ========================================`);
-            logger.info(`🚀 SMART GRID SCRAPER (12-TILE)`);
-            logger.info(`🚀 ========================================\n`);
-            
-            // Use smart grid scraper
-            const gridResult = await scrapeWithSmartGrid(page, source, {
-              // Tile configuration (12 tiles for high accuracy)
-              columns: 3,
-              rows: 4,
-              totalTiles: 12,
-              tileWidth: 640,
-              tileHeight: 270,
-              
-              // Target & limits
-              targetLeadCount: limits.maxTotalRows || 500,
-              maxScrolls: 50,
-              
-              // Scrolling behavior
-              scrollAmount: 1080,
-              waitAfterScroll: 2000,
-              stableChecks: 3,
-              
-              // Performance
-              delayBetweenTiles: 400,
-              screenshotTimeout: 3000
-            });
-            
-            if (gridResult.success) {
-              logger.info(`\n✅ Smart grid scraper completed successfully`);
-              logger.info(`   Valid leads: ${gridResult.records.length}`);
-              logger.info(`   Duration: ${gridResult.stats.duration}s`);
-              logger.info(`   Success rate: ${gridResult.stats.successRate}%`);
-              
-              // Insert leads into database
-              let inserted = 0;
-              for (const lead of gridResult.records) {
-                // Remove metadata fields before saving
-                const cleanLead = { ...lead };
-                delete cleanLead._metadata;
-                delete cleanLead._tile;
-                delete cleanLead._tileIndex;
-                delete cleanLead._fillRate;
-                
-                if (await insertLeadIfNew({
-                  raw: JSON.stringify(cleanLead),
-                  sourceName: source.name,
-                  lead: cleanLead,
-                  extractedData: cleanLead,
-                  userId,
-                  sourceId: source._sourceId || source.id,
-                  sourceUrl: source.url
-                })) {
-                  inserted++;
-                  newLeads++;
-                }
-              }
-              
-              logger.info(`💾 Inserted ${inserted} new leads (${gridResult.records.length - inserted} duplicates skipped)`);
-              
-              aiExtractionUsed = true;
-              
-            } else {
-              logger.error(`❌ Smart grid scraper failed: ${gridResult.error}`);
-              logger.warn(`⚠️ Falling back to legacy scraping method...`);
-              // Will fall through to legacy method below
+          for (const lead of aiLeads) {
+            if (await insertLeadIfNew({
+              raw: JSON.stringify(lead),
+              sourceName: source.name,
+              lead,
+              extractedData: lead,
+              userId,
+              sourceId: source._sourceId || source.id,
+              sourceUrl: source.url
+            })) {
+              inserted++;
+              newLeads++;
             }
-            
           }
+        }
+      } catch (tileErr) {
+        logger.error(`❌ Tile ${tile.index + 1} extraction failed: ${tileErr.message}`);
+      }
+    }
+    
+    logger.info(`✅ 2D Grid Scroll complete: ${inserted} new leads from ${gridResult.tiles.length} tiles`);
+    aiExtractionUsed = true;
+    
+  } catch (gridErr) {
+    logger.error(`❌ 2D Grid Scroll failed: ${gridErr.message}`);
+    logger.warn(`⚠️ Falling back to legacy method...`);
+  }
+}
+
+// ============================================================
+// SMART GRID SCRAPER MODE
+// ============================================================
+else if (useSmartGrid && source.useAI) {
+  logger.info(`\n🚀 ========================================`);
+  logger.info(`🚀 SMART GRID SCRAPER (12-TILE)`);
+  logger.info(`🚀 ========================================\n`);
+  
+  // Use smart grid scraper
+  const gridResult = await scrapeWithSmartGrid(page, source, {
+    // Tile configuration (12 tiles for high accuracy)
+    columns: 3,
+    rows: 4,
+    totalTiles: 12,
+    tileWidth: 640,
+    tileHeight: 270,
+    
+    // Target & limits
+    targetLeadCount: limits.maxTotalRows || 500,
+    maxScrolls: 50,
+    
+    // Scrolling behavior
+    scrollAmount: 1080,
+    waitAfterScroll: 2000,
+    stableChecks: 3,
+    
+    // Performance
+    delayBetweenTiles: 400,
+    screenshotTimeout: 3000
+  });
+  
+  if (gridResult.success) {
+    logger.info(`\n✅ Smart grid scraper completed successfully`);
+    logger.info(`   Valid leads: ${gridResult.records.length}`);
+    logger.info(`   Duration: ${gridResult.stats.duration}s`);
+    logger.info(`   Success rate: ${gridResult.stats.successRate}%`);
+    
+    // Insert leads into database
+    let inserted = 0;
+    for (const lead of gridResult.records) {
+      // Remove metadata fields before saving
+      const cleanLead = { ...lead };
+      delete cleanLead._metadata;
+      delete cleanLead._tile;
+      delete cleanLead._tileIndex;
+      delete cleanLead._fillRate;
+      
+      if (await insertLeadIfNew({
+        raw: JSON.stringify(cleanLead),
+        sourceName: source.name,
+        lead: cleanLead,
+        extractedData: cleanLead,
+        userId,
+        sourceId: source._sourceId || source.id,
+        sourceUrl: source.url
+      })) {
+        inserted++;
+        newLeads++;
+      }
+    }
+    
+    logger.info(`💾 Inserted ${inserted} new leads (${gridResult.records.length - inserted} duplicates skipped)`);
+    
+    aiExtractionUsed = true;
+    
+  } else {
+    logger.error(`❌ Smart grid scraper failed: ${gridResult.error}`);
+    logger.warn(`⚠️ Falling back to legacy scraping method...`);
+  }
+}
           
           // ============================================================
           // LEGACY SCRAPING MODE (fallback or if smart grid disabled)
           // ============================================================
-          if (!useSmartGrid || !aiExtractionUsed) {
+          if ((!useGridScroll && !useSmartGrid) || !aiExtractionUsed) {
             logger.info(`\n📸 Using legacy multi-page extraction...`);
             
             // Navigate
