@@ -1,63 +1,31 @@
 /**
- * AI Services - Main Export
- * Unified interface for all AI capabilities
+ * AI SERVICES - MAIN EXPORT (Fixed & Simplified)
+ * This file connects your scraper to the Gemini AI logic.
  */
 
 const logger = require('../../utils/logger');
+const geminiClient = require('./geminiClient');
+const extractor = require('./extractor');
+const navigator = require('./navigator');
 
-// Import geminiClient first (safe)
-let geminiClient;
-try {
-  geminiClient = require('./geminiClient');
-} catch (err) {
-  logger.error('Failed to load geminiClient:', err.message);
-  module.exports = {
-    isAIAvailable: () => false,
-    navigateAutonomously: async () => { throw new Error('AI not available'); },
-    parseNavigationSteps: async () => { throw new Error('AI not available'); },
-    executeAction: async () => { throw new Error('AI not available'); },
-    extractFromScreenshot: async () => { throw new Error('AI not available'); }
-  };
-  return;
-}
+// Check if we have an API Key via the client
+const AI_READY = geminiClient.isAIAvailable();
 
-// Export isAIAvailable immediately
-const isAIAvailable = geminiClient.isAIAvailable;
-
-// Load other AI services conditionally
-let navigateAutonomously = null;
-let parseNavigationSteps = null;
-let executeAction = null;
-let extractFromScreenshot = null;
-
-if (isAIAvailable()) {
-  try {
-    const navigator = require('./navigator');
-    const extractor = require('./extractor');
-    
-    navigateAutonomously = navigator.navigateAutonomously;
-    parseNavigationSteps = navigator.parseNavigationSteps;
-    executeAction = navigator.executeAction;
-    extractFromScreenshot = extractor.extractFromScreenshot;
-    
-    logger.info('✅ AI services loaded successfully');
-  } catch (err) {
-    logger.error('Failed to load AI services:', err.message);
-  }
+if (AI_READY) {
+  logger.info('✅ AI services initialized and ready for extraction');
+} else {
+  logger.warn('⚠️ AI services NOT ready - Check GEMINI_API_KEY in Railway settings');
 }
 
 module.exports = {
-  isAIAvailable,
-  navigateAutonomously: navigateAutonomously || (async () => {
-    throw new Error('AI Navigator not available');
-  }),
-  parseNavigationSteps: parseNavigationSteps || (async () => {
-    throw new Error('AI Navigator not available');
-  }),
-  executeAction: executeAction || (async () => {
-    throw new Error('AI Navigator not available');
-  }),
-  extractFromScreenshot: extractFromScreenshot || (async () => {
-    throw new Error('AI Extractor not available');
-  })
+  // Check if AI is turned on
+  isAIAvailable: () => AI_READY,
+  
+  // The function that analyzes the screenshots
+  extractFromScreenshot: extractor.extractFromScreenshot,
+  
+  // The functions that handle clicking/navigation
+  navigateAutonomously: navigator.navigateAutonomously,
+  parseNavigationSteps: navigator.parseNavigationSteps,
+  executeAction: navigator.executeAction
 };
