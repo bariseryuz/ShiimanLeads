@@ -246,7 +246,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
 const useGridScroll = source.useGridScroll === true;
 
 // Priority 2: Check for Smart Grid (vertical only)
-const useSmartGrid = !useGridScroll && (source.useSmartGrid !== true);
+const useSmartGrid = !useGridScroll && (source.useSmartGrid === true);
 
 if (useGridScroll) {
   logger.info(`🎯 Using 2D GRID SCROLL SCRAPER (horizontal + vertical)`);
