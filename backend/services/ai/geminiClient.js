@@ -27,7 +27,7 @@ function getGeminiModel(purpose = 'extraction') {
     model: modelName,
     generationConfig: {
       temperature: 0.1,      // Low temperature = higher accuracy for data scraping
-      maxOutputTokens: 2048, 
+      maxOutputTokens: 8192, 
       responseMimeType: "application/json", // Critical: Forces Gemini to return valid JSON
     },
     // Safety settings set to BLOCK_NONE to prevent false-positive blocks of 
