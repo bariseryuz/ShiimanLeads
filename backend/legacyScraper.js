@@ -46,6 +46,123 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       await rateLimiter.waitIfNeeded();
       let sourceNewLeads = 0;
 
+      // ===== JSON API SCRAPING =====
+      if (source.type === 'json' || source.method === 'json') {
+        logger.info(`📡 JSON API Mode for: ${source.name}`);
+        logger.info(`   URL: ${source.url}`);
+        
+        try {
+          let response;
+          const headers = source.headers || { 'User-Agent': 'Mozilla/5.0' };
+          
+          if (source.method === 'POST' && source.params) {
+            logger.info(`   Method: POST with params`);
+            response = await axios.post(source.url, source.params, { headers, timeout: 30000 });
+          } else if (source.params) {
+            const params = new URLSearchParams();
+            Object.entries(source.params).forEach(([key, value]) => {
+              params.append(key, String(value));
+            });
+            const url = `${source.url}?${params.toString()}`;
+            logger.info(`   Method: GET with params`);
+            response = await axios.get(url, { headers, timeout: 30000 });
+          } else {
+            logger.info(`   Method: GET (no params)`);
+            response = await axios.get(source.url, { headers, timeout: 30000 });
+          }
+          
+          let jsonData = response.data;
+          let records = [];
+          
+          // Handle ArcGIS format: { features: [ { attributes: {...} } ] }
+          if (jsonData.features && Array.isArray(jsonData.features)) {
+            logger.info(`   ✅ Detected ArcGIS format (features array)`);
+            records = jsonData.features.map(f => {
+              // Flatten attributes to top level
+              if (f.attributes) {
+                return { ...f.attributes };
+              }
+              return f;
+            });
+          }
+          // Handle plain array
+          else if (Array.isArray(jsonData)) {
+            logger.info(`   ✅ Detected plain array format`);
+            records = jsonData;
+          }
+          // Handle nested data
+          else if (jsonData.data && Array.isArray(jsonData.data)) {
+            logger.info(`   ✅ Detected nested data array`);
+            records = jsonData.data;
+          }
+          // Handle other nested formats
+          else if (jsonData.records && Array.isArray(jsonData.records)) {
+            records = jsonData.records;
+          } else if (jsonData.results && Array.isArray(jsonData.results)) {
+            records = jsonData.results;
+          }
+          
+          logger.info(`   📊 Found ${records.length} records`);
+          
+          // Apply field mapping if provided
+          const fieldMapping = source.fieldSchema || source.fieldMapping || {};
+          
+          for (const record of records) {
+            if (isTotalRowLimitReached(totalInserted, limits)) {
+              logger.info(`   ⚠️ Total row limit reached: ${limits.maxTotalRows}`);
+              break;
+            }
+            
+            // Apply field mapping to rename/select fields
+            let mappedLead = {};
+            
+            if (Object.keys(fieldMapping).length > 0) {
+              // Use provided mapping
+              for (const [targetField, sourceField] of Object.entries(fieldMapping)) {
+                if (record[sourceField] !== undefined) {
+                  mappedLead[targetField] = record[sourceField];
+                }
+              }
+            } else {
+              // No mapping - use all fields
+              mappedLead = { ...record };
+            }
+            
+            // Parse dates (convert Unix timestamps to human-readable)
+            for (const [key, value] of Object.entries(mappedLead)) {
+              if (typeof value === 'number' && value > 1000000000 && value < 2000000000000) {
+                // Looks like a Unix timestamp
+                const date = new Date(value > 10000000000 ? value : value * 1000);
+                mappedLead[key] = date.toISOString().split('T')[0]; // YYYY-MM-DD
+              }
+            }
+            
+            if (await insertLeadIfNew({ 
+              raw: JSON.stringify(mappedLead), 
+              sourceName: source.name, 
+              lead: mappedLead, 
+              userId, 
+              sourceId: source.id, 
+              sourceUrl: source.url 
+            })) {
+              sourceNewLeads++;
+              totalInserted++;
+            }
+          }
+          
+          logger.info(`   ✅ JSON scrape complete: ${sourceNewLeads} new leads`);
+          await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+          rateLimiter.recordSuccess();
+          continue; // Skip to next source
+        } catch (jsonErr) {
+          logger.error(`❌ JSON API error for ${source.name}: ${jsonErr.message}`);
+          await trackSourceReliability(source.id, source.name, false, 0);
+          rateLimiter.recordFailure();
+          continue;
+        }
+      }
+      
+      // ===== PLAYWRIGHT SCRAPING =====
       if (source.usePlaywright || source.method === 'playwright') {
         const browser = await chromium.launch({ headless: true });
         const context = await browser.newContext({
