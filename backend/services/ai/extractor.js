@@ -50,23 +50,33 @@ async function extractFromScreenshot(screenshot, sourceName, fieldSchema) {
           
           // For arrays: find last complete object and discard incomplete tail
           if (text.trim().startsWith('[')) {
-            // Find the last complete '},' or '}'
+            // Strategy 1: Find last complete '},' pattern
             const lastCompleteObject = text.lastIndexOf('},');
             if (lastCompleteObject > 0) {
               // Cut off incomplete data after last complete object
               fixed = text.substring(0, lastCompleteObject + 1) + ']';
-              logger.info(`   🔧 Truncated at last complete object (recovered ${lastCompleteObject} chars)`);
+              logger.info(`   🔧 Strategy 1: Truncated at last complete object (recovered ${lastCompleteObject} chars)`);
             } else {
-              // No complete object found, try to salvage what we can
-              const firstObjectEnd = text.indexOf('},');
-              if (firstObjectEnd > 0) {
-                fixed = text.substring(0, firstObjectEnd + 1) + ']';
-                logger.info(`   🔧 Recovered first complete object only`);
+              // Strategy 2: Find ANY closing brace followed by content
+              const matches = Array.from(text.matchAll(/}\s*,/g));
+              if (matches.length > 0) {
+                const lastMatch = matches[matches.length - 1];
+                fixed = text.substring(0, lastMatch.index + 1) + ']';
+                logger.info(`   🔧 Strategy 2: Recovered using regex pattern (found ${matches.length} objects)`);
               } else {
-                // Complete failure - close whatever we have
-                fixed = text.replace(/,\s*([}\]])/g, '$1');
-                fixed = fixed.replace(/"[^"]*$/g, '"');
-                if (!fixed.endsWith(']')) fixed += ']';
+                // Strategy 3: If VERY short truncation, look for first complete object
+                const firstObjectEnd = text.indexOf('},');
+                if (firstObjectEnd > 0 && firstObjectEnd < 5000) {
+                  fixed = text.substring(0, firstObjectEnd + 1) + ']';
+                  logger.info(`   🔧 Strategy 3: Recovered first complete object (short response)`);
+                } else {
+                  // Strategy 4: Close unterminated strings and try to close gracefully
+                  fixed = text.replace(/,\s*([}\]])/g, '$1');
+                  fixed = fixed.replace(/"[^"]*$/g, '"');
+                  fixed = fixed.replace(/}}$/, '}');
+                  if (!fixed.endsWith(']')) fixed += ']';
+                  logger.info(`   🔧 Strategy 4: Applied basic cleanup and closed array`);
+                }
               }
             }
           } else {
@@ -74,12 +84,16 @@ async function extractFromScreenshot(screenshot, sourceName, fieldSchema) {
             fixed = text.replace(/,\s*([}\]])/g, '$1');
             fixed = fixed.replace(/"[^"]*$/g, '"');
             if (!fixed.endsWith('}')) fixed += '}';
+            logger.info(`   🔧 Single object recovery applied`);
           }
           
+          // Attempt to parse the fixed JSON
           parsed = JSON.parse(fixed);
-          logger.info(`   ✅ Recovered ${Array.isArray(parsed) ? parsed.length : 1} items from truncated response`);
+          const itemCount = Array.isArray(parsed) ? parsed.length : 1;
+          logger.info(`   ✅ Successfully recovered ${itemCount} items from truncated response (${fixed.length} chars recovered)`);
         } catch (fixError) {
-          logger.error(`   ❌ Could not recover: ${fixError.message}`);
+          logger.error(`   ❌ Recovery attempt failed: ${fixError.message}`);
+          logger.error(`   Response appears corrupted beyond recovery. Returning empty to continue scraping.`);
           return [];
         }
       }
