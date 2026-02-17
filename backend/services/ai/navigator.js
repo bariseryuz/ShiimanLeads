@@ -45,57 +45,93 @@ async function parseNavigationSteps(instructions, pageUrl, screenshot) {
       logger.error(`   Raw AI response (first 500 chars): ${text.substring(0, 500)}`);
       logger.error(`   Response length: ${text.length} chars`);
       
+      // Pre-check: if response is obviously incomplete, try recovery
+      const openBraces = (text.match(/{/g) || []).length;
+      const closeBraces = (text.match(/}/g) || []).length;
+      const isArray = text.trim().startsWith('[');
+      
+      logger.info(`   📊 Analysis: ${openBraces} open braces, ${closeBraces} close braces, isArray: ${isArray}`);
+      
+      // If extremely truncated (very few braces), return empty
+      if (openBraces === 0 && closeBraces === 0) {
+        logger.error(`   ❌ Response has no JSON structure at all`);
+        return [];
+      }
+      
       // Try aggressive recovery for truncated responses
       try {
         let fixed = text;
+        let recoverySuccess = false;
         
         // For arrays: find last complete object and discard incomplete tail
-        if (text.trim().startsWith('[')) {
+        if (isArray) {
           // Strategy 1: Find last complete '},' pattern
           const lastCompleteObject = text.lastIndexOf('},');
           if (lastCompleteObject > 0) {
-            // Cut off incomplete data after last complete object
             fixed = text.substring(0, lastCompleteObject + 1) + ']';
-            logger.info(`   🔧 Strategy 1: Truncated at last complete object (recovered ${lastCompleteObject} chars)`);
-          } else {
-            // Strategy 2: Find ANY closing brace followed by content
+            logger.info(`   🔧 Strategy 1: Found complete object at position ${lastCompleteObject}`);
+            recoverySuccess = true;
+          } 
+          
+          // Strategy 2: Find ANY closing brace
+          if (!recoverySuccess) {
             const matches = Array.from(text.matchAll(/}\s*,/g));
             if (matches.length > 0) {
               const lastMatch = matches[matches.length - 1];
               fixed = text.substring(0, lastMatch.index + 1) + ']';
-              logger.info(`   🔧 Strategy 2: Recovered using regex pattern (found ${matches.length} objects)`);
+              logger.info(`   🔧 Strategy 2: Found ${matches.length} brace patterns`);
+              recoverySuccess = true;
+            }
+          }
+          
+          // Strategy 3: Look for ANY closing brace (even without comma)
+          if (!recoverySuccess) {
+            const lastBrace = text.lastIndexOf('}');
+            if (lastBrace > 0) {
+              fixed = text.substring(0, lastBrace + 1) + ']';
+              logger.info(`   🔧 Strategy 3: Found closing brace at position ${lastBrace}`);
+              recoverySuccess = true;
+            }
+          }
+          
+          // Strategy 4: If we found opening braces but no closing ones at all
+          if (!recoverySuccess && openBraces > closeBraces) {
+            fixed = text + '}]'.repeat(openBraces - closeBraces);
+            logger.info(`   🔧 Strategy 4: Added ${openBraces - closeBraces} closing braces`);
+            recoverySuccess = true;
+          }
+          
+          // Strategy 5: Fallback - just close the array
+          if (!recoverySuccess) {
+            // Try to find ANY complete object and at least return that
+            if (text.includes('{"') || text.includes("{'")) {
+              fixed = text.replace(/,\s*([}\]])/g, '$1');
+              fixed = fixed.replace(/"[^"]*$/, '"');
+              if (!fixed.endsWith('}')) fixed += '}';
+              if (!fixed.endsWith(']')) fixed += ']';
+              logger.info(`   🔧 Strategy 5: Applied basic cleanup`);
+              recoverySuccess = true;
             } else {
-              // Strategy 3: If VERY short truncation, look for first complete object
-              const firstObjectEnd = text.indexOf('},');
-              if (firstObjectEnd > 0 && firstObjectEnd < 5000) {
-                fixed = text.substring(0, firstObjectEnd + 1) + ']';
-                logger.info(`   🔧 Strategy 3: Recovered first complete object (short response)`);
-              } else {
-                // Strategy 4: Close unterminated strings and try to close gracefully
-                fixed = text.replace(/,\s*([}\]])/g, '$1');
-                fixed = fixed.replace(/"[^"]*$/g, '"');
-                fixed = fixed.replace(/}}$/, '}');
-                if (!fixed.endsWith(']')) fixed += ']';
-                logger.info(`   🔧 Strategy 4: Applied basic cleanup and closed array`);
-              }
+              logger.error(`   ❌ No recoverable structure found`);
+              return [];
             }
           }
         } else {
-          // Single object - try basic fixes
+          // Single object case
           fixed = text.replace(/,\s*([}\]])/g, '$1');
-          fixed = fixed.replace(/"[^"]*$/g, '"');
+          fixed = fixed.replace(/"[^"]*$/, '"');
           if (!fixed.endsWith('}')) fixed += '}';
-          logger.info(`   🔧 Single object recovery applied`);
+          logger.info(`   🔧 Single object recovery`);
         }
         
         // Attempt to parse the fixed JSON
         const parsed = JSON.parse(fixed);
         const itemCount = Array.isArray(parsed) ? parsed.length : 1;
-        logger.info(`   ✅ Successfully recovered ${itemCount} items from truncated response (${fixed.length} chars recovered)`);
+        logger.info(`   ✅ Successfully recovered ${itemCount} ${itemCount === 1 ? 'action' : 'actions'} from truncated response`);
         return parsed;
       } catch (fixError) {
-        logger.error(`   ❌ Recovery attempt failed: ${fixError.message}`);
-        logger.error(`   Response appears corrupted beyond recovery. Returning empty to continue scraping.`);
+        logger.error(`   ❌ Recovery failed: ${fixError.message}`);
+        logger.error(`   Returning empty array to allow scraping to continue`);
         return [];
       }
     }
