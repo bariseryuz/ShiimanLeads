@@ -1,164 +1,38 @@
 /**
- * AI Navigator - Agent 1
- * Handles autonomous web navigation using Gemini 2.0 Flash Lite
+ * AI SERVICES BRIDGE - PRODUCTION READY
+ * Centralized interface connecting the Scraper to Gemini AI Agents.
  */
 
+const geminiClient = require('./geminiClient');
+const extractor = require('./extractor');
+const navigator = require('./navigator');
 const logger = require('../../utils/logger');
-const { getGeminiModel, isAIAvailable } = require('./geminiClient');
-const { NAVIGATION_SYSTEM_PROMPT, buildNavigationPrompt } = require('../../prompts/navigation');
-const { replaceDynamicDates } = require('../scraper/helpers');
-
-// Helper to prevent 429 quota errors
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Step 1: Ask Gemini to convert natural language instructions into JSON actions
+ * Check if Gemini API is configured correctly in environment variables.
+ * Fixed: Exported as a function to match Scraper expectations.
  */
-async function parseNavigationSteps(instructions, pageUrl, screenshot) {
-  if (!isAIAvailable()) throw new Error('Gemini API not configured');
-
-  const RPM_COOLDOWN = 4500; // Mandatory delay for 2026 Free Tier (15 RPM)
-
+const isAIAvailable = () => {
   try {
-    const processedInstructions = replaceDynamicDates(instructions);
-    
-    logger.info(`⏳ [Navigator Quota] Throttling ${RPM_COOLDOWN}ms...`);
-    await sleep(RPM_COOLDOWN);
-
-    logger.info(`🤖 [Navigator] Interpreting instructions for: ${pageUrl}`);
-
-    const model = getGeminiModel('navigation');
-    const userPrompt = buildNavigationPrompt(processedInstructions, pageUrl);
-
-    const parts = [
-      { text: NAVIGATION_SYSTEM_PROMPT },
-      { text: userPrompt }
-    ];
-
-    // Include screenshot if provided to help AI see the buttons
-    if (screenshot && Buffer.isBuffer(screenshot)) {
-      parts.push({
-        inlineData: {
-          mimeType: 'image/png',
-          data: screenshot.toString('base64')
-        }
-      });
-    }
-
-    const result = await model.generateContent(parts);
-    const response = await result.response;
-    let text = response.text().trim();
-
-    // Clean JSON formatting from AI response
-    text = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
-    
-    const actions = JSON.parse(text);
-    if (!Array.isArray(actions)) throw new Error('Navigator did not return an array of actions');
-
-    logger.info(`✅ [Navigator] Successfully parsed ${actions.length} navigation steps`);
-    return actions;
-
-  } catch (error) {
-    logger.error(`❌ [Navigator] Parsing Failed: ${error.message}`);
-    return [];
-  }
-}
-
-/**
- * Step 2: Execute a single Playwright action on the page
- */
-async function executeAction(page, action) {
-  logger.info(`🎬 [Action] ${action.type.toUpperCase()} - ${action.description || 'Executing...'}`);
-
-  try {
-    switch (action.type) {
-      case 'click':
-        await page.click(action.selector, { timeout: 10000 });
-        await page.waitForTimeout(1000);
-        return { success: true };
-
-      case 'fill':
-        const val = replaceDynamicDates(action.value);
-        await page.fill(action.selector, val, { timeout: 10000 });
-        return { success: true };
-
-      case 'select':
-        await page.selectOption(action.selector, { label: action.value }).catch(async () => {
-            // Fallback for custom dropdowns
-            await page.click(action.selector);
-            await page.waitForTimeout(500);
-            await page.click(`text="${action.value}"`);
-        });
-        return { success: true };
-
-      case 'wait':
-        if (action.selector) await page.waitForSelector(action.selector, { timeout: 20000 });
-        else if (action.duration) await page.waitForTimeout(action.duration);
-        return { success: true };
-
-      case 'scroll':
-        await page.evaluate((dist) => window.scrollBy(0, dist || 800), action.distance);
-        await page.waitForTimeout(1000);
-        return { success: true };
-
-      case 'extract':
-        logger.info(`📊 AI marked this point for extraction`);
-        return { success: true, shouldExtract: true };
-
-      default:
-        logger.warn(`⚠️ Unknown action type: ${action.type}`);
-        return { success: false };
-    }
+    return geminiClient.isAIAvailable();
   } catch (err) {
-    logger.error(`❌ Action Failed: ${action.type} - ${err.message}`);
-    return { success: false, error: err.message };
+    logger.error('❌ AI Bridge: Error checking availability:', err.message);
+    return false;
   }
-}
+};
 
 /**
- * Step 3: Main Orchestrator - The function called by the Scraper
+ * Exported functions for use in legacyScraper.js
  */
-async function navigateAutonomously(page, instructions, options = {}) {
-  if (!isAIAvailable()) return { success: false, error: 'AI not configured' };
-
-  logger.info(`🤖 [Navigator] Starting Autonomous Workflow`);
-
-  try {
-    // 1. Take a screenshot so the AI can see the page
-    const screenshot = await page.screenshot({ fullPage: false, type: 'png' });
-
-    // 2. Get the list of actions from Gemini
-    const actions = await parseNavigationSteps(instructions, page.url(), screenshot);
-
-    if (!actions || actions.length === 0) {
-      logger.warn(`⚠️ No actions generated by AI.`);
-      return { success: false, shouldExtract: true };
-    }
-
-    // 3. Loop through and execute each action
-    let finalShouldExtract = false;
-    for (const action of actions) {
-      const result = await executeAction(page, action);
-      if (result.shouldExtract) finalShouldExtract = true;
-      
-      // Stop if a critical click/fill fails
-      if (!result.success && action.type !== 'wait') {
-        logger.error(`🛑 Workflow stopped due to failed action: ${action.type}`);
-        break;
-      }
-    }
-
-    return { success: true, shouldExtract: finalShouldExtract };
-
-  } catch (error) {
-    logger.error(`❌ [Navigator] Workflow Crashed: ${error.message}`);
-    return { success: false, error: error.message, shouldExtract: true };
-  }
-}
-
 module.exports = {
-  navigateAutonomously,
-  parseNavigationSteps,
-  executeAction,
-  isNavigatorAvailable: isAIAvailable
+  // Status check
+  isAIAvailable,
+  
+  // Agent 2: Data Extraction from Screenshots
+  extractFromScreenshot: extractor.extractFromScreenshot,
+  
+  // Agent 1: Autonomous Navigation & Actions
+  navigateAutonomously: navigator.navigateAutonomously,
+  executeAction: navigator.executeAction,
+  parseNavigationSteps: navigator.parseNavigationSteps
 };

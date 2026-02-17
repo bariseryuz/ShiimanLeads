@@ -1,11 +1,11 @@
 /**
  * SHIIMAN LEADS - MASTER SCRAPER (Production Build - Feb 2026)
  * 
- * Features:
- * 1. Robust AI Pagination (Verified by Fingerprinting)
- * 2. 429 Quota Protection (Works with Gemini Free Tier)
- * 3. Feature-Complete: Supports Smart Grid, 2D Scroll, and Direct API
- * 4. Identity Spoofing: Turkey-to-USA Locale & Timezone Masking
+ * Improvements:
+ * 1. Smart Navigation: Uses 'commit' + element visibility instead of blind timeouts.
+ * 2. Latency Protection: 90s timeout for Turkey-to-USA connections.
+ * 3. AI Bridge: Fixed function calls for isAIAvailable and navigateAutonomously.
+ * 4. Robust Pagination: Fingerprint-based verification to prevent infinite loops.
  */
 
 const path = require('path');
@@ -85,15 +85,28 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
 
         try {
           logger.info(`🌐 Navigating to: ${source.url}`);
-          await page.goto(source.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-          await page.waitForTimeout(5000);
+          
+          // SMART NAVIGATION FIX: Wait for 'commit' then wait for specific data elements
+          await page.goto(source.url, { 
+            waitUntil: 'commit', 
+            timeout: 90000 // 90s for Turkey-to-USA latency
+          });
+
+          // Wait for content to actually appear (Table rows, list items, etc.)
+          await page.locator('tr, li, .item, h3, [role="row"]').first().waitFor({ 
+            state: 'visible', 
+            timeout: 30000 
+          }).catch(() => logger.warn(`⚠️ Page load settle timeout: Continuing anyway...`));
+
+          await page.waitForTimeout(3000);
           await preventAllPopups(page);
 
           // 1. Autonomous Navigation (Agent 1)
-          const aiPrompt = source.aiNavigationPrompts || source.aiPrompt;
-          if (aiPrompt && isAIAvailable()) {
+          // Fixed: Check if isAIAvailable() is true (as a function)
+          if (source.aiPrompt && isAIAvailable()) {
             logger.info(`🤖 Starting AI Navigation for "${source.name}"`);
-            await navigateAutonomously(page, Array.isArray(aiPrompt) ? aiPrompt.join('\n') : aiPrompt);
+            const navInstructions = Array.isArray(source.aiPrompt) ? source.aiPrompt.join('\n') : source.aiPrompt;
+            await navigateAutonomously(page, navInstructions);
             await page.waitForTimeout(3000);
           }
 
@@ -170,7 +183,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 logger.info(`🖱️ Clicking Next Page...`);
                 await page.click(nextBtn);
                 
-                // VERIFICATION: Wait for fingerprint to change
+                // VERIFICATION: Wait for fingerprint to change (Content Refresh)
                 const changed = await page.waitForFunction((old) => {
                   const current = document.querySelector('tr, li, .item, h3, [role="row"]')?.innerText?.trim()?.substring(0, 40) || 'empty';
                   return current !== old;
@@ -182,7 +195,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 } else {
                   await page.waitForLoadState('networkidle').catch(() => {});
                   pageNumber++;
-                  await page.waitForTimeout(2000); // Settle time
+                  await page.waitForTimeout(2000); 
                 }
               } else {
                 hasMorePages = false;
@@ -191,6 +204,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             aiExtractionUsed = true;
           }
         } finally {
+          // Ensure memory is freed
           await context.close().catch(() => {});
           await browser.close().catch(() => {});
         }
@@ -200,12 +214,9 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       // METHOD B: DIRECT API / JSON (Nashville ArcGIS, etc.)
       // ============================================================
       else if (source.method === 'json' || source.type === 'arcgis') {
-        logger.info(`📡 Scraping via direct API: ${source.name}`);
-        const response = await axios.get(source.url, { timeout: 20000 });
-        if (response.data) {
-           // Your leadInsertion service logic handles the JSON flattening
-           aiExtractionUsed = true;
-        }
+        logger.info(`📡 Scraping via direct API: ${source.url}`);
+        const response = await axios.get(source.url, { timeout: 30000 });
+        if (response.data) aiExtractionUsed = true;
       }
 
       // Final Source Reporting
