@@ -799,11 +799,48 @@
         <div class="form-group">
           <label class="form-label" for="sourceUrl">Website URL *</label>
           <input type="url" id="sourceUrl" class="form-input" placeholder="https://example.com/permits" required>
-          <small style="color: var(--gray-600);">The AI bot will visit this page and extract data automatically</small>
+          <small style="color: var(--gray-600);" id="urlHintText">The AI bot will visit this page and extract data automatically</small>
         </div>
         
-        <!-- AI PROMPT FIELD - THE MAIN FEATURE -->
-        <div class="form-group" style="border: 2px solid #8b5cf6; border-radius: 8px; padding: 1rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(102, 126, 234, 0.05));">
+        <!-- SOURCE TYPE SELECTOR -->
+        <div class="form-group" style="border: 1px solid var(--gray-200); border-radius: 8px; padding: 1rem; background: var(--gray-50);">
+          <label class="form-label" for="sourceType">Scraping Method *</label>
+          <select id="sourceType" class="form-input" onchange="toggleSourceTypeFields()" style="font-weight: 600;">
+            <option value="html">🤖 AI Website Scraper (Default)</option>
+            <option value="json">📡 JSON API (ArcGIS, REST APIs)</option>
+          </select>
+          <small style="color: var(--gray-600); display: block; margin-top: 0.5rem;" id="sourceTypeHint">
+            Choose "AI Website Scraper" for regular websites. Choose "JSON API" if you have a direct API endpoint (like ArcGIS FeatureServer URLs).
+          </small>
+        </div>
+        
+        <!-- JSON API FIELDS (hidden by default) -->
+        <div id="jsonApiFields" style="display: none; border: 2px solid #10b981; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.05));">
+          <h3 style="margin: 0 0 1rem 0; color: #10b981; font-size: 1rem; font-weight: 700;">📡 JSON API Configuration</h3>
+          
+          <div class="form-group">
+            <label class="form-label" for="apiMethod">HTTP Method</label>
+            <select id="apiMethod" class="form-input">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="apiParams">Query Parameters (JSON format)</label>
+            <textarea id="apiParams" class="form-input" rows="6" placeholder='{"where": "1=1", "outFields": "*", "f": "json", "resultRecordCount": 1000}'></textarea>
+            <small style="color: var(--gray-600);">For ArcGIS: Add where, outFields, f, resultRecordCount. See <a href="https://github.com/bariseryuz/ShiimanLeads/blob/main/backend/HOW-TO-ARCGIS.md" target="_blank" style="color: #10b981; text-decoration: underline;">ArcGIS Guide</a></small>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label" for="jsonPath">JSONPath Filter (Optional)</label>
+            <input type="text" id="jsonPath" class="form-input" placeholder="$.features[*].attributes">
+            <small style="color: var(--gray-600);">Extract nested data using JSONPath syntax (leave empty for auto-detect)</small>
+          </div>
+        </div>
+        
+        <!-- AI PROMPT FIELD - THE MAIN FEATURE (hidden for JSON API) -->
+        <div id="aiPromptSection" class="form-group" style="border: 2px solid #8b5cf6; border-radius: 8px; padding: 1rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(102, 126, 234, 0.05));">
           <label class="form-label" for="aiPrompt" style="display: flex; align-items: center; gap: 0.5rem; color: #8b5cf6; font-weight: 700; font-size: 1rem;">
             <span style="font-size: 1.5rem;">🤖</span>
             AI Instructions (Describe What You Want)
@@ -854,13 +891,12 @@
         </div>
         
         <!-- Hidden inputs: Force AI + Playwright mode -->
-        <input type="hidden" id="sourceType" value="html">
         <input type="hidden" id="sourceSelector" value="">
         <input type="hidden" id="useAI" value="true">
         <input type="hidden" id="usePlaywright" value="true">
         <input type="hidden" id="extractTable" value="false">
         
-        <div class="form-group">
+        <div id="fieldExtractionSection" class="form-group">
           <label class="form-label" for="naturalFields">What fields do you want to extract?</label>
           <textarea id="naturalFields" class="form-input" rows="4" placeholder="Example: permit type, address, company name, phone number, contractor, permit value, issue date"></textarea>
           <small style="color: var(--gray-600);">Just list the fields you want, separated by commas. AI will extract them automatically.</small>
@@ -1241,6 +1277,28 @@
       // Simplified: All sources now use AI + Playwright mode automatically
       // No need to toggle between HTML/API options
     }
+    
+    function toggleSourceTypeFields() {
+      const sourceType = document.getElementById('sourceType').value;
+      const isJsonApi = sourceType === 'json';
+      
+      // Show/hide JSON API fields
+      document.getElementById('jsonApiFields').style.display = isJsonApi ? 'block' : 'none';
+      
+      // Show/hide AI fields
+      document.getElementById('aiPromptSection').style.display = isJsonApi ? 'none' : 'block';
+      document.getElementById('fieldExtractionSection').style.display = isJsonApi ? 'none' : 'block';
+      
+      // Update URL hint
+      const urlHint = document.getElementById('urlHintText');
+      if (isJsonApi) {
+        urlHint.textContent = 'Enter the direct API endpoint URL (e.g., https://maps.nashville.gov/arcgis/rest/services/.../query)';
+        urlHint.style.color = '#10b981';
+      } else {
+        urlHint.textContent = 'The AI bot will visit this page and extract data automatically';
+        urlHint.style.color = 'var(--gray-600)';
+      }
+    }
 
     // Toggle field schema visibility (kept for compatibility)
     function toggleFieldSchema() {
@@ -1530,6 +1588,7 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceForm').reset();
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'html';
+      toggleSourceTypeFields(); // Initialize UI based on type
       
       // Set proxy to enabled by default
       document.getElementById('useProxy').checked = true;
@@ -1561,6 +1620,7 @@ async function loadScreenshots(sources) {
         
         // Set source type
         const sourceType = source.data.type || 'html';
+        toggleSourceTypeFields(); // Update UI based on type
         document.getElementById('sourceType').value = sourceType;
         
         // Set fieldSchema for editing - convert back to natural language
@@ -1880,21 +1940,35 @@ async function loadScreenshots(sources) {
         sourceData.displayColumns = displayColumnsInput.split(',').map(col => col.trim()).filter(Boolean);
       }
       
-      // Always enable AI and Playwright for automated extraction
-      sourceData.selector = null;
-      sourceData.useAI = true;
-      sourceData.usePlaywright = true;
-      sourceData.method = 'playwright';
-      sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
-      sourceData.extractTable = false;
-      
-      // Add AI prompt - the main feature!
-      const aiPrompt = document.getElementById('aiPrompt').value.trim();
-      if (aiPrompt) {
-        sourceData.aiPrompt = aiPrompt;
+      // Configure based on source type
+      if (sourceType === 'json') {
+        // JSON API mode
+        sourceData.method = document.getElementById('apiMethod').value;
+        const paramsText = document.getElementById('apiParams').value.trim();
+        try {
+          sourceData.params = paramsText ? JSON.parse(paramsText) : {};
+        } catch (err) {
+          alert('Invalid JSON in Query Parameters field');
+          return;
+        }
+        sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
+      } else {
+        // HTML/AI Website Scraper mode (default)
+        sourceData.selector = null;
+        sourceData.useAI = true;
+        sourceData.usePlaywright = true;
+        sourceData.method = 'playwright';
+        sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
+        sourceData.extractTable = false;
+        
+        // Add AI prompt - the main feature!
+        const aiPrompt = document.getElementById('aiPrompt').value.trim();
+        if (aiPrompt) {
+          sourceData.aiPrompt = aiPrompt;
+        }
       }
       
-      // Add proxy configuration
+      // Add proxy configuration (for both modes)
       const useProxyCheckbox = document.getElementById('useProxy');
       sourceData.useProxy = useProxyCheckbox.checked;
       console.log('💾 Saving source with useProxy:', sourceData.useProxy, 'checkbox checked:', useProxyCheckbox.checked);
@@ -1981,20 +2055,6 @@ async function loadScreenshots(sources) {
           
           sourceData.preActions.push(action);
         });
-      }
-      
-      if (sourceType === 'json') {
-        sourceData.method = document.getElementById('apiMethod').value;
-        const paramsText = document.getElementById('apiParams').value.trim();
-        try {
-          sourceData.params = paramsText ? JSON.parse(paramsText) : {};
-        } catch (err) {
-          alert('Invalid JSON in Query Parameters field');
-          return;
-        }
-        sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
-        const fieldsText = document.getElementById('jsonFields').value.trim();
-        sourceData.jsonFields = fieldsText ? fieldsText.split(',').map(s => s.trim()).filter(Boolean) : [];
       }
       
       try {
