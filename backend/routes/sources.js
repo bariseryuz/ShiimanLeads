@@ -31,7 +31,9 @@ router.get('/', async (req, res) => {
       try {
         const data = JSON.parse(row.source_data);
         if (data.name) sourceNames.add(data.name);
-      } catch (e) {}
+      } catch (e) {
+        logger.error(`Failed to parse source_data for row id ${row.id}: ${e.message}`);
+      }
     });
     
     // Also get sources that have leads (in case some were scraped)
@@ -65,6 +67,8 @@ router.get('/mine', async (req, res) => {
           created_at: row.created_at
         };
       } catch (e) {
+        logger.error(`Failed to parse source_data for source id ${row.id}: ${e.message}`);
+        logger.error(`   Raw data (first 200 chars): ${row.source_data.substring(0, 200)}`);
         return null;
       }
     }).filter(Boolean);
@@ -92,7 +96,14 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Source not found' });
     }
     
-    const sourceData = JSON.parse(row.source_data);
+    let sourceData;
+    try {
+      sourceData = JSON.parse(row.source_data);
+    } catch (parseError) {
+      logger.error(`Failed to parse source ${sourceId}: ${parseError.message}`);
+      logger.error(`   Raw data (first 200 chars): ${row.source_data.substring(0, 200)}`);
+      return res.status(500).json({ error: 'Source data is corrupted - please delete and recreate this source' });
+    }
     res.json({
       id: row.id,
       name: sourceData.name,
@@ -241,6 +252,8 @@ router.get('/my-sources', async (req, res) => {
           created_at: row.created_at
         };
       } catch (e) {
+        logger.error(`Failed to parse source_data for source id ${row.id}: ${e.message}`);
+        logger.error(`   Raw data (first 200 chars): ${row.source_data.substring(0, 200)}`);
         return null;
       }
     }).filter(Boolean);
@@ -340,7 +353,14 @@ router.get('/:id/sample', async (req, res) => {
       return res.status(404).json({ error: 'Source not found or access denied' });
     }
     
-    const sourceConfig = JSON.parse(sourceRow.source_data);
+    let sourceConfig;
+    try {
+      sourceConfig = JSON.parse(sourceRow.source_data);
+    } catch (parseError) {
+      logger.error(`Failed to parse source ${sourceId}: ${parseError.message}`);
+      logger.error(`   Raw data (first 200 chars): ${sourceRow.source_data.substring(0, 200)}`);
+      return res.status(500).json({ error: 'Source data is corrupted - please delete and recreate this source' });
+    }
     logger.info(`Fetching sample data for source: ${sourceConfig.name}`);
     
     // Fetch sample data based on source type
@@ -479,7 +499,14 @@ router.post('/:id/mappings', express.json(), async (req, res) => {
       return res.status(404).json({ error: 'Source not found or access denied' });
     }
     
-    const sourceConfig = JSON.parse(sourceRow.source_data);
+    let sourceConfig;
+    try {
+      sourceConfig = JSON.parse(sourceRow.source_data);
+    } catch (parseError) {
+      logger.error(`Failed to parse source ${sourceId}: ${parseError.message}`);
+      logger.error(`   Raw data (first 200 chars): ${sourceRow.source_data.substring(0, 200)}`);
+      return res.status(500).json({ error: 'Source data is corrupted - please delete and recreate this source' });
+    }
     sourceConfig.fieldMappings = fieldMappings;
     
     // Update source with new mappings

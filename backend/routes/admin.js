@@ -55,6 +55,8 @@ router.get('/sources/:userId', ensureAdmin, async (req, res) => {
           created_at: row.created_at
         };
       } catch (e) {
+        logger.error(`Failed to parse source_data for source id ${row.id}: ${e.message}`);
+        logger.error(`   Raw data (first 200 chars): ${row.source_data.substring(0, 200)}`);
         return null;
       }
     }).filter(Boolean);

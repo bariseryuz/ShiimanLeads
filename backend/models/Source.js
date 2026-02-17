@@ -15,11 +15,16 @@ class Source {
     const row = await dbGet('SELECT * FROM user_sources WHERE id = ?', [id]);
     if (!row) return null;
     
-    return {
-      id: row.id,
-      userId: row.user_id,
-      ...JSON.parse(row.source_data)
-    };
+    try {
+      return {
+        id: row.id,
+        userId: row.user_id,
+        ...JSON.parse(row.source_data)
+      };
+    } catch (e) {
+      logger.error(`Failed to parse source_data for source id ${id}: ${e.message}`);
+      return null;
+    }
   }
 
   /**
@@ -29,11 +34,18 @@ class Source {
    */
   static async findByUserId(userId) {
     const rows = await dbAll('SELECT * FROM user_sources WHERE user_id = ?', [userId]);
-    return rows.map(row => ({
-      id: row.id,
-      userId: row.user_id,
-      ...JSON.parse(row.source_data)
-    }));
+    return rows.map(row => {
+      try {
+        return {
+          id: row.id,
+          userId: row.user_id,
+          ...JSON.parse(row.source_data)
+        };
+      } catch (e) {
+        logger.error(`Failed to parse source_data for source id ${row.id}: ${e.message}`);
+        return null;
+      }
+    }).filter(Boolean);
   }
 
   /**

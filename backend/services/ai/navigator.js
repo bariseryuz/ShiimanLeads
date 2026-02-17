@@ -37,9 +37,28 @@ async function parseNavigationSteps(instructions, pageUrl, screenshot) {
     const response = await result.response;
     let text = response.text().trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     
-    return JSON.parse(text);
+    // Try to parse JSON with error handling
+    try {
+      return JSON.parse(text);
+    } catch (parseError) {
+      logger.error(`❌ [Navigator] JSON Parse Failed: ${parseError.message}`);
+      logger.error(`   Raw AI response (first 500 chars): ${text.substring(0, 500)}`);
+      logger.error(`   Response length: ${text.length} chars`);
+      
+      // Try to fix common JSON issues
+      try {
+        let fixed = text.replace(/,\s*([}\]])/g, '$1'); // Remove trailing commas
+        fixed = fixed.replace(/"[^"]*$/g, '"'); // Close unterminated strings
+        const parsed = JSON.parse(fixed);
+        logger.info(`   ✅ Recovered from JSON error with fix`);
+        return parsed;
+      } catch (fixError) {
+        logger.error(`   ❌ Could not recover from JSON error`);
+        return [];
+      }
+    }
   } catch (error) {
-    logger.error(`❌ [Navigator] AI Parsing Failed: ${error.message}`);
+    logger.error(`❌ [Navigator] AI Request Failed: ${error.message}`);
     return [];
   }
 }

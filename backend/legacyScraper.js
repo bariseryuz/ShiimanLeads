@@ -36,7 +36,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
     try {
       source = sourceRow.source_data ? (typeof sourceRow.source_data === 'string' ? JSON.parse(sourceRow.source_data) : sourceRow.source_data) : sourceRow;
       source.id = sourceRow.id || source._sourceId;
-    } catch (e) { continue; }
+    } catch (e) {
+      logger.error(`Failed to parse source_data for source id ${sourceRow.id}: ${e.message}`);
+      continue;
+    }
 
     const limits = mergeLimits(source.extractionLimits || {}, extractionLimits);
     updateProgress(userId, { currentSource: source.name });

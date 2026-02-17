@@ -61,6 +61,8 @@ router.post('/now', async (req, res) => {
         
         return sourceData;
       } catch (e) {
+        logger.error(`Failed to parse source_data for source id ${row.id}: ${e.message}`);
+        logger.error(`   Raw data (first 200 chars): ${row.source_data.substring(0, 200)}`);
         return null;
       }
     }).filter(Boolean);
@@ -173,7 +175,14 @@ router.post('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Source not found or access denied' });
     }
     
-    const sourceConfig = JSON.parse(sourceRow.source_data);
+    let sourceConfig;
+    try {
+      sourceConfig = JSON.parse(sourceRow.source_data);
+    } catch (parseError) {
+      logger.error(`Failed to parse source ${sourceId}: ${parseError.message}`);
+      logger.error(`   Raw data (first 200 chars): ${sourceRow.source_data.substring(0, 200)}`);
+      return res.status(500).json({ error: 'Source data is corrupted - please delete and recreate this source' });
+    }
     sourceConfig._sourceId = sourceRow.id; // Attach source ID for table saving
     logger.info(`Manual scrape triggered for source "${sourceConfig.name}" (ID: ${sourceId}) by user ${userId}`);
     

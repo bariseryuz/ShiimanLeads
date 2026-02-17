@@ -56,6 +56,7 @@ router.delete('/tiles-debug/:filename', requireAuth, async (req, res) => {
         const data = JSON.parse(row.source_data);
         allowedSlugs.add(toSourceSlug(data.name));
       } catch (err) {
+        logger.error(`Failed to parse source_data in screenshot access check: ${err.message}`);
         // Skip malformed rows
       }
     });
@@ -85,7 +86,14 @@ router.get('/source/:sourceId', requireAuth, async (req, res) => {
     const row = await dbGet('SELECT source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
     if (!row) return res.status(404).json({ error: 'Source not found' });
 
-    const sourceData = JSON.parse(row.source_data || '{}');
+    let sourceData;
+    try {
+      sourceData = JSON.parse(row.source_data || '{}');
+    } catch (parseError) {
+      logger.error(`Failed to parse source ${sourceId}: ${parseError.message}`);
+      logger.error(`   Raw data (first 200 chars): ${row.source_data.substring(0, 200)}`);
+      return res.status(500).json({ error: 'Source data is corrupted' });
+    }
     const slug = toSourceSlug(sourceData.name);
     const debugDir = path.join(SCREENSHOT_DIR, 'tiles-debug');
 

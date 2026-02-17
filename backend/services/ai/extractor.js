@@ -35,7 +35,28 @@ async function extractFromScreenshot(screenshot, sourceName, fieldSchema) {
       const response = await result.response;
       let text = response.text().trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
       
-      let parsed = JSON.parse(text);
+      // Try to parse JSON with error handling
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch (parseError) {
+        logger.error(`❌ [AI Error] ${parseError.message}`);
+        logger.error(`   Raw AI response (first 500 chars): ${text.substring(0, 500)}`);
+        logger.error(`   Response length: ${text.length} chars`);
+        
+        // Try to fix common JSON issues
+        try {
+          // Remove trailing commas, fix incomplete strings
+          let fixed = text.replace(/,\s*([}\]])/g, '$1'); // Remove trailing commas
+          fixed = fixed.replace(/"[^"]*$/g, '"'); // Close unterminated strings
+          parsed = JSON.parse(fixed);
+          logger.info(`   ✅ Recovered from JSON error with fix`);
+        } catch (fixError) {
+          logger.error(`   ❌ Could not recover from JSON error`);
+          return [];
+        }
+      }
+      
       return Array.isArray(parsed) ? parsed : [parsed];
 
     } catch (error) {
