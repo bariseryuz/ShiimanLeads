@@ -18,7 +18,7 @@ const { isAIAvailable, extractFromScreenshot, navigateAutonomously } = require('
 const { captureTiledScreenshots } = require('./services/scraper/screenshot');
 const { captureGridScrollScreenshots } = require('./services/scraper/gridScrollScraper');
 const { initProgress, updateProgress, shouldStopScraping } = require('./services/scraper/progress');
-const { setupPopupBlocking, preventAllPopups } = require('./services/scraper/preventPopup');
+const { setupPopupBlocking, preventAllPopups, setupArcGISPage } = require('./services/scraper/preventPopup');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
@@ -57,6 +57,52 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         try {
           let response;
           const headers = source.headers || { 'User-Agent': 'Mozilla/5.0' };
+          
+          // Check if this is an ArcGIS URL that might need cookie handling
+          if (source.url.includes('arcgis') || source.url.includes('esri') || source.url.includes('maps.')) {
+            logger.info(`   🏗️ ArcGIS API detected - handling cookie requirements...`);
+            
+            try {
+              // Launch browser briefly to accept cookies
+              const browser = await chromium.launch({ headless: true });
+              const arcGISpage = await browser.newPage();
+              
+              // Set viewport for consistency
+              await arcGISpage.setViewportSize({ width: 1920, height: 1080 });
+              
+              // Try to load the main domain to accept cookies
+              const domain = new URL(source.url).origin;
+              logger.info(`   🌐 Loading ${domain} to accept cookies...`);
+              
+              try {
+                await arcGISpage.goto(domain, { waitUntil: 'domcontentloaded', timeout: 15000 });
+              } catch (navErr) {
+                logger.warn(`   ⚠️ Navigation timeout (may still work): ${navErr.message}`);
+              }
+              
+              // Handle ArcGIS cookies
+              await setupArcGISPage(arcGISpage);
+              
+              // Get cookies from the browser session
+              const cookies = await arcGISpage.context().cookies();
+              logger.info(`   🍪 Extracted ${cookies.length} cookies from browser session`);
+              
+              // Add cookies to axios headers
+              if (cookies.length > 0) {
+                const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+                headers['Cookie'] = cookieString;
+                logger.info(`   ✅ Cookies added to API request headers`);
+              }
+              
+              // Close browser
+              await arcGISpage.close();
+              await browser.close();
+              
+            } catch (cookieErr) {
+              logger.warn(`   ⚠️ Could not extract cookies: ${cookieErr.message}`);
+              logger.info(`   📡 Proceeding with API call without cookies...`);
+            }
+          }
           
           if (source.method === 'POST' && source.params) {
             logger.info(`   Method: POST with params`);

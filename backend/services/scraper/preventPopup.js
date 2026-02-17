@@ -1,4 +1,144 @@
 /**
+ * Handle ArcGIS-specific cookie acceptance dialogs
+ * ArcGIS services often require explicit cookie acceptance before API calls work
+ * 
+ * @param {Object} page - Playwright page object
+ * @returns {Promise<boolean>} True if cookies were accepted
+ */
+async function handleArcGISCookies(page) {
+  logger.info(`🍪 Checking for ArcGIS cookie acceptance...`);
+  
+  try {
+    // Wait a moment for any cookie dialogs to appear
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    const recognized = await page.evaluate(() => {
+      // Strategy 1: Look for Esri/ArcGIS specific cookie acceptance
+      const arcGisSelectors = [
+        // Esri platform
+        'button:has-text("Accept")',
+        'button:has-text("accept cookies")',
+        'button[aria-label*="Accept" i]',
+        'button[aria-label*="Cookie" i]',
+        'button[aria-label*="Consent" i]',
+        
+        // Common ArcGIS modal patterns
+        'calcite-button[kind="brand"]',
+        '.esri-button--primary',
+        'div[role="dialog"] button[type="button"]',
+        
+        // Generic patterns
+        '[class*="cookie"] button[class*="primary"]',
+        '[class*="cookie"] button[class*="accept"]',
+        '[class*="consent"] button[class*="primary"]',
+        '[class*="consent"] button[class*="accept"]'
+      ];
+      
+      let found = false;
+      for (const text of ['Accept', 'Accept all', 'Accept cookies', 'I accept']) {
+        const buttons = Array.from(document.querySelectorAll('button')).filter(
+          btn => btn.textContent.trim().toLowerCase().includes(text.toLowerCase())
+        );
+        
+        if (buttons.length > 0) {
+          for (const btn of buttons) {
+            const style = window.getComputedStyle(btn);
+            if (style.display !== 'none' && style.visibility !== 'hidden') {
+              const rect = btn.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                console.log(`Found ArcGIS cookie button: "${text}"`);
+                found = true;
+                break;
+              }
+            }
+          }
+        }
+        if (found) break;
+      }
+      
+      return found;
+    });
+    
+    if (recognized) {
+      logger.info(`🍪 ArcGIS cookie dialog detected - clicking Accept...`);
+      
+      const cookieAccepted = await page.evaluate(() => {
+        const texts = ['Accept', 'Accept all', 'Accept cookies', 'I accept', 'Agree', 'I agree'];
+        const buttons = Array.from(document.querySelectorAll('button'));
+        
+        for (const btn of buttons) {
+          const text = btn.textContent.trim();
+          for (const acceptText of texts) {
+            if (text.toLowerCase().includes(acceptText.toLowerCase())) {
+              const style = window.getComputedStyle(btn);
+              const rect = btn.getBoundingClientRect();
+              
+              if (rect.width > 0 && rect.height > 0 && 
+                  style.display !== 'none' && 
+                  style.visibility !== 'hidden') {
+                console.log(`Clicking cookie accept button: "${text}"`);
+                btn.click();
+                return true;
+              }
+            }
+          }
+        }
+        return false;
+      });
+      
+      if (cookieAccepted) {
+        logger.info(`✅ ArcGIS cookies accepted!`);
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for dialog to close
+        return true;
+      }
+    } else {
+      logger.info(`ℹ️ No ArcGIS cookie dialog found`);
+    }
+    
+  } catch (err) {
+    logger.warn(`⚠️ Error handling ArcGIS cookies: ${err.message}`);
+  }
+  
+  return false;
+}
+
+/**
+ * Complete ArcGIS pre-scraping setup
+ * Handles cookies, popups, and page initialization for ArcGIS APIs
+ * 
+ * @param {Object} page - Playwright page object
+ * @returns {Promise<Object>} Setup stats
+ */
+async function setupArcGISPage(page) {
+  logger.info(`🏗️ Setting up page for ArcGIS scraping...`);
+  
+  const stats = {
+    cookiesHandled: false,
+    popupsBlocked: 0
+  };
+  
+  try {
+    // First, handle ArcGIS-specific cookies
+    stats.cookiesHandled = await handleArcGISCookies(page);
+    
+    // Then run general popup prevention
+    const popupStats = await preventAllPopups(page, {
+      waitBetweenSteps: 800,
+      retries: 1
+    });
+    
+    stats.popupsBlocked = popupStats.closed + popupStats.removed;
+    
+    logger.info(`✅ ArcGIS page setup complete`);
+    
+  } catch (err) {
+    logger.error(`❌ Error setting up ArcGIS page: ${err.message}`);
+  }
+  
+  return stats;
+}
+
+/**
  * Pop-up Prevention and Removal System
  * 
  * Handles cookie banners, modals, overlays, and chat widgets that interfere with scraping.
@@ -555,5 +695,7 @@ module.exports = {
   setupPopupBlocking,
   closePopups,
   removePopupElements,
-  preventAllPopups
+  preventAllPopups,
+  handleArcGISCookies,
+  setupArcGISPage
 };
