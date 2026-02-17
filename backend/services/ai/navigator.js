@@ -45,15 +45,43 @@ async function parseNavigationSteps(instructions, pageUrl, screenshot) {
       logger.error(`   Raw AI response (first 500 chars): ${text.substring(0, 500)}`);
       logger.error(`   Response length: ${text.length} chars`);
       
-      // Try to fix common JSON issues
+      // Try aggressive recovery for truncated responses
       try {
-        let fixed = text.replace(/,\s*([}\]])/g, '$1'); // Remove trailing commas
-        fixed = fixed.replace(/"[^"]*$/g, '"'); // Close unterminated strings
+        let fixed = text;
+        
+        // For arrays: find last complete object and discard incomplete tail
+        if (text.trim().startsWith('[')) {
+          // Find the last complete '},' or '}'
+          const lastCompleteObject = text.lastIndexOf('},');
+          if (lastCompleteObject > 0) {
+            // Cut off incomplete data after last complete object
+            fixed = text.substring(0, lastCompleteObject + 1) + ']';
+            logger.info(`   🔧 Truncated at last complete object (recovered ${lastCompleteObject} chars)`);
+          } else {
+            // No complete object found, try to salvage what we can
+            const firstObjectEnd = text.indexOf('},');
+            if (firstObjectEnd > 0) {
+              fixed = text.substring(0, firstObjectEnd + 1) + ']';
+              logger.info(`   🔧 Recovered first complete object only`);
+            } else {
+              // Complete failure - close whatever we have
+              fixed = text.replace(/,\s*([}\]])/g, '$1');
+              fixed = fixed.replace(/"[^"]*$/g, '"');
+              if (!fixed.endsWith(']')) fixed += ']';
+            }
+          }
+        } else {
+          // Single object - try basic fixes
+          fixed = text.replace(/,\s*([}\]])/g, '$1');
+          fixed = fixed.replace(/"[^"]*$/g, '"');
+          if (!fixed.endsWith('}')) fixed += '}';
+        }
+        
         const parsed = JSON.parse(fixed);
-        logger.info(`   ✅ Recovered from JSON error with fix`);
+        logger.info(`   ✅ Recovered ${Array.isArray(parsed) ? parsed.length : 1} actions from truncated response`);
         return parsed;
       } catch (fixError) {
-        logger.error(`   ❌ Could not recover from JSON error`);
+        logger.error(`   ❌ Could not recover: ${fixError.message}`);
         return [];
       }
     }
