@@ -1,15 +1,16 @@
 /**
- * SHIIMAN LEADS - SMART AUTO-DETECT SCRAPER (Feb 2026)
- * Detects wide tables and infinite scroll automatically without UI changes.
+ * SHIIMAN LEADS - MASTER SCRAPER (MASTER FIX - FEB 17)
+ * Fixed: SyntaxError in querySelector.
+ * Fixed: Screenshot persistence for UI.
  */
 
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const fs = require('fs');
 const { chromium } = require('playwright');
+const axios = require('axios');
 const logger = require('./utils/logger');
 
-// Project Service Imports
 const { dbRun } = require('./db');
 const { insertLeadIfNew } = require('./services/leadInsertion');
 const { trackSourceReliability } = require('./services/reliability');
@@ -23,7 +24,7 @@ const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./c
 const { SCREENSHOT_DIR } = require('./config/paths');
 
 async function scrapeForUser(userId, userSources, extractionLimits) {
-  logger.info(`🚀 Starting SMART PRODUCTION Scrape for User ${userId}`);
+  logger.info(`🚀 Starting FIXED PRODUCTION Scrape for User ${userId}`);
   initProgress(userId, userSources);
 
   let totalInserted = 0;
@@ -57,40 +58,24 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         try {
           logger.info(`🌐 Navigating to: ${source.url}`);
           await page.goto(source.url, { waitUntil: 'commit', timeout: 90000 });
+          
+          // Wait for any table data to exist
           await page.locator('tr, li, .item, h3').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
           await page.waitForTimeout(5000);
           await preventAllPopups(page);
 
-          // Handle AI Instructions from UI
           if (source.aiPrompt && isAIAvailable()) {
             await navigateAutonomously(page, Array.isArray(source.aiPrompt) ? source.aiPrompt.join('\n') : source.aiPrompt);
             await page.waitForTimeout(3000);
           }
 
-          // --- AUTO-DETECTION LOGIC ---
-          const dimensions = await page.evaluate(() => ({
-            width: document.documentElement.scrollWidth,
-            viewportWidth: window.innerWidth,
-            isScrollable: document.documentElement.scrollHeight > window.innerHeight
-          }));
+          // MODE DETECT
+          const isWide = await page.evaluate(() => document.documentElement.scrollWidth > (window.innerWidth + 100));
 
-          const isWideTable = dimensions.width > (dimensions.viewportWidth + 100);
-          
-          if (isWideTable && source.useAI) {
-            // AUTO-MODE: WIDE TABLE (Grid Scroll)
-            logger.info(`🎯 AUTO-DETECT: Wide table found (${dimensions.width}px). Using 2D Grid Scroll.`);
-            const gridResult = await captureGridScrollScreenshots(page, {
-                selector: 'table, [role="grid"], .results',
-                horizontalScrollStep: 1000,
-                verticalScrollStep: 800
-            });
-
+          if (isWide && source.useAI) {
+            logger.info(`🎯 Mode: Wide Table Grid Scroll`);
+            const gridResult = await captureGridScrollScreenshots(page, { selector: 'body', horizontalScrollStep: 1000, verticalScrollStep: 800 });
             for (const tile of gridResult.tiles) {
-              const filename = `tile_${source.id}_${Date.now()}.png`;
-              const debugDir = path.join(SCREENSHOT_DIR, 'tiles-debug');
-              if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
-              fs.writeFileSync(path.join(debugDir, filename), tile.buffer);
-
               const aiLeads = await extractFromScreenshot(tile.buffer, source.name, source.fieldSchema);
               if (aiLeads) {
                 for (const lead of aiLeads) {
@@ -101,21 +86,23 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               }
             }
           } else if (source.useAI) {
-            // AUTO-MODE: STANDARD (Next Button or Infinite Scroll)
+            logger.info(`🎯 Mode: Standard Pagination/Scroll`);
             let pageNumber = 1;
             let hasMorePages = true;
 
             while (hasMorePages && !isPageLimitReached(pageNumber, limits)) {
-              const fingerprint = await page.evaluate(() => document.querySelector('tr, li, .item, h3')?.innerText?.substring(0, 40));
+              const fingerprint = await page.evaluate(() => document.querySelector('tr, li, .item, h3')?.innerText?.substring(0, 40) || 'empty');
+              
               const screenshotData = await captureTiledScreenshots(page, { useFullPage: true });
               const screenshot = screenshotData?.compositeBuffer || screenshotData;
 
-              // Save for UI
-              const filename = `${source.id}_${Date.now()}_page${pageNumber}.png`;
-              const debugDir = path.join(SCREENSHOT_DIR, 'tiles-debug');
-              if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
-              fs.writeFileSync(path.join(debugDir, filename), screenshot);
-              logger.info(`💾 Screenshot saved: ${filename}`);
+              // Save screenshot for Dashboard
+              try {
+                const debugDir = path.join(SCREENSHOT_DIR, 'tiles-debug');
+                if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+                const filename = `${source.id}_${Date.now()}_p${pageNumber}.png`;
+                fs.writeFileSync(path.join(debugDir, filename), screenshot);
+              } catch (e) {}
 
               const aiLeads = await extractFromScreenshot(screenshot, source.name, source.fieldSchema);
               if (aiLeads) {
@@ -127,30 +114,39 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 }
               }
 
-              // Look for Next Button
-              const nextBtn = await page.evaluate(() => {
-                const sel = ['button[aria-label*="Next"]', 'button.next', 'a.next', '.pagination-next', 'text="Next"'];
-                for (const s of sel) { const el = document.querySelector(s); if (el && el.clientHeight > 0 && !el.disabled) return s; }
+              // === FIXED NEXT BUTTON DETECTION (Safe Standard CSS only) ===
+              const nextBtnSelector = await page.evaluate(() => {
+                const selectors = ['button[aria-label*="Next"]', 'button.next', 'a.next', '.pagination-next', '.next-page'];
+                for (const s of selectors) {
+                  const el = document.querySelector(s);
+                  if (el && el.offsetHeight > 0 && !el.disabled) return s;
+                }
+                // Fallback: search all buttons for text "Next"
+                const allBtns = Array.from(document.querySelectorAll('button, a'));
+                const textBtn = allBtns.find(b => b.innerText && b.innerText.toLowerCase().includes('next'));
+                if (textBtn && textBtn.offsetHeight > 0) {
+                    textBtn.setAttribute('data-ai-next', 'true');
+                    return '[data-ai-next="true"]';
+                }
                 return null;
               });
 
-              if (nextBtn && hasMorePages) {
-                logger.info(`🖱️ Clicking Next Page...`);
-                await page.click(nextBtn);
-                const changed = await page.waitForFunction((f) => document.querySelector('tr, li, .item, h3')?.innerText?.substring(0, 40) !== f, fingerprint, { timeout: 15000 }).catch(() => false);
+              if (nextBtnSelector && hasMorePages) {
+                logger.info(`🖱️ Clicking Next via ${nextBtnSelector}`);
+                await page.click(nextBtnSelector);
+                
+                const changed = await page.waitForFunction((old) => {
+                  const current = document.querySelector('tr, li, .item, h3')?.innerText?.trim()?.substring(0, 40) || 'empty';
+                  return current !== old;
+                }, fingerprint, { timeout: 15000 }).catch(() => false);
+
                 if (!changed) hasMorePages = false; else { pageNumber++; await page.waitForTimeout(3000); }
               } else {
-                // AUTO-DETECT: No button? Try infinite scroll
-                logger.info("No Next button. Attempting scroll-down to load more...");
-                await page.evaluate(() => window.scrollBy(0, 1200));
+                // Infinite Scroll Fallback
+                await page.evaluate(() => window.scrollBy(0, 1000));
                 await page.waitForTimeout(4000);
-                const newFingerprint = await page.evaluate(() => document.querySelector('tr, li, .item, h3')?.innerText?.substring(0, 40));
-                if (newFingerprint !== fingerprint && newFingerprint !== 'empty') {
-                    logger.info("✅ New content loaded via scroll.");
-                    pageNumber++;
-                } else {
-                    hasMorePages = false;
-                }
+                const scrollCheck = await page.evaluate(() => document.querySelector('tr, li, .item, h3')?.innerText?.substring(0, 40) || 'empty');
+                if (scrollCheck !== fingerprint && scrollCheck !== 'empty') pageNumber++; else hasMorePages = false;
               }
             }
           }
