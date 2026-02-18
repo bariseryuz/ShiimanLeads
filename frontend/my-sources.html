@@ -945,20 +945,6 @@
   <script>
     let editingSourceId = null;
     let currentMappingSourceId = null;
-      document.getElementById('urlPatternField').style.display = 'none';
-      
-      // Show relevant fields based on type
-      if (type === 'click-next') {
-        document.getElementById('nextButtonField').style.display = 'block';
-      } else if (type === 'page-numbers') {
-        document.getElementById('pageNumberField').style.display = 'block';
-      } else if (type === 'jump-to-page') {
-        document.getElementById('jumpToPageFields').style.display = 'block';
-      } else if (type === 'infinite-scroll') {
-        document.getElementById('scrollFields').style.display = 'block';
-      } else if (type === 'url-pattern') {
-        document.getElementById('urlPatternField').style.display = 'block';
-    }
 
     // Check authentication on page load
     async function checkAuth() {
@@ -1351,34 +1337,6 @@ async function loadScreenshots(sources) {
         document.getElementById('excludeKeywords').value = source.data.excludeWords?.join(', ') || '';
         document.getElementById('displayColumns').value = Array.isArray(source.data.displayColumns) ? source.data.displayColumns.join(', ') : (source.data.displayColumns || '');
         
-        // Set pagination settings if they exist
-        if (source.data.pagination && source.data.pagination.enabled) {
-          document.getElementById('enablePagination').checked = true;
-          document.getElementById('paginationType').value = source.data.pagination.type || '';
-          document.getElementById('maxPages').value = source.data.pagination.maxPages || 5;
-          document.getElementById('maxRows').value = source.data.pagination.maxRows || '';
-          document.getElementById('waitAfterNavigation').value = source.data.pagination.waitAfterNavigation || 2000;
-          
-          // Load type-specific settings
-          if (source.data.pagination.type === 'click-next') {
-            document.getElementById('nextButtonSelector').value = source.data.pagination.nextButtonSelector || '';
-          } else if (source.data.pagination.type === 'page-numbers') {
-            document.getElementById('pageNumberSelector').value = source.data.pagination.pageNumberSelector || '';
-          } else if (source.data.pagination.type === 'jump-to-page') {
-            document.getElementById('pageInputSelector').value = source.data.pagination.pageInputSelector || '';
-            document.getElementById('pageSubmitSelector').value = source.data.pagination.pageSubmitSelector || '';
-          } else if (source.data.pagination.type === 'infinite-scroll') {
-            document.getElementById('scrollDistance').value = source.data.pagination.scrollDistance || 2000;
-            document.getElementById('scrollRepeats').value = source.data.pagination.scrollRepeats || 5;
-            document.getElementById('scrollDelay').value = source.data.pagination.scrollDelay || 1000;
-          } else if (source.data.pagination.type === 'url-pattern') {
-            document.getElementById('urlPattern').value = source.data.pagination.urlPattern || '';
-          }
-          
-          togglePaginationOptions();
-          updatePaginationFields();
-        }
-        
         // Set AI prompt if exists
         document.getElementById('aiPrompt').value = source.data.aiPrompt || '';
         
@@ -1693,73 +1651,6 @@ async function loadScreenshots(sources) {
         });
         
         sourceData.fieldSchema = fieldSchema;
-      }
-      
-      // Add pagination configuration if enabled
-      if (document.getElementById('enablePagination').checked) {
-        const paginationType = document.getElementById('paginationType').value;
-        
-        if (paginationType) {
-          sourceData.pagination = {
-            enabled: true,
-            type: paginationType,
-            maxPages: parseInt(document.getElementById('maxPages').value) || 5,
-            maxRows: document.getElementById('maxRows').value ? parseInt(document.getElementById('maxRows').value) : null,
-            waitAfterNavigation: parseInt(document.getElementById('waitAfterNavigation').value) || 2000
-          };
-          
-          // Add type-specific configuration
-          if (paginationType === 'click-next') {
-            sourceData.pagination.nextButtonSelector = document.getElementById('nextButtonSelector').value.trim() || null;
-          } else if (paginationType === 'page-numbers') {
-            sourceData.pagination.pageNumberSelector = document.getElementById('pageNumberSelector').value.trim() || null;
-          } else if (paginationType === 'jump-to-page') {
-            sourceData.pagination.pageInputSelector = document.getElementById('pageInputSelector').value.trim();
-            sourceData.pagination.pageSubmitSelector = document.getElementById('pageSubmitSelector').value.trim() || null;
-          } else if (paginationType === 'infinite-scroll') {
-            sourceData.pagination.scrollDistance = parseInt(document.getElementById('scrollDistance').value) || 2000;
-            sourceData.pagination.scrollRepeats = parseInt(document.getElementById('scrollRepeats').value) || 5;
-            sourceData.pagination.scrollDelay = parseInt(document.getElementById('scrollDelay').value) || 1000;
-          } else if (paginationType === 'url-pattern') {
-            sourceData.pagination.urlPattern = document.getElementById('urlPattern').value.trim();
-          }
-        }
-      }
-      
-      // Add pre-scraping actions if enabled
-      if (document.getElementById('enablePreActions').checked) {
-        sourceData.preActions = [];
-        
-        // Collect all pre-actions
-        const actionsContainer = document.getElementById('preActionsContainer');
-        const actionDivs = actionsContainer.querySelectorAll('[id^="preAction-"]');
-        
-        actionDivs.forEach(actionDiv => {
-          const id = actionDiv.id.split('-')[1];
-          const typeElement = document.getElementById(`preActionType-${id}`);
-          if (!typeElement) return;
-          
-          const actionType = typeElement.value;
-          const action = {
-            type: actionType,
-            waitAfter: parseInt(document.getElementById(`preActionWait-${id}`).value) || 1000
-          };
-          
-          if (actionType === 'click' || actionType === 'wait') {
-            const selectorElement = document.getElementById(`preActionSelector-${id}`);
-            if (selectorElement) action.selector = selectorElement.value.trim();
-          } else if (actionType === 'scroll') {
-            const valueElement = document.getElementById(`preActionValue-${id}`);
-            if (valueElement) action.distance = parseInt(valueElement.value) || 0;
-          } else if (actionType === 'input') {
-            const selectorElement = document.getElementById(`preActionSelector-${id}`);
-            const valueElement = document.getElementById(`preActionValue-${id}`);
-            if (selectorElement) action.selector = selectorElement.value.trim();
-            if (valueElement) action.value = valueElement.value.trim();
-          }
-          
-          sourceData.preActions.push(action);
-        });
       }
       
       try {
