@@ -49,6 +49,66 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       await rateLimiter.waitIfNeeded();
       let sourceNewLeads = 0;
 
+      // ===== AUTO-DETECT ARCGIS HUB URLS AND CONVERT TO API ENDPOINTS =====
+      const isArcGISHub = source.url && (source.url.includes('/datasets/') || source.url.includes('/explore'));
+      
+      if (isArcGISHub && !source.url.includes('FeatureServer') && !source.url.includes('/rest/services/')) {
+        logger.info(`🔍 Detected ArcGIS Hub URL - extracting API endpoint...`);
+        
+        try {
+          // Fetch the Hub page to extract the actual API endpoint
+          const hubResponse = await axios.get(source.url, { 
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            timeout: 15000 
+          });
+          
+          const pageContent = hubResponse.data;
+          
+          // Extract dataset ID from URL (e.g., 2576bfb2d74f418b8ba8c4538e4f729f_0)
+          const datasetIdMatch = source.url.match(/\/datasets\/([a-f0-9_]+)/i);
+          
+          // Try to find FeatureServer URL in page content
+          let apiUrl = null;
+          
+          // Method 1: Look for FeatureServer URL in page content
+          const featureServerMatch = pageContent.match(/(https?:\/\/[^"']+\/FeatureServer\/\d+)/i);
+          if (featureServerMatch) {
+            apiUrl = featureServerMatch[1] + '/query?where=1=1&outFields=*&f=json';
+            logger.info(`   ✅ Found FeatureServer URL: ${apiUrl}`);
+          }
+          
+          // Method 2: Look for services URL pattern
+          if (!apiUrl) {
+            const servicesMatch = pageContent.match(/(https?:\/\/services\d*\.arcgis\.com\/[^"']+\/arcgis\/rest\/services\/[^"']+\/FeatureServer\/\d+)/i);
+            if (servicesMatch) {
+              apiUrl = servicesMatch[1] + '/query?where=1=1&outFields=*&f=json';
+              logger.info(`   ✅ Found services URL: ${apiUrl}`);
+            }
+          }
+          
+          // Method 3: Construct from dataset ID if found
+          if (!apiUrl && datasetIdMatch) {
+            const datasetId = datasetIdMatch[1];
+            // Try common ArcGIS Online pattern
+            apiUrl = `https://services.arcgis.com/0/arcgis/rest/services/${datasetId}/FeatureServer/0/query?where=1=1&outFields=*&f=json`;
+            logger.info(`   ⚠️ Constructed fallback URL from dataset ID`);
+          }
+          
+          if (apiUrl) {
+            // Override the source URL with the API endpoint
+            logger.info(`   🔄 Switching from Hub URL to API: ${apiUrl}`);
+            source.url = apiUrl;
+            source.type = 'json'; // Force JSON mode
+          } else {
+            logger.warn(`   ⚠️ Could not extract API endpoint - will try Playwright mode`);
+          }
+          
+        } catch (hubErr) {
+          logger.warn(`   ⚠️ Failed to extract API endpoint: ${hubErr.message}`);
+          logger.info(`   📸 Falling back to Playwright screenshot mode`);
+        }
+      }
+
       // ===== JSON API SCRAPING =====
       // Auto-detect ArcGIS URLs that should use JSON API
       const isArcGISUrl = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/') || source.url.includes('FeatureServer'));
