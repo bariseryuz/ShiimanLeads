@@ -50,7 +50,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       let sourceNewLeads = 0;
 
       // ===== JSON API SCRAPING =====
-      if (source.type === 'json' || source.method === 'json') {
+      // Auto-detect ArcGIS URLs that should use JSON API
+      const isArcGISUrl = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/') || source.url.includes('FeatureServer'));
+      
+      if (source.type === 'json' || source.method === 'json' || (isArcGISUrl && source.type !== 'playwright')) {
         logger.info(`📡 JSON API Mode for: ${source.name}`);
         logger.info(`   URL: ${source.url}`);
         
@@ -212,7 +215,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       }
       
       // ===== PLAYWRIGHT SCRAPING =====
-      if (source.usePlaywright || source.method === 'playwright') {
+      // Skip Playwright for ArcGIS URLs (they should use JSON API above)
+      const shouldSkipPlaywright = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/'));
+      
+      if ((source.usePlaywright || source.method === 'playwright' || source.useAI) && !shouldSkipPlaywright) {
         const browser = await chromium.launch({ headless: true });
         const context = await browser.newContext({
           viewport: { width: 1440, height: 900 },
@@ -268,7 +274,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
                 const filename = `${source.id}_${Date.now()}_p${pageNumber}.png`;
                 fs.writeFileSync(path.join(debugDir, filename), screenshot);
-              } catch (e) {}
+                logger.info(`   📸 Screenshot saved: ${filename}`);
+              } catch (screenshotErr) {
+                logger.error(`   ❌ Failed to save screenshot: ${screenshotErr.message}`);
+              }
 
               const aiLeads = await extractFromScreenshot(screenshot, source.name, source.fieldSchema);
               if (aiLeads) {
