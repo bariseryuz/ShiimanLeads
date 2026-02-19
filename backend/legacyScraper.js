@@ -19,6 +19,7 @@ const { captureTiledScreenshots } = require('./services/scraper/screenshot');
 const { captureGridScrollScreenshots } = require('./services/scraper/gridScrollScraper');
 const { initProgress, updateProgress, shouldStopScraping } = require('./services/scraper/progress');
 const { setupPopupBlocking, preventAllPopups, setupArcGISPage } = require('./services/scraper/preventPopup');
+const { fetchArcGISRecords } = require('./services/scraper/arcgis');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
@@ -49,8 +50,68 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       await rateLimiter.waitIfNeeded();
       let sourceNewLeads = 0;
 
+      // ===== ARCGIS HUB PIPELINE =====
+      if (source.type === 'arcgis') {
+        logger.info(`🗺️ ArcGIS Mode for: ${source.name}`);
+        logger.info(`   URL: ${source.url}`);
+
+        try {
+          const { apiUrl, records } = await fetchArcGISRecords(source, logger);
+          logger.info(`   📊 Found ${records.length} records`);
+
+          const fieldMapping = source.fieldMappings || source.fieldSchema || source.fieldMapping || {};
+
+          for (const record of records) {
+            if (isTotalRowLimitReached(totalInserted, limits)) {
+              logger.info(`   ⚠️ Total row limit reached: ${limits.maxTotalRows}`);
+              break;
+            }
+
+            let mappedLead = {};
+            if (Object.keys(fieldMapping).length > 0) {
+              for (const [targetField, sourceField] of Object.entries(fieldMapping)) {
+                if (sourceField && record[sourceField] !== undefined) {
+                  mappedLead[targetField] = record[sourceField];
+                }
+              }
+            } else {
+              mappedLead = { ...record };
+            }
+
+            for (const [key, value] of Object.entries(mappedLead)) {
+              if (typeof value === 'number' && value > 1000000000 && value < 2000000000000) {
+                const date = new Date(value > 10000000000 ? value : value * 1000);
+                mappedLead[key] = date.toISOString().split('T')[0];
+              }
+            }
+
+            if (await insertLeadIfNew({
+              raw: JSON.stringify(mappedLead),
+              sourceName: source.name,
+              lead: mappedLead,
+              userId,
+              sourceId: source.id,
+              sourceUrl: apiUrl
+            })) {
+              sourceNewLeads++;
+              totalInserted++;
+            }
+          }
+
+          logger.info(`   ✅ ArcGIS scrape complete: ${sourceNewLeads} new leads`);
+          await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+          rateLimiter.recordSuccess();
+          continue;
+        } catch (arcgisErr) {
+          logger.error(`❌ ArcGIS error for ${source.name}: ${arcgisErr.message}`);
+          await trackSourceReliability(source.id, source.name, false, 0);
+          rateLimiter.recordFailure();
+          continue;
+        }
+      }
+
       // ===== AUTO-DETECT ARCGIS HUB URLS AND CONVERT TO API ENDPOINTS =====
-      const isArcGISHub = source.url && (source.url.includes('/datasets/') || source.url.includes('/explore'));
+      const isArcGISHub = source.type !== 'arcgis' && source.url && (source.url.includes('/datasets/') || source.url.includes('/explore'));
       
       if (isArcGISHub && !source.url.includes('FeatureServer') && !source.url.includes('/rest/services/')) {
         logger.info(`🔍 Detected ArcGIS Hub URL - extracting API endpoint...`);

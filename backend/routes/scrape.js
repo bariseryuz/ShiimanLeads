@@ -44,6 +44,10 @@ router.post('/now', async (req, res) => {
       try {
         const sourceData = JSON.parse(row.source_data);
         sourceData._sourceId = row.id; // Attach source ID for table saving
+
+        if (sourceData.type === 'arcgis') {
+          return sourceData;
+        }
         
         // Ensure method field is set based on usePlaywright flag
         if (sourceData.usePlaywright === true && !sourceData.method) {

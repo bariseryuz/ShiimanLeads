@@ -755,6 +755,7 @@
           <img src="icons/loading.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Scrape Now
         </button>
         <button class="btn btn-primary" onclick="openAddModal()">+ Add Source</button>
+        <button class="btn btn-primary" onclick="openAddArcGISModal()">+ Add ArcGIS Source</button>
       </div>
     </div>
 
@@ -764,6 +765,7 @@
       <h2>No Sources Yet</h2>
       <p>Add your first data source to start extracting leads automatically</p>
       <button class="btn btn-primary" onclick="openAddModal()">+ Add Your First Source</button>
+      <button class="btn btn-primary" onclick="openAddArcGISModal()">+ Add Your First ArcGIS Source</button>
     </div>
   </div>
 
@@ -807,6 +809,7 @@
           <label class="form-label" for="sourceType">Scraping Method *</label>
           <select id="sourceType" class="form-input" onchange="toggleSourceTypeFields()" style="font-weight: 600;">
             <option value="html">🤖 AI Website Scraper (Default)</option>
+            <option value="arcgis">🗺️ ArcGIS Hub (Auto API)</option>
             <option value="json">📡 JSON API (ArcGIS, REST APIs)</option>
           </select>
           <small style="color: var(--gray-600); display: block; margin-top: 0.5rem;" id="sourceTypeHint">
@@ -836,6 +839,18 @@
             <label class="form-label" for="jsonPath">JSONPath Filter (Optional)</label>
             <input type="text" id="jsonPath" class="form-input" placeholder="$.features[*].attributes">
             <small style="color: var(--gray-600);">Extract nested data using JSONPath syntax (leave empty for auto-detect)</small>
+          </div>
+        </div>
+
+        <!-- ARCGIS HUB FIELDS (hidden by default) -->
+        <div id="arcgisFields" style="display: none; border: 2px solid #2563eb; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: linear-gradient(135deg, rgba(37, 99, 235, 0.06), rgba(59, 130, 246, 0.06));">
+          <h3 style="margin: 0 0 0.75rem 0; color: #2563eb; font-size: 1rem; font-weight: 700;">🗺️ ArcGIS Hub Setup</h3>
+          <p style="margin: 0 0 0.75rem 0; color: #475569; font-size: 0.875rem;">
+            Paste the ArcGIS Hub "explore" or "datasets" URL. The system will open it with Playwright,
+            capture the API endpoint + session cookies, and scrape via JSON automatically.
+          </p>
+          <div style="font-size: 0.812rem; color: #64748b;">
+            Example: https://data.city.gov/datasets/abcd1234_0/explore
           </div>
         </div>
         
@@ -972,22 +987,36 @@
     function toggleSourceTypeFields() {
       const sourceType = document.getElementById('sourceType').value;
       const isJsonApi = sourceType === 'json';
+      const isArcGIS = sourceType === 'arcgis';
       
       // Show/hide JSON API fields
       document.getElementById('jsonApiFields').style.display = isJsonApi ? 'block' : 'none';
+      document.getElementById('arcgisFields').style.display = isArcGIS ? 'block' : 'none';
       
       // Show/hide AI fields
-      document.getElementById('aiPromptSection').style.display = isJsonApi ? 'none' : 'block';
-      document.getElementById('fieldExtractionSection').style.display = isJsonApi ? 'none' : 'block';
+      document.getElementById('aiPromptSection').style.display = (isJsonApi || isArcGIS) ? 'none' : 'block';
+      document.getElementById('fieldExtractionSection').style.display = (isJsonApi || isArcGIS) ? 'none' : 'block';
       
       // Update URL hint
       const urlHint = document.getElementById('urlHintText');
       if (isJsonApi) {
         urlHint.textContent = 'Enter the direct API endpoint URL (e.g., https://maps.nashville.gov/arcgis/rest/services/.../query)';
         urlHint.style.color = '#10b981';
+      } else if (isArcGIS) {
+        urlHint.textContent = 'Paste the ArcGIS Hub explore/datasets URL (the system will auto-find the API endpoint)';
+        urlHint.style.color = '#2563eb';
       } else {
         urlHint.textContent = 'The AI bot will visit this page and extract data automatically';
         urlHint.style.color = 'var(--gray-600)';
+      }
+
+      const sourceTypeHint = document.getElementById('sourceTypeHint');
+      if (isArcGIS) {
+        sourceTypeHint.textContent = 'ArcGIS Hub will use Playwright to discover the API + cookies, then fetch data via JSON.';
+      } else if (isJsonApi) {
+        sourceTypeHint.textContent = 'Choose "JSON API" if you already have a direct API endpoint (like ArcGIS FeatureServer URLs).';
+      } else {
+        sourceTypeHint.textContent = 'Choose "AI Website Scraper" for regular websites. Choose "JSON API" if you have a direct API endpoint (like ArcGIS FeatureServer URLs).';
       }
     }
 
@@ -1292,6 +1321,20 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceModal').classList.add('show');
     }
 
+    function openAddArcGISModal() {
+      editingSourceId = null;
+      document.getElementById('modalTitle').textContent = 'Add ArcGIS Source';
+      document.getElementById('sourceForm').reset();
+      document.getElementById('sourceId').value = '';
+      document.getElementById('sourceType').value = 'arcgis';
+      toggleSourceTypeFields();
+
+      document.getElementById('useProxy').checked = true;
+      document.getElementById('forcePlaywrightOnly').checked = false;
+
+      document.getElementById('sourceModal').classList.add('show');
+    }
+
     async function editSource(id) {
       try {
         const response = await fetch('/api/my-sources/mine');
@@ -1311,8 +1354,8 @@ async function loadScreenshots(sources) {
         
         // Set source type
         const sourceType = source.data.type || 'html';
-        toggleSourceTypeFields(); // Update UI based on type
         document.getElementById('sourceType').value = sourceType;
+        toggleSourceTypeFields(); // Update UI based on type
         
         // Set fieldSchema for editing - convert back to natural language
         if (source.data.fieldSchema) {
@@ -1331,6 +1374,13 @@ async function loadScreenshots(sources) {
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
           document.getElementById('jsonFields').value = source.data.jsonFields?.join(', ') || '';
+        } else {
+          document.getElementById('apiMethod').value = 'GET';
+          document.getElementById('apiParams').value = '';
+          document.getElementById('jsonPath').value = '';
+          if (document.getElementById('jsonFields')) {
+            document.getElementById('jsonFields').value = '';
+          }
         }
         
         document.getElementById('includeKeywords').value = source.data.includeWords?.join(', ') || '';
@@ -1615,6 +1665,13 @@ async function loadScreenshots(sources) {
           return;
         }
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
+      } else if (sourceType === 'arcgis') {
+        // ArcGIS Hub mode (key grabber + JSON API)
+        sourceData.method = 'arcgis';
+        sourceData.useAI = false;
+        sourceData.usePlaywright = false;
+        sourceData.forcePlaywrightOnly = false;
+        sourceData.extractTable = false;
       } else {
         // HTML/AI Website Scraper mode (default)
         sourceData.selector = null;
