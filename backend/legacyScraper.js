@@ -100,12 +100,12 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
 
           logger.info(`   ✅ ArcGIS scrape complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
-          rateLimiter.recordSuccess();
+          rateLimiter.onSuccess();
           continue;
         } catch (arcgisErr) {
           logger.error(`❌ ArcGIS error for ${source.name}: ${arcgisErr.message}`);
           await trackSourceReliability(source.id, source.name, false, 0);
-          rateLimiter.recordFailure();
+          rateLimiter.onError();
           continue;
         }
       }
@@ -325,12 +325,12 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           logger.info(`   ✅ JSON scrape complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
-          rateLimiter.recordSuccess();
+          rateLimiter.onSuccess();
           continue; // Skip to next source
         } catch (jsonErr) {
           logger.error(`❌ JSON API error for ${source.name}: ${jsonErr.message}`);
           await trackSourceReliability(source.id, source.name, false, 0);
-          rateLimiter.recordFailure();
+          rateLimiter.onError();
           continue;
         }
       }
