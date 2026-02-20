@@ -21,12 +21,42 @@ function extractApiUrlFromHtml(html) {
   return null;
 }
 
+function cleanDashboardUrl(url) {
+  // Remove problematic dashboard aggregation parameters
+  try {
+    const parsed = new URL(url);
+    const params = parsed.searchParams;
+
+    // Remove aggregation/statistics parameters
+    params.delete('outStatistics');
+    params.delete('cacheHint');
+    params.delete('orderByFields');
+    params.delete('outSR');
+    params.delete('spatialRel');
+    
+    // Rebuild with clean parameters
+    if (!params.has('where')) params.set('where', '1=1');
+    if (!params.has('outFields')) params.set('outFields', '*');
+    if (!params.has('f')) params.set('f', 'json');
+    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '1000');
+
+    parsed.search = params.toString();
+    return parsed.toString();
+  } catch (err) {
+    return url;
+  }
+}
+
 function normalizeArcGISApiUrl(rawUrl) {
   if (!rawUrl) return null;
-  if (rawUrl.includes('/query')) {
-    return ensureArcGISParams(rawUrl);
+  
+  // Clean dashboard URLs first
+  const cleanedUrl = cleanDashboardUrl(rawUrl);
+  
+  if (cleanedUrl.includes('/query')) {
+    return ensureArcGISParams(cleanedUrl);
   }
-  return ensureArcGISParams(`${rawUrl.replace(/\/$/, '')}/query`);
+  return ensureArcGISParams(`${cleanedUrl.replace(/\/$/, '')}/query`);
 }
 
 function ensureArcGISParams(url) {
