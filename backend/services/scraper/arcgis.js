@@ -46,7 +46,7 @@ function ensureArcGISParams(url) {
   }
 }
 
-async function extractArcGISApiInfo(hubUrl, logger) {
+async function extractArcGISApiInfo(hubUrl, logger, navigationInstructions = []) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
@@ -64,6 +64,26 @@ async function extractArcGISApiInfo(hubUrl, logger) {
     await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
   } catch (err) {
     logger.warn(`ArcGIS key grabber navigation warning: ${err.message}`);
+  }
+
+  // Execute optional navigation instructions
+  for (const instruction of navigationInstructions) {
+    try {
+      if (instruction.type === 'click') {
+        const element = await page.$(instruction.selector);
+        if (element) {
+          await element.click();
+          await page.waitForTimeout(instruction.waitAfter || 2000);
+        }
+      } else if (instruction.type === 'wait') {
+        await page.waitForSelector(instruction.selector, { timeout: 10000 }).catch(() => {});
+      } else if (instruction.type === 'fill') {
+        await page.fill(instruction.selector, instruction.value);
+        if (instruction.waitAfter) await page.waitForTimeout(instruction.waitAfter);
+      }
+    } catch (err) {
+      logger.warn(`ArcGIS navigation instruction failed: ${err.message}`);
+    }
   }
 
   await page.waitForTimeout(5000);
@@ -113,7 +133,8 @@ async function fetchArcGISRecords(source, logger) {
     throw new Error('ArcGIS source URL is missing');
   }
 
-  const { apiUrl, headers } = await extractArcGISApiInfo(sourceUrl, logger);
+  const navigationInstructions = source?.navigationInstructions || [];
+  const { apiUrl, headers } = await extractArcGISApiInfo(sourceUrl, logger, navigationInstructions);
 
   if (!apiUrl) {
     throw new Error('ArcGIS API endpoint not found');
@@ -121,29 +142,61 @@ async function fetchArcGISRecords(source, logger) {
 
   logger.info(`   ✅ ArcGIS API endpoint resolved: ${apiUrl}`);
 
-  const response = await axios.get(apiUrl, { headers, timeout: 30000 });
-  const jsonData = response.data;
+  const allRecords = [];
+  let offset = 0;
+  const pageSize = 1000;
+  let hasMoreRecords = true;
 
-  let records = [];
+  // Pagination loop: fetch all records in batches of 1000
+  while (hasMoreRecords) {
+    try {
+      const paginatedUrl = new URL(apiUrl);
+      paginatedUrl.searchParams.set('resultOffset', offset.toString());
+      paginatedUrl.searchParams.set('resultRecordCount', pageSize.toString());
 
-  if (jsonData?.features && Array.isArray(jsonData.features)) {
-    records = jsonData.features.map((feature) => {
-      if (feature.attributes) {
-        return { ...feature.attributes };
+      const response = await axios.get(paginatedUrl.toString(), { headers, timeout: 30000 });
+      const jsonData = response.data;
+
+      let records = [];
+
+      // Parse response based on expected format
+      if (jsonData?.features && Array.isArray(jsonData.features)) {
+        records = jsonData.features.map((feature) => {
+          if (feature.attributes) {
+            return { ...feature.attributes };
+          }
+          return feature;
+        });
+      } else if (Array.isArray(jsonData)) {
+        records = jsonData;
+      } else if (jsonData?.data && Array.isArray(jsonData.data)) {
+        records = jsonData.data;
+      } else if (jsonData?.records && Array.isArray(jsonData.records)) {
+        records = jsonData.records;
+      } else if (jsonData?.results && Array.isArray(jsonData.results)) {
+        records = jsonData.results;
       }
-      return feature;
-    });
-  } else if (Array.isArray(jsonData)) {
-    records = jsonData;
-  } else if (jsonData?.data && Array.isArray(jsonData.data)) {
-    records = jsonData.data;
-  } else if (jsonData?.records && Array.isArray(jsonData.records)) {
-    records = jsonData.records;
-  } else if (jsonData?.results && Array.isArray(jsonData.results)) {
-    records = jsonData.results;
+
+      if (records.length === 0) {
+        hasMoreRecords = false;
+      } else {
+        allRecords.push(...records);
+        
+        // Check if API indicates more records available
+        if (jsonData?.exceededTransferLimit === false || records.length < pageSize) {
+          hasMoreRecords = false;
+        } else {
+          offset += pageSize;
+        }
+      }
+    } catch (err) {
+      logger.warn(`ArcGIS pagination error at offset ${offset}: ${err.message}`);
+      hasMoreRecords = false;
+    }
   }
 
-  return { apiUrl, records };
+  logger.info(`   ✅ ArcGIS fetched ${allRecords.length} total records`);
+  return { apiUrl, records: allRecords };
 }
 
 module.exports = {
