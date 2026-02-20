@@ -852,6 +852,12 @@
           <div style="font-size: 0.812rem; color: #64748b;">
             Example: https://data.city.gov/datasets/abcd1234_0/explore
           </div>
+          
+          <div class="form-group" style="margin-top: 1rem;">
+            <label class="form-label" for="arcgisNavigation">Navigation Instructions (JSON - Optional)</label>
+            <textarea id="arcgisNavigation" class="form-input" rows="4" placeholder='[{"type": "click", "selector": ".view-btn", "waitAfter": 2000}]'></textarea>
+            <small style="color: var(--gray-600);">Optional: Add click/fill/wait actions before API extraction. Types: "click", "fill", "wait". Max 3 instructions.</small>
+          </div>
         </div>
         
         <!-- AI PROMPT FIELD - THE MAIN FEATURE (hidden for JSON API) -->
@@ -992,6 +998,11 @@
       // Show/hide JSON API fields
       document.getElementById('jsonApiFields').style.display = isJsonApi ? 'block' : 'none';
       document.getElementById('arcgisFields').style.display = isArcGIS ? 'block' : 'none';
+      
+      // Clear navigation instructions if switching away from ArcGIS
+      if (!isArcGIS) {
+        document.getElementById('arcgisNavigation').value = '';
+      }
       
       // Show/hide AI fields
       document.getElementById('aiPromptSection').style.display = (isJsonApi || isArcGIS) ? 'none' : 'block';
@@ -1308,6 +1319,7 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceForm').reset();
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'html';
+      document.getElementById('arcgisNavigation').value = '';
       toggleSourceTypeFields(); // Initialize UI based on type
       
       // Set proxy to enabled by default
@@ -1327,6 +1339,7 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceForm').reset();
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'arcgis';
+      document.getElementById('arcgisNavigation').value = '';
       toggleSourceTypeFields();
 
       document.getElementById('useProxy').checked = true;
@@ -1374,6 +1387,9 @@ async function loadScreenshots(sources) {
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
           document.getElementById('jsonFields').value = source.data.jsonFields?.join(', ') || '';
+        } else if (sourceType === 'arcgis') {
+          // Load ArcGIS-specific fields
+          document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
         } else {
           document.getElementById('apiMethod').value = 'GET';
           document.getElementById('apiParams').value = '';
@@ -1672,6 +1688,25 @@ async function loadScreenshots(sources) {
         sourceData.usePlaywright = false;
         sourceData.forcePlaywrightOnly = false;
         sourceData.extractTable = false;
+        
+        // Parse navigation instructions if provided
+        const navInstructionsText = document.getElementById('arcgisNavigation').value.trim();
+        if (navInstructionsText) {
+          try {
+            const navInstructions = JSON.parse(navInstructionsText);
+            if (Array.isArray(navInstructions) && navInstructions.length <= 3) {
+              sourceData.navigationInstructions = navInstructions;
+            } else if (!Array.isArray(navInstructions)) {
+              throw new Error('Must be a JSON array');
+            } else if (navInstructions.length > 3) {
+              alert('Maximum 3 navigation instructions allowed');
+              return;
+            }
+          } catch (err) {
+            alert('Invalid JSON in Navigation Instructions field');
+            return;
+          }
+        }
       } else {
         // HTML/AI Website Scraper mode (default)
         sourceData.selector = null;
