@@ -1273,8 +1273,9 @@ sourceLeads.forEach(lead => {
           leadsDisplayDiv.appendChild(sourceContainer);
         }
         
+        // Don't override totalLeads stat - it should show actual total, not filtered count
         document.getElementById('statusMessage').textContent = `Showing ${leads.length} lead(s)`;
-        document.getElementById('totalLeads').textContent = leads.length;
+        // REMOVED: document.getElementById('totalLeads').textContent = leads.length;
         
       } catch (error) {
         console.error('Failed to load leads:', error);

@@ -32,7 +32,7 @@ router.get('/', requireAuth, async (req, res) => {
     // Recent activity (last 7 days)
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const recentLeadsRow = await dbGet(
-      'SELECT COUNT(*) as count FROM leads WHERE user_id = ? AND date_added >= ?',
+      'SELECT COUNT(*) as count FROM leads WHERE user_id = ? AND created_at >= ?',
       [userId, sevenDaysAgo]
     );
     const recentLeads = recentLeadsRow?.count || 0;
@@ -75,26 +75,26 @@ router.get('/metrics', async (req, res) => {
       ORDER BY count DESC
     `, [userId]);
     
-    // Recent activity (last 7 days) - using date_added if available
+    // Recent activity (last 7 days) - using created_at
     let recentActivity = [];
     try {
       recentActivity = await dbAll(`
-        SELECT DATE(date_added) as date, COUNT(*) as count 
+        SELECT DATE(created_at) as date, COUNT(*) as count 
         FROM leads 
-        WHERE user_id = ? AND date_added IS NOT NULL AND date_added >= datetime('now', '-7 days')
-        GROUP BY DATE(date_added)
+        WHERE user_id = ? AND created_at IS NOT NULL AND created_at >= datetime('now', '-7 days')
+        GROUP BY DATE(created_at)
         ORDER BY date DESC
       `, [userId]);
     } catch (e) {
-      // Column might not exist, just skip recent activity
+      // Query failed, skip recent activity
       logger.warn(`Recent activity query failed: ${e.message}`);
     }
     
-    // Last scrape time - use date_added as proxy
+    // Last scrape time - use created_at
     let lastScrape = null;
     try {
       lastScrape = await dbGet(`
-        SELECT MAX(date_added) as last_scrape 
+        SELECT MAX(created_at) as last_scrape 
         FROM leads 
         WHERE user_id = ?
       `, [userId]);
