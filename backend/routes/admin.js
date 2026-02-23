@@ -130,4 +130,50 @@ router.delete('/sources/:userId/:sourceId', ensureAdmin, async (req, res) => {
   }
 });
 
+/**
+ * DELETE /api/admin/users/:userId
+ * Delete user and all their data (admin only)
+ */
+router.delete('/users/:userId', ensureAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId, 10);
+    
+    // Prevent admin from deleting themselves
+    if (req.session.user.id === userId) {
+      return res.status(400).json({ error: 'Cannot delete your own account' });
+    }
+    
+    // Check if user exists
+    const user = await dbGet('SELECT id, username, role FROM users WHERE id = ?', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get counts before deletion
+    const sourcesCount = await dbGet('SELECT COUNT(*) as count FROM user_sources WHERE user_id = ?', [userId]);
+    const leadsCount = await dbGet('SELECT COUNT(*) as count FROM leads WHERE user_id = ?', [userId]);
+    
+    // Delete in correct order (respect foreign keys)
+    await dbRun('DELETE FROM leads WHERE user_id = ?', [userId]);
+    await dbRun('DELETE FROM user_sources WHERE user_id = ?', [userId]);
+    await dbRun('DELETE FROM users WHERE id = ?', [userId]);
+    
+    logger.info(`Admin deleted user "${user.username}" (ID: ${userId})`);
+    logger.info(`  - Deleted ${leadsCount.count} leads`);
+    logger.info(`  - Deleted ${sourcesCount.count} sources`);
+    
+    res.json({ 
+      success: true, 
+      deleted: {
+        user: user.username,
+        leads: leadsCount.count,
+        sources: sourcesCount.count
+      }
+    });
+  } catch (e) {
+    logger.error(`Admin delete user error: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

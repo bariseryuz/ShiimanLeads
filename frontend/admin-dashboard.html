@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard - Shiiman Leads</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .admin-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    .user-card {
+      background: white;
+      border: 1px solid var(--gray-200);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .user-info h3 {
+      margin: 0 0 0.5rem 0;
+      color: var(--gray-900);
+    }
+    .user-info p {
+      margin: 0.25rem 0;
+      color: var(--gray-600);
+      font-size: 0.9rem;
+    }
+    .user-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 12px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-admin {
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .badge-user {
+      background: #e0e7ff;
+      color: #3730a3;
+    }
+    .btn-danger {
+      background: #dc2626;
+      color: white;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+    .btn-danger:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+    }
+    .stat-card h4 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.875rem;
+      opacity: 0.9;
+    }
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: bold;
+      margin: 0;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="nav-brand">
+      <img src="/icons/logo.svg" alt="Logo" onerror="this.style.display='none'">
+      <span>Shiiman Leads - Admin</span>
+    </div>
+    <div class="nav-links">
+      <a href="/client-portal.html">Dashboard</a>
+      <a href="#" onclick="logout()">Logout</a>
+    </div>
+  </nav>
+
+  <div class="admin-container">
+    <h1 style="margin-bottom: 2rem;">Admin Dashboard</h1>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stat-card">
+        <h4>Total Users</h4>
+        <p class="value" id="totalUsers">-</p>
+      </div>
+      <div class="stat-card">
+        <h4>Admin Users</h4>
+        <p class="value" id="adminUsers">-</p>
+      </div>
+      <div class="stat-card">
+        <h4>Regular Users</h4>
+        <p class="value" id="regularUsers">-</p>
+      </div>
+    </div>
+
+    <h2 style="margin-bottom: 1rem;">User Management</h2>
+    <div id="usersContainer">
+      <div style="text-align: center; padding: 3rem; color: var(--gray-600);">
+        Loading users...
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script>
+    let currentUser = null;
+
+    // Check admin authentication
+    async function checkAdminAuth() {
+      try {
+        const response = await fetch('/api/me', { credentials: 'include' });
+        if (response.ok) {
+          const data = await response.json();
+          currentUser = data.user;
+          
+          if (currentUser.role !== 'admin') {
+            alert('Access denied. Admin privileges required.');
+            window.location.href = '/client-portal.html';
+            return false;
+          }
+          
+          return true;
+        } else {
+          window.location.href = '/login.html';
+          return false;
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        window.location.href = '/login.html';
+        return false;
+      }
+    }
+
+    // Load all users
+    async function loadUsers() {
+      try {
+        const response = await fetch('/api/admin/users', { credentials: 'include' });
+        const users = await response.json();
+        
+        if (!Array.isArray(users)) {
+          throw new Error('Invalid response format');
+        }
+
+        // Update stats
+        document.getElementById('totalUsers').textContent = users.length;
+        document.getElementById('adminUsers').textContent = users.filter(u => u.role === 'admin').length;
+        document.getElementById('regularUsers').textContent = users.filter(u => u.role === 'user').length;
+
+        // Render user cards
+        const container = document.getElementById('usersContainer');
+        
+        if (users.length === 0) {
+          container.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">No users found</div>';
+          return;
+        }
+
+        container.innerHTML = users.map(user => `
+          <div class="user-card">
+            <div class="user-info">
+              <h3>
+                ${escapeHtml(user.username)}
+                <span class="user-badge badge-${user.role}">${user.role}</span>
+              </h3>
+              <p><strong>Email:</strong> ${escapeHtml(user.email || 'N/A')}</p>
+              <p><strong>User ID:</strong> ${user.id}</p>
+              <p><strong>Created:</strong> ${formatDate(user.created_at)}</p>
+            </div>
+            <div>
+              ${currentUser && currentUser.id !== user.id ? `
+                <button class="btn-danger" onclick="deleteUser(${user.id}, '${escapeHtml(user.username).replace(/'/g, "\\'")}')">
+                  🗑️ Delete User
+                </button>
+              ` : `
+                <button class="btn-danger" disabled title="Cannot delete your own account">
+                  🗑️ Delete User
+                </button>
+              `}
+            </div>
+          </div>
+        `).join('');
+
+      } catch (error) {
+        console.error('Failed to load users:', error);
+        document.getElementById('usersContainer').innerHTML = 
+          '<div style="text-align: center; padding: 3rem; color: #dc2626;">Error loading users</div>';
+      }
+    }
+
+    // Delete user
+    async function deleteUser(userId, username) {
+      if (!confirm(`⚠️ WARNING: This will permanently delete user "${username}" and ALL their data (sources and leads).\n\nAre you sure you want to continue?`)) {
+        return;
+      }
+
+      if (!confirm(`🔴 FINAL CONFIRMATION: Delete "${username}" and all associated data?`)) {
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/admin/users/${userId}`, {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          alert(`✅ User "${result.deleted.user}" has been deleted\n\n` +
+                `- ${result.deleted.leads} leads deleted\n` +
+                `- ${result.deleted.sources} sources deleted`);
+          loadUsers(); // Reload the list
+        } else {
+          alert(`❌ Error: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Delete user error:', error);
+        alert('❌ Failed to delete user. Check console for details.');
+      }
+    }
+
+    // Initialize
+    (async () => {
+      const isAdmin = await checkAdminAuth();
+      if (isAdmin) {
+        await loadUsers();
+      }
+    })();
+  </script>
+</body>
+</html>

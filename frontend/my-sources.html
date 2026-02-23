@@ -693,6 +693,10 @@
               <img src="icons/user.svg" style="width: 16px; height: 16px; filter: brightness(0) invert(1);">
               <span style="font-size: 0.875rem;">Profile</span>
             </a>
+            <a href="/admin-dashboard.html" id="adminDashboardLink" style="display: none; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; color: rgba(255,255,255,0.9); text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">
+              <img src="icons/admin.svg" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" onerror="this.style.display='none'">
+              <span style="font-size: 0.875rem;">⚡ Admin</span>
+            </a>
             <div style="border-top: 1px solid rgba(255,255,255,0.1); margin: 0.25rem 0;"></div>
             <a href="#" onclick="logout(); return false;" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; color: #ff6b6b; text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='rgba(220,38,38,0.2)'" onmouseout="this.style.background='transparent'">
               <img src="icons/logout.svg" style="width: 16px; height: 16px; filter: brightness(0) saturate(100%) invert(59%) sepia(73%) saturate(2441%) hue-rotate(330deg) brightness(101%) contrast(103%);">
@@ -2043,6 +2047,12 @@ async function loadScreenshots(sources) {
     }
     if (document.getElementById('dropdownUserEmail')) {
       document.getElementById('dropdownUserEmail').textContent = userEmail;
+    }
+    
+    // Show/hide admin link based on user role
+    const adminLink = document.getElementById('adminDashboardLink');
+    if (adminLink && user.role === 'admin') {
+      adminLink.style.display = 'flex';
     }
 
     // Initialize the page after DOM is loaded
