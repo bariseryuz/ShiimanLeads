@@ -176,6 +176,7 @@ async function fetchArcGISRecords(source, logger) {
   let offset = 0;
   const pageSize = 1000;
   let hasMoreRecords = true;
+  let hitTransferLimit = false;
 
   // Pagination loop: fetch all records in batches of 1000
   while (hasMoreRecords) {
@@ -212,8 +213,13 @@ async function fetchArcGISRecords(source, logger) {
       } else {
         allRecords.push(...records);
         
-        // Check if API indicates more records available
-        if (jsonData?.exceededTransferLimit === false || records.length < pageSize) {
+        // Check if API hit transfer limit (exceededTransferLimit = true means there's more data)
+        if (jsonData?.exceededTransferLimit === true) {
+          logger.warn(`   ⚠️ ArcGIS Transfer Limit hit at ${allRecords.length} records`);
+          hitTransferLimit = true;
+          hasMoreRecords = false;
+        } else if (records.length < pageSize) {
+          // Got fewer records than requested = last page
           hasMoreRecords = false;
         } else {
           offset += pageSize;
@@ -225,8 +231,118 @@ async function fetchArcGISRecords(source, logger) {
     }
   }
 
+  // If we hit the transfer limit and got fewer records than expected, warn user
+  if (hitTransferLimit && source.totalRecordCount && allRecords.length < source.totalRecordCount) {
+    logger.warn(`   ⚠️ ArcGIS Server Limit: Got ${allRecords.length} out of ${source.totalRecordCount} total records`);
+    logger.warn(`   💡 Attempting to fetch remaining records using date-range splitting...`);
+    
+    // Try date-based splitting if a date field is available
+    if (source.dateField) {
+      try {
+        const additionalRecords = await fetchWithDateSplitting(apiUrl, headers, source.dateField, allRecords.length, logger);
+        if (additionalRecords.length > 0) {
+          logger.info(`   ✅ Retrieved ${additionalRecords.length} additional records via date splitting`);
+          allRecords.push(...additionalRecords);
+        }
+      } catch (splitErr) {
+        logger.warn(`   ⚠️ Date splitting failed: ${splitErr.message}`);
+      }
+    } else {
+      logger.warn(`   💡 To get all records, add 'dateField' to your source config (e.g., "created_date")`);
+      logger.warn(`   💡 Or contact ArcGIS admin to increase MaxRecordCount server limit`);
+    }
+  }
+
   logger.info(`   ✅ ArcGIS fetched ${allRecords.length} total records`);
   return { apiUrl, records: allRecords };
+}
+
+/**
+ * Fetch additional records using date-range splitting when transfer limit is hit
+ * @param {string} baseApiUrl - Base API URL
+ * @param {object} headers - Request headers
+ * @param {string} dateField - Date field name for splitting
+ * @param {number} alreadyFetched - Number of records already fetched
+ * @param {object} logger - Logger instance
+ * @returns {Promise<Array>} Additional records
+ */
+async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFetched, logger) {
+  const additionalRecords = [];
+  
+  // Get the date range of the data
+  const statsUrl = new URL(baseApiUrl);
+  statsUrl.searchParams.set('where', '1=1');
+  statsUrl.searchParams.set('outStatistics', JSON.stringify([
+    { statisticType: 'min', onStatisticField: dateField, outStatisticFieldName: 'min_date' },
+    { statisticType: 'max', onStatisticField: dateField, outStatisticFieldName: 'max_date' }
+  ]));
+  statsUrl.searchParams.set('f', 'json');
+  
+  try {
+    const statsResponse = await axios.get(statsUrl.toString(), { headers, timeout: 30000 });
+    const stats = statsResponse.data?.features?.[0]?.attributes;
+    
+    if (!stats || !stats.min_date || !stats.max_date) {
+      throw new Error('Could not retrieve date range');
+    }
+    
+    const minDate = new Date(stats.min_date);
+    const maxDate = new Date(stats.max_date);
+    logger.info(`   📅 Date range: ${minDate.toISOString()} to ${maxDate.toISOString()}`);
+    
+    // Split into year ranges
+    const yearRanges = [];
+    let currentYear = minDate.getFullYear();
+    const endYear = maxDate.getFullYear();
+    
+    while (currentYear <= endYear) {
+      yearRanges.push({
+        start: new Date(currentYear, 0, 1).getTime(),
+        end: new Date(currentYear, 11, 31, 23, 59, 59).getTime(),
+        year: currentYear
+      });
+      currentYear++;
+    }
+    
+    // Fetch records for each year
+    for (const range of yearRanges) {
+      const whereClause = `${dateField} >= ${range.start} AND ${dateField} <= ${range.end}`;
+      const rangeUrl = new URL(baseApiUrl);
+      rangeUrl.searchParams.set('where', whereClause);
+      rangeUrl.searchParams.set('resultRecordCount', '1000');
+      rangeUrl.searchParams.set('resultOffset', '0');
+      
+      let rangeOffset = 0;
+      let hasMore = true;
+      
+      while (hasMore) {
+        rangeUrl.searchParams.set('resultOffset', rangeOffset.toString());
+        
+        const response = await axios.get(rangeUrl.toString(), { headers, timeout: 30000 });
+        const jsonData = response.data;
+        
+        const records = jsonData?.features?.map(f => f.attributes || f) || [];
+        
+        if (records.length === 0 || records.length < 1000) {
+          hasMore = false;
+        } else {
+          rangeOffset += 1000;
+        }
+        
+        additionalRecords.push(...records);
+        
+        // Stop if we've fetched enough to reach the total
+        if (additionalRecords.length + alreadyFetched >= 140000) break;
+      }
+      
+      if (additionalRecords.length + alreadyFetched >= 140000) break;
+    }
+    
+  } catch (err) {
+    logger.warn(`   ⚠️ Date splitting error: ${err.message}`);
+  }
+  
+  return additionalRecords;
 }
 
 module.exports = {
