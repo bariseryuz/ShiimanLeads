@@ -934,6 +934,12 @@
     let allSourcesData = [];
     let currentSourceSchema = null;
     let metricsExpanded = false;
+    
+    // Pagination variables
+    let currentOffset = 0;
+    let currentLimit = 1000;
+    let isLoadingMore = false;
+    let hasMoreLeads = true;
 
     // Toggle metrics panel
     function toggleMetrics() {
@@ -1050,20 +1056,32 @@
     }
 
     // Load leads - each source gets its own separate table
-    async function loadLeads() {
+    async function loadLeads(appendMode = false) {
+      // If not appending (new search), reset pagination
+      if (!appendMode) {
+        currentOffset = 0;
+        hasMoreLeads = true;
+      }
+      
+      if (isLoadingMore) return; // Prevent duplicate requests
+      isLoadingMore = true;
+      
       const sourceId = document.getElementById('sourceFilter').value;
       const days = document.getElementById('daysFilter').value;
       const search = document.getElementById('searchInput').value.trim();
       
       const params = new URLSearchParams();
-      params.set('limit', '500');
+      params.set('limit', String(currentLimit));
+      params.set('offset', String(currentOffset));
       if (sourceId) params.set('source_id', sourceId);
       if (days) params.set('days', days);
       if (search) params.set('q', search);
       
       const leadsDisplayDiv = document.getElementById('leadsDisplayDiv');
       
-      leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</div>';
+      if (!appendMode) {
+        leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</div>';
+      }
       
       try {
         const response = await fetch('/api/leads?' + params.toString());
@@ -1071,11 +1089,18 @@
         const leads = result.data || [];
         
         if (leads.length === 0) {
-          leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</div>';
-          document.getElementById('statusMessage').textContent = '';
-          document.getElementById('totalLeads').textContent = '0';
+          if (!appendMode) {
+            leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</div>';
+            document.getElementById('statusMessage').textContent = '';
+            document.getElementById('totalLeads').textContent = '0';
+          }
+          hasMoreLeads = false;
+          isLoadingMore = false;
           return;
         }
+        
+        // Check if there are more leads to load
+        hasMoreLeads = leads.length === currentLimit;
         
         // Group leads by source_id
         const leadsBySource = {};
@@ -1090,8 +1115,10 @@
         // If viewing single source, hide the old header
         document.getElementById('currentSourceHeader').style.display = 'none';
         
-        // Render each source in its own table
-        leadsDisplayDiv.innerHTML = '';
+        // Clear on first load, append on subsequent loads
+        if (!appendMode) {
+          leadsDisplayDiv.innerHTML = '';
+        }
         
         for (const srcId in leadsBySource) {
           const sourceLeads = leadsBySource[srcId];
@@ -1108,178 +1135,226 @@
             console.warn('Could not fetch schema for source', srcId);
           }
           
-          // Create container for this source
-          const sourceContainer = document.createElement('div');
-          sourceContainer.style.cssText = 'margin-bottom: 2rem;';
+          // Find or create container for this source
+          let sourceContainer = leadsDisplayDiv.querySelector(`[data-source-id="${srcId}"]`);
+          let tbody;
           
-          // Source header
-          const sourceHeader = document.createElement('div');
-          sourceHeader.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem 1.5rem; border-radius: 12px 12px 0 0; color: white;';
-          sourceHeader.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; font-weight: 600;">${escapeHtml(sourceName)}</h3>
-                <p style="margin: 0; opacity: 0.9; font-size: 0.875rem;">${sourceLeads.length} lead${sourceLeads.length !== 1 ? 's' : ''}</p>
+          if (!sourceContainer) {
+            // Create new source container
+            sourceContainer = document.createElement('div');
+            sourceContainer.setAttribute('data-source-id', srcId);
+            sourceContainer.style.cssText = 'margin-bottom: 2rem;';
+            
+            // Source header
+            const sourceHeader = document.createElement('div');
+            sourceHeader.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem 1.5rem; border-radius: 12px 12px 0 0; color: white;';
+            sourceHeader.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; font-weight: 600;">${escapeHtml(sourceName)}</h3>
+                  <p style="margin: 0; opacity: 0.9; font-size: 0.875rem;" class="source-lead-count">${sourceLeads.length} lead${sourceLeads.length !== 1 ? 's' : ''}</p>
+                </div>
               </div>
-            </div>
-          `;
-          
-          // Table container
-          const tableContainer = document.createElement('div');
-          tableContainer.className = 'table-container';
-          tableContainer.style.cssText = 'overflow-x: auto; max-width: 100%; background: white; border: 1px solid var(--gray-200); border-top: none; border-radius: 0 0 12px 12px;';
-          
-          const table = document.createElement('table');
-          table.style.cssText = 'margin: 0; border-radius: 0;';
-          
-          const thead = document.createElement('thead');
-          const tbody = document.createElement('tbody');
-          
-          // Determine columns to display
-          let fieldNames = [];
-          let useAutoDetect = true;
-          
-          // Check if fieldSchema columns actually exist in the data
-          if (Object.keys(fieldSchema).length > 0) {
-            const schemaColumns = Object.keys(fieldSchema);
-            const dataHasSchemaColumns = schemaColumns.some(col => 
-              firstLead[col] !== null && firstLead[col] !== undefined && firstLead[col] !== ''
-            );
+            `;
             
-            if (dataHasSchemaColumns) {
-              fieldNames = schemaColumns;
-              useAutoDetect = false;
+            // Table container
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'table-container';
+            tableContainer.style.cssText = 'overflow-x: auto; max-width: 100%; background: white; border: 1px solid var(--gray-200); border-top: none; border-radius: 0 0 12px 12px;';
+            
+            const table = document.createElement('table');
+            table.style.cssText = 'margin: 0; border-radius: 0;';
+            
+            const thead = document.createElement('thead');
+            tbody = document.createElement('tbody');
+            table.setAttribute('data-table-source', srcId);
+            
+            // Determine columns to display
+            let fieldNames = [];
+            let useAutoDetect = true;
+            
+            // Check if fieldSchema columns actually exist in the data
+            if (Object.keys(fieldSchema).length > 0) {
+              const schemaColumns = Object.keys(fieldSchema);
+              const dataHasSchemaColumns = schemaColumns.some(col => 
+                firstLead[col] !== null && firstLead[col] !== undefined && firstLead[col] !== ''
+              );
+              
+              if (dataHasSchemaColumns) {
+                fieldNames = schemaColumns;
+                useAutoDetect = false;
+              }
             }
-          }
-          
-          if (useAutoDetect) {
-            // ✅ UNIVERSAL AUTO-DETECT - No hard-coded field assumptions
-            const excludeColumns = [
-              'id', 'user_id', 'created_at', 'updated_at', 'hash', 'raw_text', 'is_new', 'source_id', 
-              'source', '_source_name', '_source_id', 'raw_data', 'unique_id', 'source_name',
-              'seen_count', 'last_seen_at', 'extracted_data', 'canonical_hash', 'dedup_hash',
-              'ai_confidence', 'ai_validated', 'primary_id', 'data', 'raw', 'title'
-            ];
             
-            // Get all non-excluded columns
-            let allColumns = Object.keys(firstLead).filter(col => 
-              !excludeColumns.includes(col) && !col.startsWith('_')
-            );
+            if (useAutoDetect) {
+              // ✅ UNIVERSAL AUTO-DETECT - No hard-coded field assumptions
+              const excludeColumns = [
+                'id', 'user_id', 'created_at', 'updated_at', 'hash', 'raw_text', 'is_new', 'source_id', 
+                'source', '_source_name', '_source_id', 'raw_data', 'unique_id', 'source_name',
+                'seen_count', 'last_seen_at', 'extracted_data', 'canonical_hash', 'dedup_hash',
+                'ai_confidence', 'ai_validated', 'primary_id', 'data', 'raw', 'title'
+              ];
+              
+              // Get all non-excluded columns
+              let allColumns = Object.keys(firstLead).filter(col => 
+                !excludeColumns.includes(col) && !col.startsWith('_')
+              );
+              
+              // ✅ UNIVERSAL SORTING: Link fields first, then columns with data
+              fieldNames = allColumns.sort((a, b) => {
+                // Check if columns have data
+                const aHasData = sourceLeads.some(l => l[a] !== null && l[a] !== undefined && l[a] !== '');
+                const bHasData = sourceLeads.some(l => l[b] !== null && l[b] !== undefined && l[b] !== '');
+                
+                // Check if columns are link/url fields
+                const aIsLink = a.toLowerCase().includes('link') || a.toLowerCase().includes('url');
+                const bIsLink = b.toLowerCase().includes('link') || b.toLowerCase().includes('url');
+                
+                // Prioritize link fields first
+                if (aIsLink && !bIsLink) return -1;
+                if (!aIsLink && bIsLink) return 1;
+                
+                // Then prioritize columns with data
+                if (aHasData && !bHasData) return -1;
+                if (!aHasData && bHasData) return 1;
+                
+                return 0;
+              });
+            }
             
-            // ✅ UNIVERSAL SORTING: Link fields first, then columns with data
-            fieldNames = allColumns.sort((a, b) => {
-              // Check if columns have data
-              const aHasData = sourceLeads.some(l => l[a] !== null && l[a] !== undefined && l[a] !== '');
-              const bHasData = sourceLeads.some(l => l[b] !== null && l[b] !== undefined && l[b] !== '');
-              
-              // Check if columns are link/url fields
-              const aIsLink = a.toLowerCase().includes('link') || a.toLowerCase().includes('url');
-              const bIsLink = b.toLowerCase().includes('link') || b.toLowerCase().includes('url');
-              
-              // Prioritize link fields first
-              if (aIsLink && !bIsLink) return -1;
-              if (!aIsLink && bIsLink) return 1;
-              
-              // Then prioritize columns with data
-              if (aHasData && !bHasData) return -1;
-              if (!aHasData && bHasData) return 1;
-              
-              return 0;
+            // Move link/url field to first position if it exists and not already first
+            const linkField = fieldNames.find(f => f.toLowerCase().includes('link') || f.toLowerCase().includes('url'));
+            if (linkField && fieldNames.indexOf(linkField) > 0) {
+              fieldNames = fieldNames.filter(f => f !== linkField);
+              fieldNames.unshift(linkField);
+            }
+            
+            // Build header
+            const headerRow = document.createElement('tr');
+            fieldNames.forEach(field => {
+              const th = document.createElement('th');
+              th.textContent = formatFieldName(field);
+              if (fieldSchema[field]) {
+                th.title = fieldSchema[field];
+              }
+              headerRow.appendChild(th);
             });
+            
+            // Add date column
+            const dateTh = document.createElement('th');
+            dateTh.textContent = 'Added';
+            dateTh.style.whiteSpace = 'nowrap';
+            headerRow.appendChild(dateTh);
+            
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            table.appendChild(tbody);
+            tableContainer.appendChild(table);
+            
+            sourceContainer.appendChild(sourceHeader);
+            sourceContainer.appendChild(tableContainer);
+            leadsDisplayDiv.appendChild(sourceContainer);
+          } else {
+            // Find existing tbody
+            tbody = leadsDisplayDiv.querySelector(`[data-table-source="${srcId}"] tbody`);
+            // Update lead count
+            const leadCountEl = sourceContainer.querySelector('.source-lead-count');
+            const currentCount = parseInt(leadCountEl.textContent) || 0;
+            leadCountEl.textContent = `${currentCount + sourceLeads.length} leads`;
           }
           
-          // Move link/url field to first position if it exists and not already first
-          const linkField = fieldNames.find(f => f.toLowerCase().includes('link') || f.toLowerCase().includes('url'));
-
-if (linkField && fieldNames.indexOf(linkField) > 0) {
-  fieldNames = fieldNames.filter(f => f !== linkField);
-  fieldNames.unshift(linkField);
-}
-
-// Build header
-const headerRow = document.createElement('tr');
-fieldNames.forEach(field => {
-  const th = document.createElement('th');
-  th.textContent = formatFieldName(field);
-  if (fieldSchema[field]) {
-    th.title = fieldSchema[field]; // Show description on hover
-  }
-  headerRow.appendChild(th);
-});
-
-// Add date column
-const dateTh = document.createElement('th');
-dateTh.textContent = 'Added';
-dateTh.style.whiteSpace = 'nowrap';
-headerRow.appendChild(dateTh);
-
-thead.appendChild(headerRow);
-
-// Build rows
-sourceLeads.forEach(lead => {
-  const tr = document.createElement('tr');
-  if (lead.is_new === 1 && currentNewLeadFilter === 'new') {
-    tr.classList.add('new-lead');
-  }
-  
-  fieldNames.forEach(field => {
-    const td = document.createElement('td');
-    let value = lead[field];
-    
-    // ✅ UNIVERSAL: Try to get value from raw_data JSON if not at top level
-    if ((value === null || value === undefined || value === '') && lead.raw_data) {
-      try {
-        const rawData = typeof lead.raw_data === 'string' ? JSON.parse(lead.raw_data) : lead.raw_data;
-        value = rawData[field];
-      } catch (e) {
-        // Not JSON, ignore
-      }
-    }
-    
-    // Handle URL fields
-    if (value && (field.toLowerCase().includes('url') || field.toLowerCase().includes('link'))) {
-      td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
-    } else if (value === null || value === undefined || value === '') {
-      td.textContent = '-';
-    } else if (field.toLowerCase().includes('cost') || field.toLowerCase().includes('value') || field.toLowerCase().includes('amount') || field.toLowerCase().includes('price') || field.toLowerCase().includes('fee')) {
-      // Format currency fields
-      td.textContent = formatCurrency(value);
-    } else if (field.toLowerCase().includes('date') && !field.toLowerCase().includes('update')) {
-      // Format date fields (except updated_at)
-      td.textContent = formatDate(value);
-    } else {
-      td.textContent = value;
-    }
-    
-    tr.appendChild(td);
-  });
-  
-  // Add date
-  const dateTd = document.createElement('td');
-  dateTd.style.whiteSpace = 'nowrap';
-  dateTd.textContent = formatDate(lead.created_at || new Date().toISOString());
-  tr.appendChild(dateTd);
-  
-  tbody.appendChild(tr);
-});
+          // Build rows (same for both new and append)
+          const fieldNames = Array.from(tbody.parentElement.querySelector('thead tr').querySelectorAll('th'))
+            .map(th => th.textContent)
+            .filter(text => text !== 'Added');
           
-          table.appendChild(thead);
-          table.appendChild(tbody);
-          tableContainer.appendChild(table);
-          
-          sourceContainer.appendChild(sourceHeader);
-          sourceContainer.appendChild(tableContainer);
-          
-          leadsDisplayDiv.appendChild(sourceContainer);
+          sourceLeads.forEach(lead => {
+            const tr = document.createElement('tr');
+            if (lead.is_new === 1 && currentNewLeadFilter === 'new') {
+              tr.classList.add('new-lead');
+            }
+            
+            fieldNames.forEach(field => {
+              const td = document.createElement('td');
+              let value = lead[field];
+              
+              // ✅ UNIVERSAL: Try to get value from raw_data JSON if not at top level
+              if ((value === null || value === undefined || value === '') && lead.raw_data) {
+                try {
+                  const rawData = typeof lead.raw_data === 'string' ? JSON.parse(lead.raw_data) : lead.raw_data;
+                  value = rawData[field];
+                } catch (e) {
+                  // Not JSON, ignore
+                }
+              }
+              
+              // Handle URL fields
+              if (value && (field.toLowerCase().includes('url') || field.toLowerCase().includes('link'))) {
+                td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
+              } else if (value === null || value === undefined || value === '') {
+                td.textContent = '-';
+              } else if (field.toLowerCase().includes('cost') || field.toLowerCase().includes('value') || field.toLowerCase().includes('amount') || field.toLowerCase().includes('price') || field.toLowerCase().includes('fee')) {
+                // Format currency fields
+                td.textContent = formatCurrency(value);
+              } else if (field.toLowerCase().includes('date') && !field.toLowerCase().includes('update')) {
+                // Format date fields (except updated_at)
+                td.textContent = formatDate(value);
+              } else {
+                td.textContent = value;
+              }
+              
+              tr.appendChild(td);
+            });
+            
+            // Add date
+            const dateTd = document.createElement('td');
+            dateTd.style.whiteSpace = 'nowrap';
+            dateTd.textContent = formatDate(lead.created_at || new Date().toISOString());
+            tr.appendChild(dateTd);
+            
+            tbody.appendChild(tr);
+          });
         }
         
-        // Don't override totalLeads stat - it should show actual total, not filtered count
-        document.getElementById('statusMessage').textContent = `Showing ${leads.length} lead(s)`;
-        // REMOVED: document.getElementById('totalLeads').textContent = leads.length;
+        // Update status and pagination
+        const totalShown = leadsDisplayDiv.querySelectorAll('tbody tr').length;
+        document.getElementById('statusMessage').textContent = `Showing ${totalShown} lead(s)`;
+        
+        // Add "Load More" button if there are more leads
+        if (hasMoreLeads) {
+          const existingLoadMoreBtn = document.getElementById('loadMoreBtn');
+          if (existingLoadMoreBtn) {
+            existingLoadMoreBtn.remove();
+          }
+          
+          const loadMoreContainer = document.createElement('div');
+          loadMoreContainer.style.cssText = 'text-align: center; margin-top: 2rem; padding: 1rem;';
+          
+          const loadMoreBtn = document.createElement('button');
+          loadMoreBtn.id = 'loadMoreBtn';
+          loadMoreBtn.className = 'btn btn-primary';
+          loadMoreBtn.textContent = 'Load More Leads';
+          loadMoreBtn.style.cssText = 'padding: 0.75rem 1.5rem; font-size: 1rem;';
+          loadMoreBtn.onclick = async () => {
+            currentOffset += currentLimit;
+            await loadLeads(true);
+          };
+          
+          loadMoreContainer.appendChild(loadMoreBtn);
+          leadsDisplayDiv.appendChild(loadMoreContainer);
+        } else {
+          const existingLoadMoreBtn = document.getElementById('loadMoreBtn');
+          if (existingLoadMoreBtn) {
+            existingLoadMoreBtn.parentElement.remove();
+          }
+        }
+        
+        isLoadingMore = false;
         
       } catch (error) {
         console.error('Failed to load leads:', error);
         leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">Error loading leads. Please try again.</div>';
+        isLoadingMore = false;
       }
     }
         

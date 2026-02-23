@@ -13,7 +13,8 @@ router.get('/', async (req, res) => {
     const userId = req.session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
-    const limit = Math.min(parseInt(req.query.limit || '200', 10) || 200, 1000);
+    const limit = Math.min(parseInt(req.query.limit || '500', 10) || 500, 1000);
+    const offset = Math.max(parseInt(req.query.offset || '0', 10) || 0, 0);
     const sourceId = req.query.source_id ? parseInt(req.query.source_id, 10) : null;
     const q = req.query.q ? String(req.query.q) : null;
     const days = req.query.days ? parseInt(req.query.days, 10) : null;
@@ -55,8 +56,9 @@ router.get('/', async (req, res) => {
       params.push(cutoff);
     }
 
-    const leadsSQL = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`;
+    const leadsSQL = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ? OFFSET ?`;
     params.push(limit);
+    params.push(offset);
 
     const leadsRows = db.prepare(leadsSQL).all(...params);
 
