@@ -862,6 +862,12 @@
             <textarea id="arcgisNavigation" class="form-input" rows="4" placeholder='[{"type": "click", "selector": ".view-btn", "waitAfter": 2000}]'></textarea>
             <small style="color: var(--gray-600);">Optional: Add click/fill/wait actions before API extraction. Types: "click", "fill", "wait". Max 3 instructions.</small>
           </div>
+
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label class="form-label" for="arcgisDateField">Date Field for Year Split (Optional)</label>
+            <input type="text" id="arcgisDateField" class="form-input" placeholder="ApplicationDate">
+            <small style="color: var(--gray-600);">Use the dataset date column to split large ArcGIS pulls by year (e.g., ApplicationDate).</small>
+          </div>
         </div>
         
         <!-- AI PROMPT FIELD - THE MAIN FEATURE (hidden for JSON API) -->
@@ -1006,6 +1012,7 @@
       // Clear navigation instructions if switching away from ArcGIS
       if (!isArcGIS) {
         document.getElementById('arcgisNavigation').value = '';
+        document.getElementById('arcgisDateField').value = '';
       }
       
       // Show/hide AI fields
@@ -1324,6 +1331,7 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'html';
       document.getElementById('arcgisNavigation').value = '';
+      document.getElementById('arcgisDateField').value = '';
       toggleSourceTypeFields(); // Initialize UI based on type
       
       // Set proxy to enabled by default
@@ -1344,6 +1352,7 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceId').value = '';
       document.getElementById('sourceType').value = 'arcgis';
       document.getElementById('arcgisNavigation').value = '';
+      document.getElementById('arcgisDateField').value = '';
       toggleSourceTypeFields();
 
       document.getElementById('useProxy').checked = true;
@@ -1394,6 +1403,7 @@ async function loadScreenshots(sources) {
         } else if (sourceType === 'arcgis') {
           // Load ArcGIS-specific fields
           document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
+          document.getElementById('arcgisDateField').value = source.data.dateField || '';
         } else {
           document.getElementById('apiMethod').value = 'GET';
           document.getElementById('apiParams').value = '';
@@ -1710,6 +1720,11 @@ async function loadScreenshots(sources) {
             alert('Invalid JSON in Navigation Instructions field');
             return;
           }
+        }
+
+        const arcgisDateField = document.getElementById('arcgisDateField').value.trim();
+        if (arcgisDateField) {
+          sourceData.dateField = arcgisDateField;
         }
       } else {
         // HTML/AI Website Scraper mode (default)
