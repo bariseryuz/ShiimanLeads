@@ -1723,8 +1723,12 @@ async function loadScreenshots(sources) {
         }
 
         const arcgisDateField = document.getElementById('arcgisDateField').value.trim();
+        console.log('🗓️ ArcGIS Date Field:', arcgisDateField);
         if (arcgisDateField) {
           sourceData.dateField = arcgisDateField;
+          console.log('✅ Set sourceData.dateField =', arcgisDateField);
+        } else {
+          console.log('⚠️ ArcGIS Date Field is empty');
         }
       } else {
         // HTML/AI Website Scraper mode (default)
