@@ -13,7 +13,7 @@ router.get('/', async (req, res) => {
     const userId = req.session?.user?.id;
     if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
-    const limit = Math.min(parseInt(req.query.limit || '500', 10) || 500, 1000);
+    const limit = Math.min(parseInt(req.query.limit || '50', 10) || 50, 500);
     const offset = Math.max(parseInt(req.query.offset || '0', 10) || 0, 0);
     const sourceId = req.query.source_id ? parseInt(req.query.source_id, 10) : null;
     const q = req.query.q ? String(req.query.q) : null;

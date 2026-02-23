@@ -936,10 +936,12 @@
     let metricsExpanded = false;
     
     // Pagination variables
-    let currentOffset = 0;
-    let currentLimit = 1000;
+    let currentPage = 1;
+    let currentLimit = 50;
+    let totalLeadsCount = 0;
+    let totalPages = 0;
     let isLoadingMore = false;
-    let hasMoreLeads = true;
+    let currentFilters = {};
 
     // Toggle metrics panel
     function toggleMetrics() {
@@ -1055,33 +1057,33 @@
       loadLeads();
     }
 
-    // Load leads - each source gets its own separate table
-    async function loadLeads(appendMode = false) {
-      // If not appending (new search), reset pagination
-      if (!appendMode) {
-        currentOffset = 0;
-        hasMoreLeads = true;
-      }
+    // Load leads - pagination with page numbers
+    async function loadLeads(pageNum = 1) {
+      // Update current page
+      currentPage = Math.max(1, pageNum);
       
-      if (isLoadingMore) return; // Prevent duplicate requests
-      isLoadingMore = true;
-      
+      // Store current filters
       const sourceId = document.getElementById('sourceFilter').value;
       const days = document.getElementById('daysFilter').value;
       const search = document.getElementById('searchInput').value.trim();
       
+      currentFilters = { sourceId, days, search };
+      
+      if (isLoadingMore) return; // Prevent duplicate requests
+      isLoadingMore = true;
+      
+      // Calculate offset from page number
+      const offset = (currentPage - 1) * currentLimit;
+      
       const params = new URLSearchParams();
       params.set('limit', String(currentLimit));
-      params.set('offset', String(currentOffset));
+      params.set('offset', String(offset));
       if (sourceId) params.set('source_id', sourceId);
       if (days) params.set('days', days);
       if (search) params.set('q', search);
       
       const leadsDisplayDiv = document.getElementById('leadsDisplayDiv');
-      
-      if (!appendMode) {
-        leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</div>';
-      }
+      leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</div>';
       
       try {
         const response = await fetch('/api/leads?' + params.toString());
@@ -1089,18 +1091,11 @@
         const leads = result.data || [];
         
         if (leads.length === 0) {
-          if (!appendMode) {
-            leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</div>';
-            document.getElementById('statusMessage').textContent = '';
-            document.getElementById('totalLeads').textContent = '0';
-          }
-          hasMoreLeads = false;
+          leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</div>';
+          document.getElementById('statusMessage').textContent = '';
           isLoadingMore = false;
           return;
         }
-        
-        // Check if there are more leads to load
-        hasMoreLeads = leads.length === currentLimit;
         
         // Group leads by source_id
         const leadsBySource = {};
@@ -1115,10 +1110,8 @@
         // If viewing single source, hide the old header
         document.getElementById('currentSourceHeader').style.display = 'none';
         
-        // Clear on first load, append on subsequent loads
-        if (!appendMode) {
-          leadsDisplayDiv.innerHTML = '';
-        }
+        // Clear display
+        leadsDisplayDiv.innerHTML = '';
         
         for (const srcId in leadsBySource) {
           const sourceLeads = leadsBySource[srcId];
@@ -1135,139 +1128,115 @@
             console.warn('Could not fetch schema for source', srcId);
           }
           
-          // Find or create container for this source
-          let sourceContainer = leadsDisplayDiv.querySelector(`[data-source-id="${srcId}"]`);
-          let tbody;
+          // Create container for this source
+          const sourceContainer = document.createElement('div');
+          sourceContainer.setAttribute('data-source-id', srcId);
+          sourceContainer.style.cssText = 'margin-bottom: 2rem;';
           
-          if (!sourceContainer) {
-            // Create new source container
-            sourceContainer = document.createElement('div');
-            sourceContainer.setAttribute('data-source-id', srcId);
-            sourceContainer.style.cssText = 'margin-bottom: 2rem;';
-            
-            // Source header
-            const sourceHeader = document.createElement('div');
-            sourceHeader.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem 1.5rem; border-radius: 12px 12px 0 0; color: white;';
-            sourceHeader.innerHTML = `
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; font-weight: 600;">${escapeHtml(sourceName)}</h3>
-                  <p style="margin: 0; opacity: 0.9; font-size: 0.875rem;" class="source-lead-count">${sourceLeads.length} lead${sourceLeads.length !== 1 ? 's' : ''}</p>
-                </div>
+          // Source header
+          const sourceHeader = document.createElement('div');
+          sourceHeader.style.cssText = 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem 1.5rem; border-radius: 12px 12px 0 0; color: white;';
+          sourceHeader.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; font-weight: 600;">${escapeHtml(sourceName)}</h3>
+                <p style="margin: 0; opacity: 0.9; font-size: 0.875rem;" class="source-lead-count">${sourceLeads.length} lead${sourceLeads.length !== 1 ? 's' : ''}</p>
               </div>
-            `;
+            </div>
+          `;
+          
+          // Table container
+          const tableContainer = document.createElement('div');
+          tableContainer.className = 'table-container';
+          tableContainer.style.cssText = 'overflow-x: auto; max-width: 100%; background: white; border: 1px solid var(--gray-200); border-top: none; border-radius: 0 0 12px 12px;';
+          
+          const table = document.createElement('table');
+          table.style.cssText = 'margin: 0; border-radius: 0;';
+          
+          const thead = document.createElement('thead');
+          const tbody = document.createElement('tbody');
+          table.setAttribute('data-table-source', srcId);
+          
+          // Determine columns to display
+          let fieldNames = [];
+          let useAutoDetect = true;
+          
+          // Check if fieldSchema columns actually exist in the data
+          if (Object.keys(fieldSchema).length > 0) {
+            const schemaColumns = Object.keys(fieldSchema);
+            const dataHasSchemaColumns = schemaColumns.some(col => 
+              firstLead[col] !== null && firstLead[col] !== undefined && firstLead[col] !== ''
+            );
             
-            // Table container
-            const tableContainer = document.createElement('div');
-            tableContainer.className = 'table-container';
-            tableContainer.style.cssText = 'overflow-x: auto; max-width: 100%; background: white; border: 1px solid var(--gray-200); border-top: none; border-radius: 0 0 12px 12px;';
-            
-            const table = document.createElement('table');
-            table.style.cssText = 'margin: 0; border-radius: 0;';
-            
-            const thead = document.createElement('thead');
-            tbody = document.createElement('tbody');
-            table.setAttribute('data-table-source', srcId);
-            
-            // Determine columns to display
-            let fieldNames = [];
-            let useAutoDetect = true;
-            
-            // Check if fieldSchema columns actually exist in the data
-            if (Object.keys(fieldSchema).length > 0) {
-              const schemaColumns = Object.keys(fieldSchema);
-              const dataHasSchemaColumns = schemaColumns.some(col => 
-                firstLead[col] !== null && firstLead[col] !== undefined && firstLead[col] !== ''
-              );
-              
-              if (dataHasSchemaColumns) {
-                fieldNames = schemaColumns;
-                useAutoDetect = false;
-              }
+            if (dataHasSchemaColumns) {
+              fieldNames = schemaColumns;
+              useAutoDetect = false;
             }
-            
-            if (useAutoDetect) {
-              // ✅ UNIVERSAL AUTO-DETECT - No hard-coded field assumptions
-              const excludeColumns = [
-                'id', 'user_id', 'created_at', 'updated_at', 'hash', 'raw_text', 'is_new', 'source_id', 
-                'source', '_source_name', '_source_id', 'raw_data', 'unique_id', 'source_name',
-                'seen_count', 'last_seen_at', 'extracted_data', 'canonical_hash', 'dedup_hash',
-                'ai_confidence', 'ai_validated', 'primary_id', 'data', 'raw', 'title'
-              ];
-              
-              // Get all non-excluded columns
-              let allColumns = Object.keys(firstLead).filter(col => 
-                !excludeColumns.includes(col) && !col.startsWith('_')
-              );
-              
-              // ✅ UNIVERSAL SORTING: Link fields first, then columns with data
-              fieldNames = allColumns.sort((a, b) => {
-                // Check if columns have data
-                const aHasData = sourceLeads.some(l => l[a] !== null && l[a] !== undefined && l[a] !== '');
-                const bHasData = sourceLeads.some(l => l[b] !== null && l[b] !== undefined && l[b] !== '');
-                
-                // Check if columns are link/url fields
-                const aIsLink = a.toLowerCase().includes('link') || a.toLowerCase().includes('url');
-                const bIsLink = b.toLowerCase().includes('link') || b.toLowerCase().includes('url');
-                
-                // Prioritize link fields first
-                if (aIsLink && !bIsLink) return -1;
-                if (!aIsLink && bIsLink) return 1;
-                
-                // Then prioritize columns with data
-                if (aHasData && !bHasData) return -1;
-                if (!aHasData && bHasData) return 1;
-                
-                return 0;
-              });
-            }
-            
-            // Move link/url field to first position if it exists and not already first
-            const linkField = fieldNames.find(f => f.toLowerCase().includes('link') || f.toLowerCase().includes('url'));
-            if (linkField && fieldNames.indexOf(linkField) > 0) {
-              fieldNames = fieldNames.filter(f => f !== linkField);
-              fieldNames.unshift(linkField);
-            }
-            
-            // Build header
-            const headerRow = document.createElement('tr');
-            fieldNames.forEach(field => {
-              const th = document.createElement('th');
-              th.textContent = formatFieldName(field);
-              if (fieldSchema[field]) {
-                th.title = fieldSchema[field];
-              }
-              headerRow.appendChild(th);
-            });
-            
-            // Add date column
-            const dateTh = document.createElement('th');
-            dateTh.textContent = 'Added';
-            dateTh.style.whiteSpace = 'nowrap';
-            headerRow.appendChild(dateTh);
-            
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
-            table.appendChild(tbody);
-            tableContainer.appendChild(table);
-            
-            sourceContainer.appendChild(sourceHeader);
-            sourceContainer.appendChild(tableContainer);
-            leadsDisplayDiv.appendChild(sourceContainer);
-          } else {
-            // Find existing tbody
-            tbody = leadsDisplayDiv.querySelector(`[data-table-source="${srcId}"] tbody`);
-            // Update lead count
-            const leadCountEl = sourceContainer.querySelector('.source-lead-count');
-            const currentCount = parseInt(leadCountEl.textContent) || 0;
-            leadCountEl.textContent = `${currentCount + sourceLeads.length} leads`;
           }
           
-          // Build rows (same for both new and append)
-          const fieldNames = Array.from(tbody.parentElement.querySelector('thead tr').querySelectorAll('th'))
-            .map(th => th.textContent)
-            .filter(text => text !== 'Added');
+          if (useAutoDetect) {
+            // ✅ UNIVERSAL AUTO-DETECT - No hard-coded field assumptions
+            const excludeColumns = [
+              'id', 'user_id', 'created_at', 'updated_at', 'hash', 'raw_text', 'is_new', 'source_id', 
+              'source', '_source_name', '_source_id', 'raw_data', 'unique_id', 'source_name',
+              'seen_count', 'last_seen_at', 'extracted_data', 'canonical_hash', 'dedup_hash',
+              'ai_confidence', 'ai_validated', 'primary_id', 'data', 'raw', 'title'
+            ];
+            
+            // Get all non-excluded columns
+            let allColumns = Object.keys(firstLead).filter(col => 
+              !excludeColumns.includes(col) && !col.startsWith('_')
+            );
+            
+            // ✅ UNIVERSAL SORTING: Link fields first, then columns with data
+            fieldNames = allColumns.sort((a, b) => {
+              // Check if columns have data
+              const aHasData = sourceLeads.some(l => l[a] !== null && l[a] !== undefined && l[a] !== '');
+              const bHasData = sourceLeads.some(l => l[b] !== null && l[b] !== undefined && l[b] !== '');
+              
+              // Check if columns are link/url fields
+              const aIsLink = a.toLowerCase().includes('link') || a.toLowerCase().includes('url');
+              const bIsLink = b.toLowerCase().includes('link') || b.toLowerCase().includes('url');
+              
+              // Prioritize link fields first
+              if (aIsLink && !bIsLink) return -1;
+              if (!aIsLink && bIsLink) return 1;
+              
+              // Then prioritize columns with data
+              if (aHasData && !bHasData) return -1;
+              if (!aHasData && bHasData) return 1;
+              
+              return 0;
+            });
+          }
           
+          // Move link/url field to first position if it exists and not already first
+          const linkField = fieldNames.find(f => f.toLowerCase().includes('link') || f.toLowerCase().includes('url'));
+          if (linkField && fieldNames.indexOf(linkField) > 0) {
+            fieldNames = fieldNames.filter(f => f !== linkField);
+            fieldNames.unshift(linkField);
+          }
+          
+          // Build header
+          const headerRow = document.createElement('tr');
+          fieldNames.forEach(field => {
+            const th = document.createElement('th');
+            th.textContent = formatFieldName(field);
+            if (fieldSchema[field]) {
+              th.title = fieldSchema[field];
+            }
+            headerRow.appendChild(th);
+          });
+          
+          // Add date column
+          const dateTh = document.createElement('th');
+          dateTh.textContent = 'Added';
+          dateTh.style.whiteSpace = 'nowrap';
+          headerRow.appendChild(dateTh);
+          
+          thead.appendChild(headerRow);
+          
+          // Build rows
           sourceLeads.forEach(lead => {
             const tr = document.createElement('tr');
             if (lead.is_new === 1 && currentNewLeadFilter === 'new') {
@@ -1314,40 +1283,66 @@
             
             tbody.appendChild(tr);
           });
+          
+          table.appendChild(thead);
+          table.appendChild(tbody);
+          tableContainer.appendChild(table);
+          
+          sourceContainer.appendChild(sourceHeader);
+          sourceContainer.appendChild(tableContainer);
+          leadsDisplayDiv.appendChild(sourceContainer);
         }
         
-        // Update status and pagination
+        // Update status
         const totalShown = leadsDisplayDiv.querySelectorAll('tbody tr').length;
-        document.getElementById('statusMessage').textContent = `Showing ${totalShown} lead(s)`;
+        document.getElementById('statusMessage').textContent = `Page ${currentPage} - Showing ${totalShown} lead(s)`;
         
-        // Add "Load More" button if there are more leads
-        if (hasMoreLeads) {
-          const existingLoadMoreBtn = document.getElementById('loadMoreBtn');
-          if (existingLoadMoreBtn) {
-            existingLoadMoreBtn.remove();
-          }
-          
-          const loadMoreContainer = document.createElement('div');
-          loadMoreContainer.style.cssText = 'text-align: center; margin-top: 2rem; padding: 1rem;';
-          
-          const loadMoreBtn = document.createElement('button');
-          loadMoreBtn.id = 'loadMoreBtn';
-          loadMoreBtn.className = 'btn btn-primary';
-          loadMoreBtn.textContent = 'Load More Leads';
-          loadMoreBtn.style.cssText = 'padding: 0.75rem 1.5rem; font-size: 1rem;';
-          loadMoreBtn.onclick = async () => {
-            currentOffset += currentLimit;
-            await loadLeads(true);
-          };
-          
-          loadMoreContainer.appendChild(loadMoreBtn);
-          leadsDisplayDiv.appendChild(loadMoreContainer);
-        } else {
-          const existingLoadMoreBtn = document.getElementById('loadMoreBtn');
-          if (existingLoadMoreBtn) {
-            existingLoadMoreBtn.parentElement.remove();
-          }
+        // Add pagination controls
+        const paginationContainer = document.createElement('div');
+        paginationContainer.id = 'paginationContainer';
+        paginationContainer.style.cssText = 'text-align: center; margin-top: 2rem; padding: 1rem; display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap;';
+        
+        // Previous button
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'btn btn-primary';
+        prevBtn.textContent = '← Previous';
+        prevBtn.style.cssText = 'padding: 0.5rem 1rem; font-size: 0.9rem;' + (currentPage === 1 ? ' opacity: 0.5; cursor: not-allowed;' : '');
+        prevBtn.disabled = currentPage === 1;
+        prevBtn.onclick = () => {
+          if (currentPage > 1) loadLeads(currentPage - 1);
+        };
+        paginationContainer.appendChild(prevBtn);
+        
+        // Page numbers - show max 7 pages at a time
+        totalPages = leads.length < currentLimit ? currentPage : currentPage + 1; // This is estimated
+        const maxPagesToShow = 7;
+        const startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+        const endPage = Math.min(totalPages + 1, startPage + maxPagesToShow);
+        
+        for (let i = startPage; i < endPage; i++) {
+          const pageBtn = document.createElement('button');
+          pageBtn.className = 'btn' + (i === currentPage ? ' btn-primary' : ' btn-secondary');
+          pageBtn.textContent = String(i);
+          pageBtn.style.cssText = 'padding: 0.5rem 0.75rem; font-size: 0.9rem; min-width: 2.5rem;' + 
+            (i === currentPage ? ' font-weight: bold; background: var(--primary);' : '');
+          pageBtn.onclick = () => loadLeads(i);
+          paginationContainer.appendChild(pageBtn);
         }
+        
+        // Next button
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'btn btn-primary';
+        nextBtn.textContent = 'Next →';
+        nextBtn.style.cssText = 'padding: 0.5rem 1rem; font-size: 0.9rem;';
+        nextBtn.disabled = leads.length < currentLimit; // No next if less than 50 results
+        if (leads.length < currentLimit) {
+          nextBtn.style.opacity = '0.5';
+          nextBtn.style.cursor = 'not-allowed';
+        }
+        nextBtn.onclick = () => loadLeads(currentPage + 1);
+        paginationContainer.appendChild(nextBtn);
+        
+        leadsDisplayDiv.appendChild(paginationContainer);
         
         isLoadingMore = false;
         
