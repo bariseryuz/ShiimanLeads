@@ -39,7 +39,7 @@ function cleanDashboardUrl(url) {
     if (!params.has('where')) params.set('where', '1=1');
     if (!params.has('outFields')) params.set('outFields', '*');
     if (!params.has('f')) params.set('f', 'json');
-    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '100000 ');
+    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '10000');
 
     parsed.search = params.toString();
     return parsed.toString();
@@ -68,7 +68,7 @@ function ensureArcGISParams(url) {
     if (!params.has('where')) params.set('where', '1=1');
     if (!params.has('outFields')) params.set('outFields', '*');
     if (!params.has('f')) params.set('f', 'json');
-    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '100000');
+    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '10000');
 
     parsed.search = params.toString();
     return parsed.toString();
@@ -93,7 +93,7 @@ async function extractArcGISApiInfo(hubUrl, logger, navigationInstructions = [])
   });
 
   try {
-    await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+    await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 120000 });
   } catch (err) {
     logger.warn(`ArcGIS key grabber navigation warning: ${err.message}`);
   }
@@ -320,7 +320,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
       const whereClause = `${dateField} >= ${range.start} AND ${dateField} <= ${range.end}`;
       const rangeUrl = new URL(baseApiUrl);
       rangeUrl.searchParams.set('where', whereClause);
-      rangeUrl.searchParams.set('resultRecordCount', '100000');
+      rangeUrl.searchParams.set('resultRecordCount', '10000');
       rangeUrl.searchParams.set('resultOffset', '0');
       
       let rangeOffset = 0;
