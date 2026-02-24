@@ -39,7 +39,7 @@ function cleanDashboardUrl(url) {
     if (!params.has('where')) params.set('where', '1=1');
     if (!params.has('outFields')) params.set('outFields', '*');
     if (!params.has('f')) params.set('f', 'json');
-    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '1000');
+    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '100000 ');
 
     parsed.search = params.toString();
     return parsed.toString();
@@ -68,7 +68,7 @@ function ensureArcGISParams(url) {
     if (!params.has('where')) params.set('where', '1=1');
     if (!params.has('outFields')) params.set('outFields', '*');
     if (!params.has('f')) params.set('f', 'json');
-    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '1000');
+    if (!params.has('resultRecordCount')) params.set('resultRecordCount', '100000');
 
     parsed.search = params.toString();
     return parsed.toString();
@@ -176,11 +176,11 @@ async function fetchArcGISRecords(source, logger) {
 
   const allRecords = [];
   let offset = 0;
-  const pageSize = 1000;
+  const pageSize = 10000;
   let hasMoreRecords = true;
   let hitTransferLimit = false;
 
-  // Pagination loop: fetch all records in batches of 1000
+  // Pagination loop: fetch all records in batches of 10000
   while (hasMoreRecords) {
     try {
       const paginatedUrl = new URL(apiUrl);
@@ -320,7 +320,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
       const whereClause = `${dateField} >= ${range.start} AND ${dateField} <= ${range.end}`;
       const rangeUrl = new URL(baseApiUrl);
       rangeUrl.searchParams.set('where', whereClause);
-      rangeUrl.searchParams.set('resultRecordCount', '1000');
+      rangeUrl.searchParams.set('resultRecordCount', '100000');
       rangeUrl.searchParams.set('resultOffset', '0');
       
       let rangeOffset = 0;
@@ -334,10 +334,10 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
         
         const records = jsonData?.features?.map(f => f.attributes || f) || [];
         
-        if (records.length === 0 || records.length < 1000) {
+        if (records.length === 0 || records.length < 10000) {
           hasMore = false;
         } else {
-          rangeOffset += 1000;
+          rangeOffset += 10000;
         }
         
         additionalRecords.push(...records);
