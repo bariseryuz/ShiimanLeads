@@ -229,115 +229,135 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             }
           }
           
-          if (source.method === 'POST' && source.params) {
-            logger.info(`   Method: POST with params`);
-            
-            // Convert to form-urlencoded for compatibility
-            const formData = new URLSearchParams();
-            Object.entries(source.params).forEach(([key, value]) => {
-              formData.append(key, String(value));
-            });
-            
-            const postHeaders = {
-              ...headers,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            };
-            
-            response = await axios.post(source.url, formData.toString(), { 
-              headers: postHeaders, 
-              timeout: 120000 // 120s for slow government APIs
-            });
-          } else if (source.params) {
-            const params = new URLSearchParams();
-            Object.entries(source.params).forEach(([key, value]) => {
-              params.append(key, String(value));
-            });
-            const url = `${source.url}?${params.toString()}`;
-            logger.info(`   Method: GET with params`);
-            response = await axios.get(url, { headers, timeout: 120000 });
-          } else {
-            logger.info(`   Method: GET (no params)`);
-            response = await axios.get(source.url, { headers, timeout: 120000 });
-          }
-          
-          let jsonData = response.data;
-          let records = [];
-          
-          // Handle ArcGIS format: { features: [ { attributes: {...} } ] }
-          if (jsonData.features && Array.isArray(jsonData.features)) {
-            logger.info(`   ✅ Detected ArcGIS format (features array)`);
-            records = jsonData.features.map(f => {
-              // Flatten attributes to top level
-              if (f.attributes) {
-                return { ...f.attributes };
-              }
-              return f;
-            });
-          }
-          // Handle plain array
-          else if (Array.isArray(jsonData)) {
-            logger.info(`   ✅ Detected plain array format`);
-            records = jsonData;
-          }
-          // Handle nested data
-          else if (jsonData.data && Array.isArray(jsonData.data)) {
-            logger.info(`   ✅ Detected nested data array`);
-            records = jsonData.data;
-          }
-          // Handle other nested formats
-          else if (jsonData.records && Array.isArray(jsonData.records)) {
-            records = jsonData.records;
-          } else if (jsonData.results && Array.isArray(jsonData.results)) {
-            records = jsonData.results;
-          }
-          
-          logger.info(`   📊 Found ${records.length} records`);
-          
-          // Apply field mapping if provided
+          const isSocrata = source.url && /\/resource\/[^/]+\.json/i.test(source.url);
           const fieldMapping = source.fieldSchema || source.fieldMapping || {};
-          
-          for (const record of records) {
-            if (isTotalRowLimitReached(totalInserted, limits)) {
-              logger.info(`   ⚠️ Total row limit reached: ${limits.maxTotalRows}`);
-              break;
+
+          const extractRecords = (data) => {
+            if (data?.features && Array.isArray(data.features)) {
+              logger.info(`   ✅ Detected ArcGIS format (features array)`);
+              return data.features.map(f => (f.attributes ? { ...f.attributes } : f));
             }
-            
-            // Apply field mapping to rename/select fields
-            let mappedLead = {};
-            
-            if (Object.keys(fieldMapping).length > 0) {
-              // Use provided mapping
-              for (const [targetField, sourceField] of Object.entries(fieldMapping)) {
-                if (record[sourceField] !== undefined) {
-                  mappedLead[targetField] = record[sourceField];
+            if (Array.isArray(data)) {
+              logger.info(`   ✅ Detected plain array format`);
+              return data;
+            }
+            if (data?.data && Array.isArray(data.data)) {
+              logger.info(`   ✅ Detected nested data array`);
+              return data.data;
+            }
+            if (data?.records && Array.isArray(data.records)) return data.records;
+            if (data?.results && Array.isArray(data.results)) return data.results;
+            return [];
+          };
+
+          const processRecords = async (records) => {
+            for (const record of records) {
+              if (isTotalRowLimitReached(totalInserted, limits)) {
+                logger.info(`   ⚠️ Total row limit reached: ${limits.maxTotalRows}`);
+                return false;
+              }
+
+              let mappedLead = {};
+              if (Object.keys(fieldMapping).length > 0) {
+                for (const [targetField, sourceField] of Object.entries(fieldMapping)) {
+                  if (record[sourceField] !== undefined) {
+                    mappedLead[targetField] = record[sourceField];
+                  }
+                }
+              } else {
+                mappedLead = { ...record };
+              }
+
+              for (const [key, value] of Object.entries(mappedLead)) {
+                if (typeof value === 'number' && value > 1000000000 && value < 2000000000000) {
+                  const date = new Date(value > 10000000000 ? value : value * 1000);
+                  mappedLead[key] = date.toISOString().split('T')[0];
                 }
               }
-            } else {
-              // No mapping - use all fields
-              mappedLead = { ...record };
-            }
-            
-            // Parse dates (convert Unix timestamps to human-readable)
-            for (const [key, value] of Object.entries(mappedLead)) {
-              if (typeof value === 'number' && value > 1000000000 && value < 2000000000000) {
-                // Looks like a Unix timestamp
-                const date = new Date(value > 10000000000 ? value : value * 1000);
-                mappedLead[key] = date.toISOString().split('T')[0]; // YYYY-MM-DD
+
+              if (await insertLeadIfNew({
+                raw: JSON.stringify(mappedLead),
+                sourceName: source.name,
+                lead: mappedLead,
+                userId,
+                sourceId: source.id,
+                sourceUrl: source.url
+              })) {
+                sourceNewLeads++;
+                totalInserted++;
               }
             }
-            
-            if (await insertLeadIfNew({ 
-              raw: JSON.stringify(mappedLead), 
-              sourceName: source.name, 
-              lead: mappedLead, 
-              userId, 
-              sourceId: source.id, 
-              sourceUrl: source.url 
-            })) {
-              sourceNewLeads++;
-              totalInserted++;
+            return true;
+          };
+
+          let totalRecords = 0;
+
+          if (isSocrata && source.method !== 'POST') {
+            const baseParams = { ...(source.params || {}) };
+            const limit = Number(baseParams['$limit'] || 10000);
+            let offset = Number(baseParams['$offset'] || 0);
+            baseParams['$limit'] = limit.toString();
+
+            let pageNumber = 0;
+            while (true) {
+              pageNumber += 1;
+              const pageParams = { ...baseParams, '$offset': offset.toString() };
+              const params = new URLSearchParams();
+              Object.entries(pageParams).forEach(([key, value]) => {
+                params.append(key, String(value));
+              });
+              const pageUrl = `${source.url}?${params.toString()}`;
+              logger.info(`   Method: GET Socrata page ${pageNumber} (limit=${limit}, offset=${offset})`);
+
+              const response = await axios.get(pageUrl, { headers, timeout: 120000 });
+              const records = extractRecords(response.data);
+              totalRecords += records.length;
+
+              const shouldContinue = await processRecords(records);
+              if (!shouldContinue || records.length === 0) break;
+
+              offset += limit;
             }
+          } else {
+            let response;
+
+            if (source.method === 'POST' && source.params) {
+              logger.info(`   Method: POST with params`);
+              
+              // Convert to form-urlencoded for compatibility
+              const formData = new URLSearchParams();
+              Object.entries(source.params).forEach(([key, value]) => {
+                formData.append(key, String(value));
+              });
+              
+              const postHeaders = {
+                ...headers,
+                'Content-Type': 'application/x-www-form-urlencoded'
+              };
+              
+              response = await axios.post(source.url, formData.toString(), { 
+                headers: postHeaders, 
+                timeout: 120000 // 120s for slow government APIs
+              });
+            } else if (source.params) {
+              const params = new URLSearchParams();
+              Object.entries(source.params).forEach(([key, value]) => {
+                params.append(key, String(value));
+              });
+              const url = `${source.url}?${params.toString()}`;
+              logger.info(`   Method: GET with params`);
+              response = await axios.get(url, { headers, timeout: 120000 });
+            } else {
+              logger.info(`   Method: GET (no params)`);
+              response = await axios.get(source.url, { headers, timeout: 120000 });
+            }
+
+            const records = extractRecords(response.data);
+            totalRecords = records.length;
+            await processRecords(records);
           }
+
+          logger.info(`   📊 Found ${totalRecords} records`);
           
           logger.info(`   ✅ JSON scrape complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
