@@ -224,10 +224,9 @@ async function fetchArcGISRecords(source, logger) {
           logger.warn(`   ⚠️ ArcGIS Transfer Limit hit at ${allRecords.length} records`);
           hitTransferLimit = true;
           hasMoreRecords = false;
-        } else if (records.length < pageSize) {
-          // Got fewer records than requested = last page
-          hasMoreRecords = false;
         } else {
+          // Continue fetching even if we get fewer records than requested
+          // Only stop when we get 0 records (see above)
           offset += pageSize;
         }
       }
@@ -334,7 +333,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
         
         const records = jsonData?.features?.map(f => f.attributes || f) || [];
         
-        if (records.length === 0 || records.length < 10000) {
+        if (records.length === 0) {
           hasMore = false;
         } else {
           rangeOffset += 10000;
