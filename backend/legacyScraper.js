@@ -175,7 +175,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       // Auto-detect ArcGIS URLs that should use JSON API
       const isArcGISUrl = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/') || source.url.includes('FeatureServer'));
       
-      if (source.type === 'json' || source.method === 'json' || (isArcGISUrl && source.type !== 'playwright')) {
+      if (!source.forcePlaywrightOnly && (source.type === 'json' || source.method === 'json' || (isArcGISUrl && source.type !== 'playwright'))) {
         logger.info(`📡 JSON API Mode for: ${source.name}`);
         logger.info(`   URL: ${source.url}`);
         
@@ -364,7 +364,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       // Skip Playwright for ArcGIS URLs (they should use JSON API above)
       const shouldSkipPlaywright = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/'));
       
-      if ((source.usePlaywright || source.method === 'playwright' || source.useAI) && !shouldSkipPlaywright) {
+      if ((source.usePlaywright || source.method === 'playwright' || source.useAI || source.forcePlaywrightOnly) && !shouldSkipPlaywright) {
+        if (source.forcePlaywrightOnly) {
+          logger.info(`🎭 Force Playwright Only mode - bypassing JSON API`);
+        }
         const browser = await chromium.launch(getStealthLaunchOptions());
         const context = await browser.newContext(getStealthContextOptions());
         const page = await context.newPage();
