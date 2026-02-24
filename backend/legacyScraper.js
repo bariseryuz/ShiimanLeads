@@ -22,6 +22,7 @@ const { setupPopupBlocking, preventAllPopups, setupArcGISPage } = require('./ser
 const { fetchArcGISRecords } = require('./services/scraper/arcgis');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
 const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./services/scraper/stealth');
+const { setupApiInterceptor, waitForApiResponse, extractRecordsFromApiResponse } = require('./services/scraper/apiInterceptor');
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
 
@@ -375,13 +376,85 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         await setupPopupBlocking(page);
 
         try {
-          logger.info(`🌐 Navigating to: ${source.url}`);
-          await page.goto(source.url, { waitUntil: 'commit', timeout: 90000 });
+          // Extract search page URL from API endpoint if needed
+          let pageUrl = source.url;
+          
+          // Handle API endpoints like /Search/IssuedPermit/_GetIssuedPermitData
+          if (pageUrl.includes('/_Get') || pageUrl.includes('/api/')) {
+            // Extract the base URL without the API endpoint
+            const parts = pageUrl.split('/_Get')[0] || pageUrl.split('/api')[0];
+            pageUrl = parts;
+            logger.info(`🔧 Converted API endpoint to search page: ${pageUrl}`);
+          }
+          
+          logger.info(`🌐 Navigating to: ${pageUrl}`);
+          await page.goto(pageUrl, { waitUntil: 'commit', timeout: 90000 });
           
           // Wait for any table data to exist
           await page.locator('tr, li, .item, h3').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
           await page.waitForTimeout(5000);
           await preventAllPopups(page);
+
+          // ===== API INTERCEPTION MODE (No AI needed) =====
+          // If no AI prompt provided, try to intercept API responses
+          if (!source.aiPrompt && source.forcePlaywrightOnly) {
+            logger.info(`📡 API Interception Mode - capturing API responses without AI vision`);
+            setupApiInterceptor(page); // Start listening for API responses
+            
+            // Determine which API endpoint to wait for
+            let apiPattern = 'GetIssuedPermit';
+            if (source.url.includes('FeatureServer') || source.url.includes('arcgis')) {
+              apiPattern = 'query';
+            } else if (source.url.includes('/_Get')) {
+              const match = source.url.match(/\/_Get(\w+)/);
+              if (match) apiPattern = match[1];
+            }
+            
+            logger.info(`   🎯 Waiting for API response pattern: ${apiPattern}`);
+            const apiCall = waitForApiResponse(page, apiPattern, 120000);
+            
+            // Try to find and click search button if it exists
+            const searchButtons = await page.locator('button:has-text("Search"), button[type="submit"], input[type="submit"]').count();
+            if (searchButtons > 0) {
+              logger.info(`🔍 Clicking search button to trigger API calls...`);
+              await page.locator('button:has-text("Search"), button[type="submit"], input[type="submit"]').first().click({ timeout: 10000 }).catch(() => {});
+              await page.waitForTimeout(3000);
+            }
+            
+            const apiData = await apiCall;
+            if (apiData) {
+              const records = extractRecordsFromApiResponse(apiData);
+              
+              // Insert records
+              for (const record of records) {
+                if (isTotalRowLimitReached(totalInserted, limits)) {
+                  logger.info(`   ⚠️ Total row limit reached: ${limits.maxTotalRows}`);
+                  break;
+                }
+                
+                if (await insertLeadIfNew({ 
+                  raw: JSON.stringify(record), 
+                  sourceName: source.name, 
+                  lead: record, 
+                  userId, 
+                  sourceId: source.id, 
+                  sourceUrl: source.url 
+                })) {
+                  sourceNewLeads++;
+                  totalInserted++;
+                }
+              }
+              
+              logger.info(`   ✅ API Interception complete: ${sourceNewLeads} new leads`);
+              await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+              await page.context().close().catch(() => {});
+              await browser.close().catch(() => {});
+              rateLimiter.onSuccess();
+              continue; // Skip to next source
+            } else {
+              logger.warn(`   ⚠️ No API response captured - falling back to page parsing`);
+            }
+          }
 
           if (source.aiPrompt && isAIAvailable()) {
             await navigateAutonomously(page, Array.isArray(source.aiPrompt) ? source.aiPrompt.join('\n') : source.aiPrompt);
