@@ -244,7 +244,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             
             response = await axios.post(source.url, formData.toString(), { 
               headers: postHeaders, 
-              timeout: 60000 
+              timeout: 120000 // 120s for slow government APIs
             });
           } else if (source.params) {
             const params = new URLSearchParams();
@@ -253,10 +253,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             });
             const url = `${source.url}?${params.toString()}`;
             logger.info(`   Method: GET with params`);
-            response = await axios.get(url, { headers, timeout: 60000 });
+            response = await axios.get(url, { headers, timeout: 120000 });
           } else {
             logger.info(`   Method: GET (no params)`);
-            response = await axios.get(source.url, { headers, timeout: 60000 });
+            response = await axios.get(source.url, { headers, timeout: 120000 });
           }
           
           let jsonData = response.data;
@@ -343,7 +343,17 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           rateLimiter.onSuccess();
           continue; // Skip to next source
         } catch (jsonErr) {
-          logger.error(`❌ JSON API error for ${source.name}: ${jsonErr.message}`);
+          // Provide specific error messages for common issues
+          if (jsonErr.code === 'ECONNABORTED' || jsonErr.message.includes('timeout')) {
+            logger.error(`⏱️ JSON API timeout for ${source.name}: ${jsonErr.message}`);
+            logger.info(`💡 Government APIs can take 2-3 minutes. This is normal for governmental sources.`);
+            logger.info(`💡 Timeout is currently 120 seconds. If still failing, try "Force Playwright Only" mode.`);
+          } else if (jsonErr.response?.status === 403 || jsonErr.response?.status === 429) {
+            logger.error(`🚫 ${source.name} API blocked request (Status ${jsonErr.response.status})`);
+            logger.info(`💡 Try enabling "Force Playwright Only" to bypass API blocking.`);
+          } else {
+            logger.error(`❌ JSON API error for ${source.name}: ${jsonErr.message}`);
+          }
           await trackSourceReliability(source.id, source.name, false, 0);
           rateLimiter.onError();
           continue;

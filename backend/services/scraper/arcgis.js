@@ -91,7 +91,7 @@ async function extractArcGISApiInfo(hubUrl, logger, navigationInstructions = [])
   });
 
   try {
-    await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
   } catch (err) {
     logger.warn(`ArcGIS key grabber navigation warning: ${err.message}`);
   }
@@ -185,7 +185,11 @@ async function fetchArcGISRecords(source, logger) {
       paginatedUrl.searchParams.set('resultOffset', offset.toString());
       paginatedUrl.searchParams.set('resultRecordCount', pageSize.toString());
 
-      const response = await axios.get(paginatedUrl.toString(), { headers, timeout: 60000 });
+      const response = await axios.get(paginatedUrl.toString(), { 
+        headers, 
+        timeout: 120000,
+        validateStatus: (status) => status < 500 // Accept 4xx but not 5xx errors
+      });
       const jsonData = response.data;
 
       let records = [];
@@ -226,7 +230,12 @@ async function fetchArcGISRecords(source, logger) {
         }
       }
     } catch (err) {
-      logger.warn(`ArcGIS pagination error at offset ${offset}: ${err.message}`);
+      if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) {
+        logger.error(`⏱️ Government API timeout at ${offset} records - their server is too slow or blocking scrapers`);
+        logger.info(`💡 Tip: Government APIs can take 2-3 minutes. This is normal for governmental sources.`);
+      } else {
+        logger.warn(`ArcGIS pagination error at offset ${offset}: ${err.message}`);
+      }
       hasMoreRecords = false;
     }
   }
@@ -279,7 +288,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
   statsUrl.searchParams.set('f', 'json');
   
   try {
-    const statsResponse = await axios.get(statsUrl.toString(), { headers, timeout: 60000 });
+    const statsResponse = await axios.get(statsUrl.toString(), { headers, timeout: 120000 });
     const stats = statsResponse.data?.features?.[0]?.attributes;
     
     if (!stats || !stats.min_date || !stats.max_date) {
@@ -318,7 +327,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
       while (hasMore) {
         rangeUrl.searchParams.set('resultOffset', rangeOffset.toString());
         
-        const response = await axios.get(rangeUrl.toString(), { headers, timeout: 60000 });
+        const response = await axios.get(rangeUrl.toString(), { headers, timeout: 120000 });
         const jsonData = response.data;
         
         const records = jsonData?.features?.map(f => f.attributes || f) || [];
