@@ -1363,14 +1363,25 @@ async function loadScreenshots(sources) {
 
     async function editSource(id) {
       try {
+        console.log('🔍 Fetching sources to edit ID:', id);
         const response = await fetch('/api/my-sources/mine');
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const data = await response.json();
+        console.log('📦 Received data:', data);
+        
         const source = data.data.find(s => s.id === id);
         
         if (!source) {
+          console.error('❌ Source not found in data:', data.data.map(s => s.id));
           alert('Source not found');
           return;
         }
+        
+        console.log('✅ Found source:', source);
         
         editingSourceId = id;
         document.getElementById('modalTitle').textContent = 'Edit Source';
@@ -1432,8 +1443,8 @@ async function loadScreenshots(sources) {
         
         document.getElementById('sourceModal').classList.add('show');
       } catch (error) {
-        console.error('Error loading source:', error);
-        alert('Failed to load source details');
+        console.error('❌ Error loading source:', error);
+        alert(`Failed to load source details: ${error.message}\n\nCheck browser console (F12) for details.`);
       }
     }
 
