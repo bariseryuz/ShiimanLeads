@@ -21,6 +21,7 @@ const { initProgress, updateProgress, shouldStopScraping } = require('./services
 const { setupPopupBlocking, preventAllPopups, setupArcGISPage } = require('./services/scraper/preventPopup');
 const { fetchArcGISRecords } = require('./services/scraper/arcgis');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
+const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./services/scraper/stealth');
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
 
@@ -188,11 +189,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             
             try {
               // Launch browser briefly to accept cookies
-              const browser = await chromium.launch({ headless: true });
-              const arcGISpage = await browser.newPage();
-              
-              // Set viewport for consistency
-              await arcGISpage.setViewportSize({ width: 1920, height: 1080 });
+              const browser = await chromium.launch(getStealthLaunchOptions());
+              const context = await browser.newContext(getStealthContextOptions());
+              const arcGISpage = await context.newPage();
+              await injectStealthScripts(arcGISpage);
               
               // Try to load the main domain to accept cookies
               const domain = new URL(source.url).origin;
@@ -365,12 +365,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       const shouldSkipPlaywright = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/'));
       
       if ((source.usePlaywright || source.method === 'playwright' || source.useAI) && !shouldSkipPlaywright) {
-        const browser = await chromium.launch({ headless: true });
-        const context = await browser.newContext({
-          viewport: { width: 1440, height: 900 },
-          locale: 'en-US', timezoneId: 'America/New_York'
-        });
+        const browser = await chromium.launch(getStealthLaunchOptions());
+        const context = await browser.newContext(getStealthContextOptions());
         const page = await context.newPage();
+        await injectStealthScripts(page);
         await setupPopupBlocking(page);
 
         try {

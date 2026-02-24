@@ -440,12 +440,10 @@ router.get('/:id/sample', async (req, res) => {
       
     } else if (sourceConfig.type === 'html') {
       // For HTML sources, use Playwright to get sample
-      const browser = await chromium.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-      });
-      const context = await browser.newContext();
+      const browser = await chromium.launch(getStealthLaunchOptions());
+      const context = await browser.newContext(getStealthContextOptions());
       const page = await context.newPage();
+      await injectStealthScripts(page);
       page.setDefaultTimeout(90000);
       page.setDefaultNavigationTimeout(90000);
       await page.goto(sourceConfig.url, { waitUntil: 'networkidle', timeout: 90000 });
