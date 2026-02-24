@@ -1706,6 +1706,7 @@ async function loadScreenshots(sources) {
           return;
         }
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
+        sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
       } else if (sourceType === 'arcgis') {
         // ArcGIS Hub mode (key grabber + JSON API)
         sourceData.method = 'arcgis';
