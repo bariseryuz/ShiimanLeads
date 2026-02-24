@@ -91,7 +91,7 @@ async function extractArcGISApiInfo(hubUrl, logger, navigationInstructions = [])
   });
 
   try {
-    await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(hubUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   } catch (err) {
     logger.warn(`ArcGIS key grabber navigation warning: ${err.message}`);
   }
@@ -185,7 +185,7 @@ async function fetchArcGISRecords(source, logger) {
       paginatedUrl.searchParams.set('resultOffset', offset.toString());
       paginatedUrl.searchParams.set('resultRecordCount', pageSize.toString());
 
-      const response = await axios.get(paginatedUrl.toString(), { headers, timeout: 30000 });
+      const response = await axios.get(paginatedUrl.toString(), { headers, timeout: 60000 });
       const jsonData = response.data;
 
       let records = [];
@@ -279,7 +279,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
   statsUrl.searchParams.set('f', 'json');
   
   try {
-    const statsResponse = await axios.get(statsUrl.toString(), { headers, timeout: 30000 });
+    const statsResponse = await axios.get(statsUrl.toString(), { headers, timeout: 60000 });
     const stats = statsResponse.data?.features?.[0]?.attributes;
     
     if (!stats || !stats.min_date || !stats.max_date) {
@@ -318,7 +318,7 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
       while (hasMore) {
         rangeUrl.searchParams.set('resultOffset', rangeOffset.toString());
         
-        const response = await axios.get(rangeUrl.toString(), { headers, timeout: 30000 });
+        const response = await axios.get(rangeUrl.toString(), { headers, timeout: 60000 });
         const jsonData = response.data;
         
         const records = jsonData?.features?.map(f => f.attributes || f) || [];

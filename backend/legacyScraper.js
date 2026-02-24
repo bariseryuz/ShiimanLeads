@@ -244,7 +244,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             
             response = await axios.post(source.url, formData.toString(), { 
               headers: postHeaders, 
-              timeout: 30000 
+              timeout: 60000 
             });
           } else if (source.params) {
             const params = new URLSearchParams();
@@ -253,10 +253,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             });
             const url = `${source.url}?${params.toString()}`;
             logger.info(`   Method: GET with params`);
-            response = await axios.get(url, { headers, timeout: 30000 });
+            response = await axios.get(url, { headers, timeout: 60000 });
           } else {
             logger.info(`   Method: GET (no params)`);
-            response = await axios.get(source.url, { headers, timeout: 30000 });
+            response = await axios.get(source.url, { headers, timeout: 60000 });
           }
           
           let jsonData = response.data;

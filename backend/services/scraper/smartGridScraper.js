@@ -504,7 +504,7 @@ async function scrapeWithSmartGrid(page, source, userConfig = {}) {
     logger.info(`\n📍 Phase 1: Navigation`);
     await page.goto(source.url, { 
       waitUntil: 'domcontentloaded',
-      timeout: 30000
+      timeout: 60000
     });
     await page.waitForTimeout(2000);
     logger.info(`✅ Page loaded`);

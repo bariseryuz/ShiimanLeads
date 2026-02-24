@@ -448,7 +448,7 @@ router.get('/:id/sample', async (req, res) => {
       const page = await context.newPage();
       page.setDefaultTimeout(90000);
       page.setDefaultNavigationTimeout(90000);
-      await page.goto(sourceConfig.url, { waitUntil: 'networkidle', timeout: 30000 });
+      await page.goto(sourceConfig.url, { waitUntil: 'networkidle', timeout: 60000 });
       
       const selector = sourceConfig.selector || 'table tr, .result, .item';
       const elements = await page.$$(selector);
