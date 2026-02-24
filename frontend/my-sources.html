@@ -1410,7 +1410,7 @@ async function loadScreenshots(sources) {
           document.getElementById('apiMethod').value = source.data.method || 'GET';
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
-          document.getElementById('jsonFields').value = source.data.jsonFields?.join(', ') || '';
+          // jsonFields removed - no longer used
         } else if (sourceType === 'arcgis') {
           // Load ArcGIS-specific fields
           document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
