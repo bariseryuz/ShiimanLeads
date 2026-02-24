@@ -230,7 +230,22 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           if (source.method === 'POST' && source.params) {
             logger.info(`   Method: POST with params`);
-            response = await axios.post(source.url, source.params, { headers, timeout: 30000 });
+            
+            // Convert to form-urlencoded for compatibility
+            const formData = new URLSearchParams();
+            Object.entries(source.params).forEach(([key, value]) => {
+              formData.append(key, String(value));
+            });
+            
+            const postHeaders = {
+              ...headers,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            };
+            
+            response = await axios.post(source.url, formData.toString(), { 
+              headers: postHeaders, 
+              timeout: 30000 
+            });
           } else if (source.params) {
             const params = new URLSearchParams();
             Object.entries(source.params).forEach(([key, value]) => {
