@@ -5,6 +5,12 @@ let selectedLeadIds = new Set();
 let currentPage = 1;
 const itemsPerPage = 20;
 
+// maps for quick access
+const leadsById = {};
+const originalRowHtml = {};
+const leadSummaries = {};  // store fetched summaries
+
+
 // Initialize on load
 document.addEventListener('DOMContentLoaded', async () => {
   await loadLeads();
@@ -168,6 +174,7 @@ function renderTable() {
 
   pageLeads.forEach((lead, idx) => {
     const leadId = lead.id || `lead_${start + idx}`;
+    leadsById[leadId] = lead;
     const isSelected = selectedLeadIds.has(leadId);
     const checked = isSelected ? 'checked' : '';
     const name = lead.name || lead.company || 'N/A';
@@ -177,7 +184,7 @@ function renderTable() {
     const date = extractLeadDate(lead)?.toLocaleDateString() || '—';
 
     html += `
-      <tr>
+      <tr id="lead-row-${leadId}">
         <td class="checkbox-col">
           <input type="checkbox" ${checked} onchange="toggleLeadSelection('${leadId}')" />
         </td>
@@ -187,7 +194,7 @@ function renderTable() {
         <td>
           <div class="source-with-action">
             <span class="source-badge">${escapeHtml(source)}</span>
-            <button class="btn-apply-ai" onclick="analyzeSingleLead('${escapeHtml(leadId)}')">⚡ Apply AI</button>
+            <button class="btn-apply-ai" onclick="toggleRowSummary('${leadId}')">⚡ Apply AI</button>
           </div>
         </td>
         <td>${date}</td>
@@ -210,6 +217,7 @@ function renderTable() {
  * Analyze a single lead (inline button click)
  */
 async function analyzeSingleLead(leadId) {
+  console.log('analyzeSingleLead clicked', leadId);
   // Find the lead
   const lead = allLeads.find(l => (l.id || `lead_${allLeads.indexOf(l)}`).toString() === leadId);
   
@@ -320,6 +328,7 @@ function updateBulkActionsBar() {
  * Proceed to analyze selected leads
  */
 function proceedToAnalyze() {
+  console.log('proceedToAnalyze invoked, selected', selectedLeadIds.size);
   if (selectedLeadIds.size === 0) {
     alert('⚠️ Please select at least one lead.');
     return;
@@ -338,7 +347,7 @@ function closeAnalyzeModal() {
 /**
  * Submit analysis for all selected leads
  */
-async function submitAnalysis() {
+async function submitAnalysis(event) {
   if (selectedLeadIds.size === 0) {
     alert('⚠️ Please select at least one lead.');
     return;
