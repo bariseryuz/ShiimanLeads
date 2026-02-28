@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const Alsummarize = require('../services/ai/Alsummarize');
-const { Lead } = require('../models');
 const logger = require('../utils/logger');
 
 /**
