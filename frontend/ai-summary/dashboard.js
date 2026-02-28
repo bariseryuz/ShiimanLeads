@@ -19,7 +19,16 @@ async function loadLeads() {
   try {
     const response = await fetch('/api/leads');
     if (!response.ok) throw new Error('Failed to load leads');
-    allLeads = await response.json();
+    
+    const data = await response.json();
+    
+    // Handle both array and wrapped object responses
+    allLeads = Array.isArray(data) ? data : (data.leads || data.data || []);
+    
+    if (!Array.isArray(allLeads)) {
+      throw new Error('API returned invalid leads format');
+    }
+    
     filteredLeads = [...allLeads];
     updateStats();
   } catch (error) {
