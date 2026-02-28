@@ -1,5 +1,5 @@
 const logger = require('../../utils/logger');
-const { geminiClient } = require('./geminiClient');
+const { getGeminiModel, isAIAvailable } = require('./geminiClient');
 
 /**
  * AIL Summarizer - Processes leads and generates AI-powered summaries
@@ -125,15 +125,19 @@ class AISummarizer {
    * @returns {Promise<string>} Summary text
    */
   async summarizeLead(lead, template = 'default', maxTokens = 2048) {
+    if (!isAIAvailable()) {
+      throw new Error('AI service not available - check GEMINI_API_KEY');
+    }
+
     const prompt = this.buildPrompt(lead, template);
 
     try {
-      const response = await geminiClient.generateText(prompt, {
-        maxOutputTokens: maxTokens,
-        temperature: 0.7
-      });
+      const model = getGeminiModel('summarize');
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
 
-      return response.trim();
+      return text.trim();
     } catch (e) {
       logger.error(`[AIL] Gemini API error: ${e.message}`);
       throw new Error(`AI summarization failed: ${e.message}`);
