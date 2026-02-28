@@ -139,39 +139,29 @@
       text-transform: uppercase;
     }
     
-    .leads-container {
-      background: white;
+    /* Container for tables from client portal style */
+    .leads-container, .table-container {
+      overflow-x: auto;
       border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      margin-bottom: 1.5rem;
     }
     
-    .leads-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 14px;
+    /* let the global table styles (in style.css) handle layout;
+       only add any small overrides here if absolutely necessary */
+    .leads-container table, .table-container table {
+      background: rgba(255,255,255,0.6);
+      /* remove global min-width so table sizes to content */
+      min-width: unset !important;
     }
-    
-    .leads-table thead {
-      background: #f9f9f9;
-      border-bottom: 2px solid #ddd;
-    }
-    
-    .leads-table th {
-      padding: 15px;
-      text-align: left;
-      font-weight: 600;
-      color: #333;
-    }
-    
-    .leads-table td {
-      padding: 15px;
-      border-bottom: 1px solid #eee;
-    }
-    
-    .leads-table tbody tr:hover {
-      background: #f9f9f9;
-    }
+
+    /* override client portal column widths for this specific table */
+    .leads-table th:nth-child(1) { width: 40px !important; }
+    .leads-table th:nth-child(2) { width: auto !important; }
+    .leads-table th:nth-child(3) { width: auto !important; }
+    .leads-table th:nth-child(4) { width: auto !important; }
+    .leads-table th:nth-child(5) { width: auto !important; }
+    .leads-table th:nth-child(6) { width: auto !important; }
     
     .action-col {
       width: 140px;

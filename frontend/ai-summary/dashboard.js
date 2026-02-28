@@ -151,18 +151,19 @@ function renderTable() {
   const pageLeads = filteredLeads.slice(start, end);
 
   let html = `
-    <table class="leads-table">
-      <thead>
-        <tr>
-          <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" /></th>
-          <th>Name/Company</th>
-          <th>Email</th>
-          <th>Phone</th>
-          <th>GIS</th>
-          <th>Date</th>
-        </tr>
-      </thead>
-      <tbody>
+    <div class="table-container">
+      <table class="leads-table">
+        <thead>
+          <tr>
+            <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" /></th>
+            <th>Name/Company</th>
+            <th>Email</th>
+            <th>Phone</th>
+            <th>GIS</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
   `;
 
   pageLeads.forEach((lead, idx) => {
@@ -195,8 +196,9 @@ function renderTable() {
   });
 
   html += `
-    </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
   `;
 
   container.innerHTML = html;
