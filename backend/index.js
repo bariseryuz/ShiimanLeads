@@ -38,6 +38,7 @@ const screenshotsRoutes = require('./routes/screenshots');
 const profileRoutes = require('./routes/profile');
 const adminRoutes = require('./routes/admin');
 const statsRoutes = require('./routes/stats');
+const summarizeRoutes = require('./routes/summarize');
 
 // === EMAIL CONFIGURATION ===
 let mailTransport = null;
@@ -135,6 +136,7 @@ function startServer() {
   app.use(authRoutes);                    // /login, /signup, /logout (no prefix - serves HTML pages)
   app.use('/api/scrape', scrapeRoutes);   // /api/scrape/*
   app.use('/api/leads', leadsRoutes);     // /api/leads, /api/leads/*
+  app.use('/api/summarize', summarizeRoutes); // /api/summarize, /api/summarize/:jobId
   app.use('/api/sources', sourcesRoutes); // /api/sources/*
   app.use('/api/my-sources', sourcesRoutes); // /api/my-sources/* (backward compatibility alias)
   app.use('/api/screenshots', screenshotsRoutes); // /api/screenshots/*

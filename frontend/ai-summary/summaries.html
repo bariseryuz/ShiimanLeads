@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Summaries - Results</title>
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
+    
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .header h1 { font-size: 28px; color: #333; }
+    .header-actions {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .job-info {
+      background: #fff3cd;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #ffc107;
+    }
+    
+    .job-info p {
+      margin: 5px 0;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    
+    .status-queued { background: #e3f2fd; color: #1976d2; }
+    .status-processing { background: #fff3cd; color: #ff6f00; animation: pulse 2s infinite; }
+    .status-completed { background: #e8f5e9; color: #388e3c; }
+    .status-failed { background: #ffebee; color: #c62828; }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .summaries-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .summary-card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      overflow: hidden;
+      transition: all 0.3s ease;
+    }
+    
+    .summary-card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      transform: translateY(-2px);
+    }
+    
+    .card-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 15px;
+      border-bottom: 2px solid rgba(0,0,0,0.1);
+    }
+    
+    .card-header h3 {
+      font-size: 16px;
+      margin-bottom: 5px;
+      word-break: break-word;
+    }
+    
+    .card-header p {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+    
+    .card-body {
+      padding: 15px;
+    }
+    
+    .lead-details {
+      background: #f9f9f9;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 13px;
+    }
+    
+    .lead-details strong {
+      color: #333;
+    }
+    
+    .lead-details p {
+      margin: 4px 0;
+    }
+    
+    .summary-text {
+      background: white;
+      padding: 10px;
+      border-left: 3px solid #667eea;
+      margin-bottom: 10px;
+      line-height: 1.5;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    .error-text {
+      background: #ffebee;
+      padding: 10px;
+      color: #c62828;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    
+    .card-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+      border-top: 1px solid #eee;
+      padding-top: 12px;
+    }
+    
+    .btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    
+    .btn-copy {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+    
+    .btn-copy:hover {
+      background: #bbdefb;
+    }
+    
+    .btn-download {
+      background: #e8f5e9;
+      color: #388e3c;
+    }
+    
+    .btn-download:hover {
+      background: #c8e6c9;
+    }
+    
+    .export-section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      margin-bottom: 20px;
+    }
+    
+    .export-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .btn-primary {
+      background: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+    }
+    
+    .btn-primary:hover {
+      background: #45a049;
+    }
+    
+    .btn-secondary {
+      background: #2196F3;
+      color: white;
+      padding: 10px 20px;
+    }
+    
+    .btn-secondary:hover {
+      background: #0b7dda;
+    }
+    
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-top: 15px;
+    }
+    
+    .stat {
+      text-align: center;
+      padding: 10px;
+      background: #f0f0f0;
+      border-radius: 4px;
+    }
+    
+    .stat .value {
+      font-size: 20px;
+      font-weight: bold;
+      color: #333;
+    }
+    
+    .stat .label {
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px 20px;
+      font-size: 16px;
+      color: #999;
+    }
+    
+    .loading::after {
+      content: ' ...';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+    
+    @keyframes dots {
+      0%, 20% { content: ' .'; }
+      40% { content: ' ..'; }
+      60% { content: ' ...'; }
+    }
+    
+    .no-summaries {
+      text-align: center;
+      padding: 40px 20px;
+      background: white;
+      border-radius: 8px;
+      color: #999;
+    }
+    
+    .back-link {
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #2196F3;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 768px) {
+      .header { flex-direction: column; text-align: center; }
+      .header-actions { flex-direction: column; width: 100%; }
+      .btn { font-size: 11px; padding: 6px 10px; }
+      .card-actions { flex-direction: column; }
+      .export-buttons { flex-direction: column; }
+      .btn, .btn-primary, .btn-secondary { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <a href="dashboard.html" class="back-link">← Back to Dashboard</a>
+
+    <!-- Header -->
+    <div class="header">
+      <div style="text-align: left;">
+        <h1>📋 AI Summaries</h1>
+        <p id="subtitle">Loading summaries...</p>
+      </div>
+      <div class="header-actions">
+        <button class="btn-primary" onclick="refreshJob()">🔄 Refresh Status</button>
+        <button class="btn-secondary" onclick="exportToCSV()">📥 Export CSV</button>
+      </div>
+    </div>
+
+    <!-- Job Info -->
+    <div class="job-info" id="jobInfo">
+      <p><strong>Job ID:</strong> <span id="jobId">—</span></p>
+      <p><strong>Status:</strong> <span id="jobStatus" class="status-badge">Unknown</span></p>
+      <p><strong>Processed:</strong> <span id="jobProgress">0/0</span> | <strong>Estimated Cost:</strong> <span id="jobCost">$0.00</span></p>
+    </div>
+
+    <!-- Export Section -->
+    <div class="export-section" id="exportSection" style="display: none;">
+      <h3>📊 Export Results</h3>
+      <div class="export-buttons">
+        <button class="btn-primary" onclick="exportToCSV()">📥 Download as CSV</button>
+        <button class="btn-primary" onclick="exportToJSON()">📥 Download as JSON</button>
+        <button class="btn-secondary" onclick="copyAllSummaries()">📋 Copy All to Clipboard</button>
+      </div>
+      <div class="stats-row">
+        <div class="stat">
+          <div class="value" id="totalSummaries">0</div>
+          <div class="label">Total Processed</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="successCount">0</div>
+          <div class="label">Successful</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="failureCount">0</div>
+          <div class="label">Failed</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summaries Grid -->
+    <div class="summaries-grid" id="summariesGrid">
+      <div class="loading">Loading summaries</div>
+    </div>
+  </div>
+
+  <script src="summaries.js"></script>
+</body>
+</html>
