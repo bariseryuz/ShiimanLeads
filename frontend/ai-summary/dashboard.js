@@ -1,8 +1,8 @@
 // Global state
 let allLeads = [];
 let filteredLeads = [];
-let selectedLeadIds = new Set();
 let currentPage = 1;
+let currentAnalyzingLead = null; // Track which lead is being analyzed
 const itemsPerPage = 20;
 
 // Initialize on load
@@ -69,7 +69,6 @@ function applyFilters() {
   });
 
   currentPage = 1;
-  selectedLeadIds.clear();
   renderTable();
   updateStats();
 }
@@ -85,7 +84,6 @@ function resetFilters() {
   
   filteredLeads = [...allLeads];
   currentPage = 1;
-  selectedLeadIds.clear();
   renderTable();
   updateStats();
 }
@@ -109,8 +107,7 @@ function applyQuickDateRange() {
       startDate.setDate(today.getDate() - 90);
       break;
     case 'ytd':
-      startDate.setMonth(0);
-      startDate.setDate(1);
+      startDate = new Date(today.getFullYear(), 0, 1);
       break;
     default:
       return;
@@ -136,7 +133,7 @@ function extractLeadDate(lead) {
 }
 
 /**
- * Render leads table
+ * Render leads table with per-lead action buttons
  */
 function renderTable() {
   const container = document.getElementById('leadsContainer');
@@ -155,12 +152,12 @@ function renderTable() {
     <table class="leads-table">
       <thead>
         <tr>
-          <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" /></th>
           <th>Name/Company</th>
           <th>Email</th>
           <th>Phone</th>
           <th>Source</th>
           <th>Date</th>
+          <th class="action-col">Action</th>
         </tr>
       </thead>
       <tbody>
@@ -168,8 +165,6 @@ function renderTable() {
 
   pageLeads.forEach((lead, idx) => {
     const leadId = lead.id || `lead_${start + idx}`;
-    const isSelected = selectedLeadIds.has(leadId);
-    const checked = isSelected ? 'checked' : '';
     const name = lead.name || lead.company || 'N/A';
     const email = lead.email || '—';
     const phone = lead.phone || '—';
@@ -178,14 +173,14 @@ function renderTable() {
 
     html += `
       <tr>
-        <td class="checkbox-col">
-          <input type="checkbox" ${checked} onchange="toggleLeadSelection('${leadId}')" />
-        </td>
         <td>${escapeHtml(name)}</td>
         <td>${escapeHtml(email)}</td>
         <td>${escapeHtml(phone)}</td>
         <td><span class="source-badge">${escapeHtml(source)}</span></td>
         <td>${date}</td>
+        <td class="action-col">
+          <button class="btn-apply-ai" onclick="analyzeLead('${escapeHtml(leadId)}')">⚡ Apply AI</button>
+        </td>
       </tr>
     `;
   });
@@ -197,77 +192,100 @@ function renderTable() {
 
   container.innerHTML = html;
   renderPagination();
-  updateBulkActionsBar();
 }
 
 /**
- * Toggle individual lead selection
+ * Open the analyze modal for a specific lead
  */
-function toggleLeadSelection(leadId) {
-  if (selectedLeadIds.has(leadId)) {
-    selectedLeadIds.delete(leadId);
-  } else {
-    selectedLeadIds.add(leadId);
+function analyzeLead(leadId) {
+  // Find the lead in filteredLeads first, then in allLeads
+  let lead = filteredLeads.find(l => (l.id || `lead_${filteredLeads.indexOf(l)}`).toString() === leadId);
+  if (!lead) {
+    lead = allLeads.find(l => (l.id || `lead_${allLeads.indexOf(l)}`).toString() === leadId);
   }
-  updateBulkActionsBar();
-  updateStats();
-  document.getElementById('selectAllCheckbox').checked = false;
-}
-
-/**
- * Toggle select all on page
- */
-function toggleSelectAll() {
-  const isChecked = document.getElementById('selectAllCheckbox').checked;
-  const start = (currentPage - 1) * itemsPerPage;
-  const end = start + itemsPerPage;
-  const pageLeads = filteredLeads.slice(start, end);
-
-  pageLeads.forEach((lead, idx) => {
-    const leadId = lead.id || `lead_${start + idx}`;
-    if (isChecked) {
-      selectedLeadIds.add(leadId);
-    } else {
-      selectedLeadIds.delete(leadId);
-    }
-  });
-
-  renderTable();
-  updateStats();
-}
-
-/**
- * Select all filtered leads
- */
-function selectAllFiltered() {
-  filteredLeads.forEach((lead, idx) => {
-    selectedLeadIds.add(lead.id || `lead_${idx}`);
-  });
-  renderTable();
-  updateStats();
-}
-
-/**
- * Clear selection
- */
-function clearSelection() {
-  selectedLeadIds.clear();
-  renderTable();
-  updateStats();
-}
-
-/**
- * Update bulk actions bar visibility
- */
-function updateBulkActionsBar() {
-  const bar = document.getElementById('bulkActionsBar');
-  const text = document.getElementById('bulkActionText');
   
-  if (selectedLeadIds.size > 0) {
-    bar.classList.remove('hidden');
-    text.textContent = `${selectedLeadIds.size} lead${selectedLeadIds.size !== 1 ? 's' : ''} selected`;
-  } else {
-    bar.classList.add('hidden');
+  if (!lead) {
+    alert('Lead not found');
+    return;
+  }
+
+  // Store the current lead
+  currentAnalyzingLead = lead;
+
+  // Populate the modal with lead info
+  document.getElementById('leadNameInModal').textContent = lead.name || lead.company || 'N/A';
+  document.getElementById('leadCompanyInModal').textContent = lead.company || '—';
+  document.getElementById('leadEmailInModal').textContent = lead.email || '—';
+
+  // Reset form fields
+  document.getElementById('templateSelect').value = 'default';
+  document.getElementById('maxTokens').value = '1024';
+
+  // Open modal
+  document.getElementById('analyzeModal').classList.add('active');
+}
+
+/**
+ * Close the analyze modal
+ */
+function closeAnalyzeModal() {
+  document.getElementById('analyzeModal').classList.remove('active');
+  currentAnalyzingLead = null;
+}
+
+/**
+ * Submit the single lead for analysis
+ */
+async function submitAnalyze() {
+  if (!currentAnalyzingLead) {
+    alert('No lead selected');
+    return;
+  }
+
+  const template = document.getElementById('templateSelect').value;
+  const maxTokens = parseInt(document.getElementById('maxTokens').value);
+
+  try {
+    // Show loading state
+    const submitButton = event.target;
+    submitButton.disabled = true;
+    const originalText = submitButton.textContent;
+    submitButton.textContent = '⏳ Analyzing...';
+
+    const response = await fetch('/api/summarize', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        leads: [currentAnalyzingLead],
+        template,
+        maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start analysis');
+    }
+
+    const data = await response.json();
+    const jobId = data.jobId;
+
+    // Close modal
+    closeAnalyzeModal();
+
+    // Redirect to results page
+    window.location.href = `/ai-summary/summaries.html?jobId=${jobId}`;
+
+  } catch (error) {
+    console.error('Error starting analysis:', error);
+    alert(`❌ ${error.message}`);
+    
+    // Re-enable button
+    const submitButton = event.target;
+    submitButton.disabled = false;
+    submitButton.textContent = originalText;
   }
 }
 
@@ -284,9 +302,24 @@ function renderPagination() {
   }
 
   let html = '';
-  for (let i = 1; i <= totalPages; i++) {
-    const activeClass = i === currentPage ? 'active' : '';
-    html += `<button class="${activeClass}" onclick="goToPage(${i})">${i}</button>`;
+  
+  // Previous button
+  if (currentPage > 1) {
+    html += `<button onclick="goToPage(${currentPage - 1})">← Previous</button>`;
+  }
+
+  // Page numbers
+  for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+    if (i === currentPage) {
+      html += `<button class="active">${i}</button>`;
+    } else {
+      html += `<button onclick="goToPage(${i})">${i}</button>`;
+    }
+  }
+
+  // Next button
+  if (currentPage < totalPages) {
+    html += `<button onclick="goToPage(${currentPage + 1})">Next →</button>`;
   }
 
   paginationDiv.innerHTML = html;
@@ -298,7 +331,7 @@ function renderPagination() {
 function goToPage(page) {
   currentPage = page;
   renderTable();
-  window.scrollTo(0, 0);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 /**
@@ -306,89 +339,7 @@ function goToPage(page) {
  */
 function updateStats() {
   document.getElementById('totalLeads').textContent = allLeads.length;
-  document.getElementById('selectedLeads').textContent = selectedLeadIds.size;
   document.getElementById('filteredLeads').textContent = filteredLeads.length;
-  
-  const cost = estimateCost(selectedLeadIds.size);
-  document.getElementById('estimatedCost').textContent = `$${cost.toFixed(2)}`;
-  document.getElementById('costEstimate').textContent = `$${cost.toFixed(2)}`;
-}
-
-/**
- * Estimate cost
- */
-function estimateCost(leadCount) {
-  // Simple estimation: $0.12 per lead average
-  return leadCount * 0.12;
-}
-
-/**
- * Open analyze modal
- */
-function openAnalyzeModal() {
-  document.getElementById('analyzeModal').classList.add('active');
-}
-
-/**
- * Close analyze modal
- */
-function closeAnalyzeModal() {
-  document.getElementById('analyzeModal').classList.remove('active');
-}
-
-/**
- * Proceed to summarize (requires selection)
- */
-function proceedToSummarize() {
-  if (selectedLeadIds.size === 0) {
-    alert('⚠️ Please select at least one lead to summarize.');
-    return;
-  }
-  openAnalyzeModal();
-}
-
-/**
- * Start summarization
- */
-async function startSummarization() {
-  if (selectedLeadIds.size === 0) {
-    alert('⚠️ Please select at least one lead to summarize.');
-    return;
-  }
-
-  const template = document.getElementById('templateSelect').value;
-  const maxTokens = parseInt(document.getElementById('maxTokens').value);
-
-  // Get selected lead objects
-  const selectedLeads = filteredLeads.filter(lead => 
-    selectedLeadIds.has(lead.id || `lead_${filteredLeads.indexOf(lead)}`)
-  );
-
-  try {
-    closeAnalyzeModal();
-    const response = await fetch('/api/summarize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        leads: selectedLeads,
-        template,
-        maxTokens,
-        dateRange: {
-          startDate: document.getElementById('dateFrom').value,
-          endDate: document.getElementById('dateTo').value
-        }
-      })
-    });
-
-    if (!response.ok) throw new Error('Summarization failed');
-    const result = await response.json();
-
-    // Redirect to summaries page
-    window.location.href = `/ai-summary/summaries.html?jobId=${result.jobId}`;
-  } catch (error) {
-    console.error('Error starting summarization:', error);
-    alert('❌ Failed to start summarization. Please try again.');
-  }
 }
 
 /**

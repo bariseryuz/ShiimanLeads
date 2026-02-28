@@ -173,14 +173,26 @@
       background: #f9f9f9;
     }
     
-    .checkbox-col {
-      width: 40px;
+    .action-col {
+      width: 120px;
+      text-align: center;
     }
     
-    .checkbox-col input {
-      width: 18px;
-      height: 18px;
+    .btn-apply-ai {
+      background: #FF9800;
+      color: white;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
       cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+    
+    .btn-apply-ai:hover {
+      background: #F57C00;
+      box-shadow: 0 2px 6px rgba(255,152,0,0.3);
     }
     
     .source-badge {
@@ -191,22 +203,6 @@
       border-radius: 4px;
       font-size: 12px;
       font-weight: 600;
-    }
-    
-    .bulk-actions {
-      position: sticky;
-      top: 0;
-      background: #fff3cd;
-      padding: 15px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      border-bottom: 1px solid #ffc107;
-    }
-    
-    .bulk-actions.hidden {
-      display: none;
     }
     
     .pagination {
@@ -305,11 +301,8 @@
     <div class="header">
       <div>
         <h1>🤖 AI Lead Analyzer</h1>
-        <p>Select & summarize your leads with AI</p>
+        <p>Click "Apply AI" on any lead to analyze it</p>
       </div>
-      <button class="btn btn-ai-analyze" onclick="openAnalyzeModal()">
-        📊 AI Analyze
-      </button>
     </div>
 
     <!-- Filters Section -->
@@ -351,26 +344,8 @@
         <div class="label">Total Leads</div>
       </div>
       <div class="stat-card">
-        <div class="value" id="selectedLeads">0</div>
-        <div class="label">Selected</div>
-      </div>
-      <div class="stat-card">
         <div class="value" id="filteredLeads">0</div>
         <div class="label">Filtered</div>
-      </div>
-      <div class="stat-card">
-        <div class="value" id="estimatedCost">$0.00</div>
-        <div class="label">Est. Cost</div>
-      </div>
-    </div>
-
-    <!-- Bulk Actions Bar -->
-    <div class="bulk-actions hidden" id="bulkActionsBar">
-      <span id="bulkActionText">0 leads selected</span>
-      <div>
-        <button class="btn btn-secondary" onclick="selectAllFiltered()">Select All Filtered</button>
-        <button class="btn btn-secondary" onclick="clearSelection()">Clear</button>
-        <button class="btn btn-ai-analyze" onclick="proceedToSummarize()">📄 Summarize Selected</button>
       </div>
     </div>
 
@@ -386,7 +361,12 @@
   <!-- Analyze Modal -->
   <div class="modal" id="analyzeModal">
     <div class="modal-content">
-      <div class="modal-header">AI Summarization Settings</div>
+      <div class="modal-header">Analyze Lead</div>
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+        <strong>Lead:</strong> <span id="leadNameInModal">-</span><br>
+        <strong>Company:</strong> <span id="leadCompanyInModal">-</span><br>
+        <strong>Email:</strong> <span id="leadEmailInModal">-</span>
+      </div>
       <div class="modal-body">
         <div class="filter-item" style="margin-bottom: 15px;">
           <label>Summarization Template</label>
@@ -406,13 +386,10 @@
             <option value="4096">Very Long (4096 tokens)</option>
           </select>
         </div>
-        <div style="background: #e8f5e9; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-          <strong>Estimated Cost:</strong> <span id="costEstimate">$0.12</span>
-        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeAnalyzeModal()">Cancel</button>
-        <button class="btn btn-ai-analyze" onclick="startSummarization()">Start Analyzing</button>
+        <button class="btn btn-ai-analyze" onclick="submitAnalyze()">📊 Analyze</button>
       </div>
     </div>
   </div>

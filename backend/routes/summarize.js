@@ -36,6 +36,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Invalid leads array' });
     }
 
+    if (leads.length === 0) {
+      return res.status(400).json({ error: 'No leads provided' });
+    }
+
     // Create job
     const jobId = Alsummarize.createJob(userId, leads, {
       template: template || 'default',
@@ -43,15 +47,24 @@ router.post('/', async (req, res) => {
       dateRange
     });
 
-    // Start async processing (don't wait for it)
-    Alsummarize.processJob(jobId)
-      .then(() => logger.info(`[API] Job ${jobId} completed`))
-      .catch(e => logger.error(`[API] Job ${jobId} failed: ${e.message}`));
+    // Start async processing in background
+    setImmediate(() => {
+      Alsummarize.processJob(jobId)
+        .then(() => logger.info(`[API] Job ${jobId} completed successfully`))
+        .catch(e => {
+          logger.error(`[API] Job ${jobId} failed: ${e.message}`);
+          const job = Alsummarize.getJob(jobId);
+          if (job) {
+            job.status = 'failed';
+            job.error = e.message;
+          }
+        });
+    });
 
     res.json({ jobId, status: 'queued' });
   } catch (error) {
-    logger.error(`Error creating summarization job: ${error.message}`);
-    res.status(500).json({ error: 'Failed to create job' });
+    logger.error(`[API] Error creating summarization job: ${error.message}`);
+    res.status(500).json({ error: error.message || 'Failed to create job' });
   }
 });
 
