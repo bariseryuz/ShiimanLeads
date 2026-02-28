@@ -84,4 +84,25 @@ router.get('/', async (req, res) => {
   }
 });
 
+
+/**
+ * POST /api/summarize/instant
+ * Immediately summarize a single lead and return text
+ */
+router.post('/instant', async (req, res) => {
+  try {
+    const { lead, template, maxTokens } = req.body;
+    if (!lead || typeof lead !== 'object') {
+      return res.status(400).json({ error: 'Lead object required' });
+    }
+
+    // Call service directly
+    const summary = await Alsummarize.summarizeLead(lead, template || 'default', maxTokens || 1024);
+    res.json({ summary });
+  } catch (error) {
+    logger.error(`[API] Error in instant summarize: ${error.message}`);
+    res.status(500).json({ error: error.message || 'Instant summarization failed' });
+  }
+});
+
 module.exports = router;

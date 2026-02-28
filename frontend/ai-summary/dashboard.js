@@ -191,7 +191,7 @@ function renderTable() {
         <td>${escapeHtml(name)}</td>
         <td>${escapeHtml(email)}</td>
         <td>${escapeHtml(phone)}</td>
-        <td>
+        <td class="source-col" id="source-cell-${leadId}">
           <div class="source-with-action">
             <span class="source-badge">${escapeHtml(source)}</span>
             <button class="btn-apply-ai" onclick="toggleRowSummary('${leadId}')">⚡ Apply AI</button>
@@ -458,4 +458,70 @@ function escapeHtml(text) {
     "'": '&#039;'
   };
   return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+/**
+ * Toggle between original lead data and AI summary within the source column.
+ * If a summary hasn't been fetched yet it will request it via the instant API.
+ */
+async function toggleRowSummary(leadId) {
+  const row = document.getElementById(`lead-row-${leadId}`);
+  if (!row) return;
+  const cell = document.getElementById(`source-cell-${leadId}`);
+  if (!cell) return;
+
+  // If currently showing a summary, restore the original html and exit.
+  if (cell.dataset.showingSummary === 'true') {
+    cell.innerHTML = cell.dataset.originalHtml || cell.innerHTML;
+    cell.dataset.showingSummary = 'false';
+    return;
+  }
+
+  // store original html the first time we toggle for this row
+  if (!cell.dataset.originalHtml) {
+    cell.dataset.originalHtml = cell.innerHTML;
+  }
+
+  // If we already fetched a summary, just display it
+  if (leadSummaries[leadId]) {
+    cell.innerHTML = `<div class="summary-cell">
+        ${escapeHtml(leadSummaries[leadId])}
+        <button onclick="toggleRowSummary('${leadId}')">↩️ Details</button>
+      </div>`;
+    cell.dataset.showingSummary = 'true';
+    return;
+  }
+
+  // otherwise request the summary from the server
+  cell.innerHTML = '⚡ Generating summary...';
+  try {
+    const lead = leadsById[leadId];
+    const response = await fetch('/api/summarize/instant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lead,
+        template: 'default',
+        maxTokens: 512
+      })
+    });
+    if (!response.ok) {
+      throw new Error('Failed to fetch summary');
+    }
+    const data = await response.json();
+    const summaryText = data.summary;
+    leadSummaries[leadId] = summaryText;
+
+    cell.innerHTML = `<div class="summary-cell">
+        ${escapeHtml(summaryText)}
+        <button onclick="toggleRowSummary('${leadId}')">↩️ Details</button>
+      </div>`;
+    cell.dataset.showingSummary = 'true';
+  } catch (err) {
+    console.error(err);
+    alert('❌ Error fetching summary');
+    // put back original content if something went wrong
+    cell.innerHTML = cell.dataset.originalHtml || cell.innerHTML;
+    cell.dataset.showingSummary = 'false';
+  }
 }

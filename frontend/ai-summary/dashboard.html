@@ -314,6 +314,8 @@
     .loading::after { content: ' .'; animation: dots 1.5s steps(4, end) infinite; }
     @keyframes dots { 0%, 20% { content: ' .'; } 40% { content: ' ..'; } 60% { content: ' ...'; } }
 
+    .error-text { background: #ffebee; padding: 10px; color: #c62828; border-radius: 4px; font-size: 13px; }
+
     @media (max-width: 768px) {
       .header { flex-direction: column; text-align: center; }
       .filter-group { grid-template-columns: 1fr; }
@@ -428,7 +430,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeAnalyzeModal()">Cancel</button>
-        <button class="btn btn-ai-analyze" onclick="submitAnalysis()">📊 Start Analysis</button>
+        <button class="btn btn-ai-analyze" onclick="submitAnalysis(event)">📊 Start Analysis</button>
       </div>
     </div>
   </div>
