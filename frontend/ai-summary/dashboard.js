@@ -151,8 +151,8 @@ function renderTable() {
   const pageLeads = filteredLeads.slice(start, end);
 
   let html = `
-    <div class="table-container">
-      <table class="leads-table">
+    <div class="table-container" style="overflow-x: auto; max-width: 100%; background: white; border: 1px solid var(--gray-200); border-top: none; border-radius: 0 0 12px 12px;">
+      <table class="leads-table" style="margin: 0; border-radius: 0;">
         <thead>
           <tr>
             <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" /></th>
