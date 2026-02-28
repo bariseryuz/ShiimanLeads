@@ -461,6 +461,40 @@ function escapeHtml(text) {
 }
 
 /**
+ * Format a structured summary object or plain string into a compact sentence.
+ */
+function formatLeadSummary(data) {
+  if (!data) return '';
+  if (typeof data === 'string') return data;
+
+  const s = data.summary || '';
+  const businessType = data.business_type || data.type || '';
+  const addr = data.address || data.location || data.address_text || '';
+  const date = data.date || data.permit_date || data.issued || '';
+  const contact = data.contact_info || {};
+  const contractor = contact.contractor_name || contact.name || '';
+  const phone = contact.phone || contact.phone_number || '';
+  const email = contact.email || contact.email_address || '';
+  const fee = data.fee || data.permit_fee || data.estimated_cost || '';
+  const potential = data.potential || '';
+
+  const parts = [];
+  if (businessType) parts.push(`${businessType} project`);
+  if (addr) parts.push(`at ${addr}`);
+  if (date) parts.push(`permit issued ${date}`);
+  if (contractor) parts.push(`contractor ${contractor}`);
+  const contactParts = [];
+  if (phone) contactParts.push(`phone ${phone}`);
+  if (email) contactParts.push(`email ${email}`);
+  if (contactParts.length) parts.push(`contact: ${contactParts.join(' / ')}`);
+  if (fee) parts.push(`permit fee ${fee}`);
+  if (potential) parts.push(potential);
+
+  const human = parts.length ? parts.join('. ') + '.' : (s || JSON.stringify(data));
+  return human;
+}
+
+/**
  * Toggle between original lead data and AI summary within the source column.
  * If a summary hasn't been fetched yet it will request it via the instant API.
  */
@@ -509,11 +543,11 @@ async function toggleRowSummary(leadId) {
       throw new Error('Failed to fetch summary');
     }
     const data = await response.json();
-    const summaryText = data.summary;
-    leadSummaries[leadId] = summaryText;
+    const formatted = formatLeadSummary(data);
+    leadSummaries[leadId] = formatted;
 
     cell.innerHTML = `<div class="summary-cell">
-        ${escapeHtml(summaryText)}
+        ${escapeHtml(formatted)}
         <button onclick="toggleRowSummary('${leadId}')">↩️ Details</button>
       </div>`;
     cell.dataset.showingSummary = 'true';
