@@ -16,6 +16,26 @@
     tr.new-lead:hover {
       background-color: rgba(255, 0, 0, 0.15) !important;
     }
+
+    /* Inline AI toggle button and summary styling */
+    .ai-toggle-btn {
+      margin-left: 0.5rem;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      cursor: pointer;
+      background: #fbbf24;
+      border: none;
+      border-radius: 4px;
+      color: #000;
+    }
+    .ai-toggle-btn:hover {
+      background: #f59e0b;
+    }
+    .summary-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
     
     /* Progress Modal Styles */
     .progress-modal {
@@ -962,6 +982,10 @@
     let isLoadingMore = false;
     let currentFilters = {};
 
+    // AI lead maps for inline summaries
+    const clientLeadsByKey = {};
+    const clientLeadSummaries = {};
+
     // Toggle metrics panel
     function toggleMetrics() {
       metricsExpanded = !metricsExpanded;
@@ -975,6 +999,56 @@
       } else {
         details.style.display = 'none';
         arrow.style.transform = 'rotate(0deg)';
+      }
+    }
+
+    /**
+     * Toggle summary for a specific lead cell in client portal table.
+     * Inserts or restores the original HTML and caches AI summaries.
+     */
+    async function toggleClientSummary(key) {
+      const td = document.getElementById(`ai-cell-${key}`);
+      if (!td) return;
+
+      // currently showing summary?
+      if (td.dataset.showingSummary === 'true') {
+        td.innerHTML = td.dataset.originalHtml || td.innerHTML;
+        td.dataset.showingSummary = 'false';
+        return;
+      }
+
+      // store original HTML first time
+      if (!td.dataset.originalHtml) {
+        td.dataset.originalHtml = td.innerHTML;
+      }
+
+      // if we already fetched before
+      if (clientLeadSummaries[key]) {
+        td.innerHTML = `<div class="summary-cell">${escapeHtml(clientLeadSummaries[key])}<button onclick="toggleClientSummary('${key}')">↩️ Details</button></div>`;
+        td.dataset.showingSummary = 'true';
+        return;
+      }
+
+      // otherwise request summary from server
+      td.innerHTML = '⚡ Generating summary...';
+      try {
+        const lead = clientLeadsByKey[key];
+        const response = await fetch('/api/summarize/instant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead, template: 'default', maxTokens: 512 })
+        });
+        if (!response.ok) throw new Error('Failed to fetch summary');
+        const data = await response.json();
+        const summaryText = data.summary;
+        clientLeadSummaries[key] = summaryText;
+        td.innerHTML = `<div class="summary-cell">${escapeHtml(summaryText)}<button onclick="toggleClientSummary('${key}')">↩️ Details</button></div>`;
+        td.dataset.showingSummary = 'true';
+      } catch (err) {
+        console.error(err);
+        alert('❌ Error fetching summary');
+        td.innerHTML = td.dataset.originalHtml || td.innerHTML;
+        td.dataset.showingSummary = 'false';
       }
     }
 
@@ -1108,6 +1182,13 @@
         const response = await fetch('/api/leads?' + params.toString());
         const result = await response.json();
         const leads = result.data || [];
+        
+        // assign a stable key for each lead and populate map
+        leads.forEach(lead => {
+          const key = lead.id || lead.unique_id || ('lead_' + Math.random().toString(36).substr(2,9));
+          lead.__clientKey = key;
+          clientLeadsByKey[key] = lead;
+        });
         
         if (leads.length === 0) {
           leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem; color: var(--gray-600);">No leads found. Try adjusting your filters.</div>';
@@ -1262,7 +1343,7 @@
               tr.classList.add('new-lead');
             }
             
-            fieldNames.forEach(field => {
+            fieldNames.forEach((field, idx) => {
               const td = document.createElement('td');
               let value = lead[field];
               
@@ -1275,18 +1356,33 @@
                   // Not JSON, ignore
                 }
               }
-              
-              // Handle URL fields
+
+              // generate formatted value string (plain text)
+              let formattedVal = '';
               if (value && (field.toLowerCase().includes('url') || field.toLowerCase().includes('link'))) {
-                td.innerHTML = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
+                formattedVal = `<a href="${escapeHtml(value)}" target="_blank" style="color: var(--primary); text-decoration: underline;">View</a>`;
               } else if (value === null || value === undefined || value === '') {
-                td.textContent = '-';
+                formattedVal = '-';
               } else if (field.toLowerCase().includes('cost') || field.toLowerCase().includes('value') || field.toLowerCase().includes('amount') || field.toLowerCase().includes('price') || field.toLowerCase().includes('fee')) {
                 // Format currency fields
-                td.textContent = formatCurrency(value);
+                formattedVal = formatCurrency(value);
               } else if (field.toLowerCase().includes('date') && !field.toLowerCase().includes('update')) {
                 // Format date fields (except updated_at)
-                td.textContent = formatDate(value);
+                formattedVal = formatDate(value);
+              } else {
+                // default, escape html
+                formattedVal = escapeHtml(String(value));
+              }
+
+              // attach AI toggle button only to first column
+              if (idx === 0) {
+                const key = lead.__clientKey;
+                td.id = `ai-cell-${key}`;
+                td.dataset.originalHtml = '';
+                td.innerHTML = `<span class="cell-text">${formattedVal}</span> <button class="btn btn-primary btn-sm ai-toggle-btn" onclick="toggleClientSummary('${key}')">⚡</button>`;
+              } else {
+                td.innerHTML = formattedVal;
+              }
               } else {
                 td.textContent = value;
               }
