@@ -336,15 +336,15 @@
     <div class="filters-section">
       <div class="filter-group">
         <div class="filter-item">
-          <label>Date Range From</label>
+          <label for="dateFrom">Date Range From</label>
           <input type="date" id="dateFrom" />
         </div>
         <div class="filter-item">
-          <label>Date Range To</label>
+          <label for="dateTo">Date Range To</label>
           <input type="date" id="dateTo" />
         </div>
         <div class="filter-item">
-          <label>Quick Select</label>
+          <label for="quickDateRange">Quick Select</label>
           <select id="quickDateRange" onchange="applyQuickDateRange()">
             <option value="">Custom</option>
             <option value="last7">Last 7 Days</option>
@@ -354,7 +354,7 @@
           </select>
         </div>
         <div class="filter-item">
-          <label>Search</label>
+          <label for="searchBox">Search</label>
           <input type="text" id="searchBox" placeholder="Search leads..." />
         </div>
       </div>
@@ -408,7 +408,7 @@
       </div>
       <div class="modal-body">
         <div class="filter-item" style="margin-bottom: 15px;">
-          <label>Analysis Template</label>
+          <label for="templateSelect">Analysis Template</label>
           <select id="templateSelect">
             <option value="default">Default Summary</option>
             <option value="business">Business Analysis</option>
@@ -417,7 +417,7 @@
           </select>
         </div>
         <div class="filter-item" style="margin-bottom: 15px;">
-          <label>Max Output Length</label>
+          <label for="maxTokens">Max Output Length</label>
           <select id="maxTokens">
             <option value="512">Short (512 tokens)</option>
             <option value="1024" selected>Medium (1024 tokens)</option>
