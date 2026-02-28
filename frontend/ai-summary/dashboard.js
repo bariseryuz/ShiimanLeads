@@ -1,8 +1,8 @@
 // Global state
 let allLeads = [];
 let filteredLeads = [];
+let selectedLeadIds = new Set();
 let currentPage = 1;
-let currentAnalyzingLead = null; // Track which lead is being analyzed
 const itemsPerPage = 20;
 
 // Initialize on load
@@ -69,6 +69,7 @@ function applyFilters() {
   });
 
   currentPage = 1;
+  selectedLeadIds.clear();
   renderTable();
   updateStats();
 }
@@ -84,6 +85,7 @@ function resetFilters() {
   
   filteredLeads = [...allLeads];
   currentPage = 1;
+  selectedLeadIds.clear();
   renderTable();
   updateStats();
 }
@@ -133,7 +135,7 @@ function extractLeadDate(lead) {
 }
 
 /**
- * Render leads table with per-lead action buttons
+ * Render leads table with checkboxes and inline Apply AI buttons
  */
 function renderTable() {
   const container = document.getElementById('leadsContainer');
@@ -152,12 +154,12 @@ function renderTable() {
     <table class="leads-table">
       <thead>
         <tr>
+          <th class="checkbox-col"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()" /></th>
           <th>Name/Company</th>
           <th>Email</th>
           <th>Phone</th>
-          <th>Source</th>
+          <th>GIS</th>
           <th>Date</th>
-          <th class="action-col">Action</th>
         </tr>
       </thead>
       <tbody>
@@ -165,6 +167,8 @@ function renderTable() {
 
   pageLeads.forEach((lead, idx) => {
     const leadId = lead.id || `lead_${start + idx}`;
+    const isSelected = selectedLeadIds.has(leadId);
+    const checked = isSelected ? 'checked' : '';
     const name = lead.name || lead.company || 'N/A';
     const email = lead.email || '—';
     const phone = lead.phone || '—';
@@ -173,14 +177,19 @@ function renderTable() {
 
     html += `
       <tr>
+        <td class="checkbox-col">
+          <input type="checkbox" ${checked} onchange="toggleLeadSelection('${leadId}')" />
+        </td>
         <td>${escapeHtml(name)}</td>
         <td>${escapeHtml(email)}</td>
         <td>${escapeHtml(phone)}</td>
-        <td><span class="source-badge">${escapeHtml(source)}</span></td>
-        <td>${date}</td>
-        <td class="action-col">
-          <button class="btn-apply-ai" onclick="analyzeLead('${escapeHtml(leadId)}')">⚡ Apply AI</button>
+        <td>
+          <div class="source-with-action">
+            <span class="source-badge">${escapeHtml(source)}</span>
+            <button class="btn-apply-ai" onclick="analyzeSingleLead('${escapeHtml(leadId)}')">⚡ Apply AI</button>
+          </div>
         </td>
+        <td>${date}</td>
       </tr>
     `;
   });
@@ -192,73 +201,30 @@ function renderTable() {
 
   container.innerHTML = html;
   renderPagination();
+  updateBulkActionsBar();
 }
 
 /**
- * Open the analyze modal for a specific lead
+ * Analyze a single lead (inline button click)
  */
-function analyzeLead(leadId) {
-  // Find the lead in filteredLeads first, then in allLeads
-  let lead = filteredLeads.find(l => (l.id || `lead_${filteredLeads.indexOf(l)}`).toString() === leadId);
-  if (!lead) {
-    lead = allLeads.find(l => (l.id || `lead_${allLeads.indexOf(l)}`).toString() === leadId);
-  }
+async function analyzeSingleLead(leadId) {
+  // Find the lead
+  const lead = allLeads.find(l => (l.id || `lead_${allLeads.indexOf(l)}`).toString() === leadId);
   
   if (!lead) {
     alert('Lead not found');
     return;
   }
 
-  // Store the current lead
-  currentAnalyzingLead = lead;
-
-  // Populate the modal with lead info
-  document.getElementById('leadNameInModal').textContent = lead.name || lead.company || 'N/A';
-  document.getElementById('leadCompanyInModal').textContent = lead.company || '—';
-  document.getElementById('leadEmailInModal').textContent = lead.email || '—';
-
-  // Reset form fields
-  document.getElementById('templateSelect').value = 'default';
-  document.getElementById('maxTokens').value = '1024';
-
-  // Open modal
-  document.getElementById('analyzeModal').classList.add('active');
-}
-
-/**
- * Close the analyze modal
- */
-function closeAnalyzeModal() {
-  document.getElementById('analyzeModal').classList.remove('active');
-  currentAnalyzingLead = null;
-}
-
-/**
- * Submit the single lead for analysis
- */
-async function submitAnalyze() {
-  if (!currentAnalyzingLead) {
-    alert('No lead selected');
-    return;
-  }
-
-  const template = document.getElementById('templateSelect').value;
-  const maxTokens = parseInt(document.getElementById('maxTokens').value);
+  const template = 'default';
+  const maxTokens = 1024;
 
   try {
-    // Show loading state
-    const submitButton = event.target;
-    submitButton.disabled = true;
-    const originalText = submitButton.textContent;
-    submitButton.textContent = '⏳ Analyzing...';
-
     const response = await fetch('/api/summarize', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        leads: [currentAnalyzingLead],
+        leads: [lead],
         template,
         maxTokens
       })
@@ -270,22 +236,150 @@ async function submitAnalyze() {
     }
 
     const data = await response.json();
-    const jobId = data.jobId;
+    window.location.href = `/ai-summary/summaries.html?jobId=${data.jobId}`;
+  } catch (error) {
+    console.error('Error:', error);
+    alert(`❌ ${error.message}`);
+  }
+}
 
-    // Close modal
+/**
+ * Toggle individual lead selection
+ */
+function toggleLeadSelection(leadId) {
+  if (selectedLeadIds.has(leadId)) {
+    selectedLeadIds.delete(leadId);
+  } else {
+    selectedLeadIds.add(leadId);
+  }
+  updateBulkActionsBar();
+  updateStats();
+  document.getElementById('selectAllCheckbox').checked = false;
+}
+
+/**
+ * Toggle select all on page
+ */
+function toggleSelectAll() {
+  const isChecked = document.getElementById('selectAllCheckbox').checked;
+  const start = (currentPage - 1) * itemsPerPage;
+  const end = start + itemsPerPage;
+  const pageLeads = filteredLeads.slice(start, end);
+
+  pageLeads.forEach((lead, idx) => {
+    const leadId = lead.id || `lead_${start + idx}`;
+    if (isChecked) {
+      selectedLeadIds.add(leadId);
+    } else {
+      selectedLeadIds.delete(leadId);
+    }
+  });
+
+  renderTable();
+  updateStats();
+}
+
+/**
+ * Select all filtered leads
+ */
+function selectAllFiltered() {
+  filteredLeads.forEach((lead, idx) => {
+    selectedLeadIds.add(lead.id || `lead_${idx}`);
+  });
+  renderTable();
+  updateStats();
+}
+
+/**
+ * Clear selection
+ */
+function clearSelection() {
+  selectedLeadIds.clear();
+  renderTable();
+  updateStats();
+}
+
+/**
+ * Update bulk actions bar visibility
+ */
+function updateBulkActionsBar() {
+  const bar = document.getElementById('bulkActionsBar');
+  const text = document.getElementById('bulkActionText');
+  
+  if (selectedLeadIds.size > 0) {
+    bar.classList.remove('hidden');
+    text.textContent = `${selectedLeadIds.size} lead${selectedLeadIds.size !== 1 ? 's' : ''} selected`;
+  } else {
+    bar.classList.add('hidden');
+  }
+}
+
+/**
+ * Proceed to analyze selected leads
+ */
+function proceedToAnalyze() {
+  if (selectedLeadIds.size === 0) {
+    alert('⚠️ Please select at least one lead.');
+    return;
+  }
+  document.getElementById('leadsCountInModal').textContent = selectedLeadIds.size;
+  document.getElementById('analyzeModal').classList.add('active');
+}
+
+/**
+ * Close the analyze modal
+ */
+function closeAnalyzeModal() {
+  document.getElementById('analyzeModal').classList.remove('active');
+}
+
+/**
+ * Submit analysis for all selected leads
+ */
+async function submitAnalysis() {
+  if (selectedLeadIds.size === 0) {
+    alert('⚠️ Please select at least one lead.');
+    return;
+  }
+
+  const template = document.getElementById('templateSelect').value;
+  const maxTokens = parseInt(document.getElementById('maxTokens').value);
+
+  // Get selected lead objects
+  const selectedLeads = filteredLeads.filter(lead => 
+    selectedLeadIds.has(lead.id || `lead_${filteredLeads.indexOf(lead)}`)
+  );
+
+  try {
+    const submitButton = event.target;
+    submitButton.disabled = true;
+    submitButton.textContent = '⏳ Analyzing...';
+
+    const response = await fetch('/api/summarize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        leads: selectedLeads,
+        template,
+        maxTokens
+      })
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start analysis');
+    }
+
+    const data = await response.json();
     closeAnalyzeModal();
-
-    // Redirect to results page
-    window.location.href = `/ai-summary/summaries.html?jobId=${jobId}`;
-
+    window.location.href = `/ai-summary/summaries.html?jobId=${data.jobId}`;
   } catch (error) {
     console.error('Error starting analysis:', error);
     alert(`❌ ${error.message}`);
     
-    // Re-enable button
     const submitButton = event.target;
     submitButton.disabled = false;
-    submitButton.textContent = originalText;
+    submitButton.textContent = '📊 Start Analysis';
   }
 }
 
@@ -303,12 +397,10 @@ function renderPagination() {
 
   let html = '';
   
-  // Previous button
   if (currentPage > 1) {
     html += `<button onclick="goToPage(${currentPage - 1})">← Previous</button>`;
   }
 
-  // Page numbers
   for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
     if (i === currentPage) {
       html += `<button class="active">${i}</button>`;
@@ -317,7 +409,6 @@ function renderPagination() {
     }
   }
 
-  // Next button
   if (currentPage < totalPages) {
     html += `<button onclick="goToPage(${currentPage + 1})">Next →</button>`;
   }
@@ -339,6 +430,7 @@ function goToPage(page) {
  */
 function updateStats() {
   document.getElementById('totalLeads').textContent = allLeads.length;
+  document.getElementById('selectedLeads').textContent = selectedLeadIds.size;
   document.getElementById('filteredLeads').textContent = filteredLeads.length;
 }
 
