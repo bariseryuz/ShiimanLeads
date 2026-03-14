@@ -25,6 +25,7 @@ const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts 
 const { setupApiInterceptor, waitForApiResponse, extractRecordsFromApiResponse } = require('./services/scraper/apiInterceptor');
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
+const engine = require('./engine');
 
 async function scrapeForUser(userId, userSources, extractionLimits) {
   logger.info(`🚀 Starting FIXED PRODUCTION Scrape for User ${userId}`);
@@ -51,6 +52,37 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
     try {
       await rateLimiter.waitIfNeeded();
       let sourceNewLeads = 0;
+
+      // ===== UNIVERSAL ENGINE (manifest-based sources: query_params, filters, field_mapping) =====
+      if (engine.shouldUseEngine(source)) {
+        try {
+          logger.info(`✨ Using Universal Engine for: ${source.name}`);
+          const leads = await engine.runUniversalPipeline(source);
+          for (const lead of leads) {
+            if (isTotalRowLimitReached(totalInserted, limits)) break;
+            if (await insertLeadIfNew({
+              raw: JSON.stringify(lead),
+              sourceName: source.name,
+              lead,
+              userId,
+              sourceId: source.id,
+              sourceUrl: source.url
+            })) {
+              sourceNewLeads++;
+              totalInserted++;
+            }
+          }
+          logger.info(`   ✅ Engine complete: ${sourceNewLeads} new leads`);
+          await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+          rateLimiter.onSuccess();
+          continue;
+        } catch (engineErr) {
+          logger.error(`❌ Engine error for ${source.name}: ${engineErr.message}`);
+          await trackSourceReliability(source.id, source.name, false, 0);
+          rateLimiter.onError();
+          continue;
+        }
+      }
 
       // ===== ARCGIS HUB PIPELINE =====
       if (source.type === 'arcgis') {

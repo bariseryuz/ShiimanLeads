@@ -869,6 +869,30 @@
             <small style="color: var(--gray-600);">Use the dataset date column to split large ArcGIS pulls by year (e.g., ApplicationDate).</small>
           </div>
         </div>
+
+        <!-- UNIVERSAL ENGINE (JSON + ArcGIS: filter & map fields) -->
+        <div id="engineSection" class="form-group" style="display: none; border: 2px solid #059669; border-radius: 8px; padding: 1rem; background: linear-gradient(135deg, rgba(5, 150, 105, 0.06), rgba(16, 185, 129, 0.06));">
+          <h3 style="margin: 0 0 0.75rem 0; color: #059669; font-size: 1rem; font-weight: 700;">⚙️ Universal Engine (optional)</h3>
+          <p style="margin: 0 0 0.75rem 0; color: #475569; font-size: 0.875rem;">Filter and map API fields so only qualified leads are saved. Same logic for any sector (permits, jobs, real estate).</p>
+          <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem;">
+            <input type="checkbox" id="useEngine" style="width: auto; cursor: pointer;">
+            <span>Use Universal Engine for this source</span>
+          </label>
+          <div class="form-group" style="margin-top: 0.75rem;">
+            <label class="form-label" for="engineFieldMapping">Field mapping (API name → your name) JSON</label>
+            <textarea id="engineFieldMapping" class="form-input" rows="3" placeholder='{"EST_COST_AMT": "budget", "ADDR": "address", "OWNER": "owner"}'></textarea>
+            <small style="color: var(--gray-600);">Map API field names to your preferred names. Leave empty to keep raw keys.</small>
+          </div>
+          <div class="form-group" style="margin-top: 0.5rem;">
+            <label class="form-label" for="engineFilters">Filters (only save leads that pass) JSON</label>
+            <textarea id="engineFilters" class="form-input" rows="3" placeholder='[{"field": "budget", "operator": ">", "value": 50000}, {"field": "type", "operator": "==", "value": "Commercial"}]'></textarea>
+            <small style="color: var(--gray-600);">Operators: &gt;, &lt;, ==, contains, in, between, days_ago. Leave empty to save all.</small>
+          </div>
+          <div id="engineWhereClauseWrap" style="display: none; margin-top: 0.5rem;">
+            <label class="form-label" for="engineWhereClause">ArcGIS where clause (optional)</label>
+            <input type="text" id="engineWhereClause" class="form-input" placeholder="1=1 or EST_COST &gt; 50000">
+          </div>
+        </div>
         
         <!-- AI PROMPT FIELD - THE MAIN FEATURE (hidden for JSON API) -->
         <div id="aiPromptSection" class="form-group" style="border: 2px solid #8b5cf6; border-radius: 8px; padding: 1rem; background: linear-gradient(135deg, rgba(139, 92, 246, 0.05), rgba(102, 126, 234, 0.05));">
@@ -1008,6 +1032,8 @@
       // Show/hide JSON API fields
       document.getElementById('jsonApiFields').style.display = isJsonApi ? 'block' : 'none';
       document.getElementById('arcgisFields').style.display = isArcGIS ? 'block' : 'none';
+      document.getElementById('engineSection').style.display = (isJsonApi || isArcGIS) ? 'block' : 'none';
+      document.getElementById('engineWhereClauseWrap').style.display = isArcGIS ? 'block' : 'none';
       
       // Clear navigation instructions if switching away from ArcGIS
       if (!isArcGIS) {
@@ -1410,15 +1436,24 @@ async function loadScreenshots(sources) {
           document.getElementById('apiMethod').value = source.data.method || 'GET';
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
-          // jsonFields removed - no longer used
+          document.getElementById('useEngine').checked = !!(source.data.query_params || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
+          document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
+          document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
         } else if (sourceType === 'arcgis') {
-          // Load ArcGIS-specific fields
           document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
           document.getElementById('arcgisDateField').value = source.data.dateField || '';
+          document.getElementById('useEngine').checked = !!(source.data.where_clause || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
+          document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
+          document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
+          document.getElementById('engineWhereClause').value = source.data.where_clause || '';
         } else {
           document.getElementById('apiMethod').value = 'GET';
           document.getElementById('apiParams').value = '';
           document.getElementById('jsonPath').value = '';
+          document.getElementById('useEngine').checked = false;
+          document.getElementById('engineFieldMapping').value = '';
+          document.getElementById('engineFilters').value = '';
+          document.getElementById('engineWhereClause').value = '';
           if (document.getElementById('jsonFields')) {
             document.getElementById('jsonFields').value = '';
           }
@@ -1707,6 +1742,27 @@ async function loadScreenshots(sources) {
         }
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
         sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
+        if (document.getElementById('useEngine').checked) {
+          sourceData.query_params = sourceData.params;
+          const mappingText = document.getElementById('engineFieldMapping').value.trim();
+          if (mappingText) {
+            try {
+              sourceData.field_mapping = JSON.parse(mappingText);
+            } catch (e) {
+              alert('Invalid JSON in Field mapping');
+              return;
+            }
+          }
+          const filtersText = document.getElementById('engineFilters').value.trim();
+          if (filtersText) {
+            try {
+              sourceData.filters = JSON.parse(filtersText);
+            } catch (e) {
+              alert('Invalid JSON in Filters');
+              return;
+            }
+          }
+        }
       } else if (sourceType === 'arcgis') {
         // ArcGIS Hub mode (key grabber + JSON API)
         sourceData.method = 'arcgis';
@@ -1741,6 +1797,28 @@ async function loadScreenshots(sources) {
           console.log('✅ Set sourceData.dateField =', arcgisDateField);
         } else {
           console.log('⚠️ ArcGIS Date Field is empty');
+        }
+        if (document.getElementById('useEngine').checked) {
+          const whereClause = document.getElementById('engineWhereClause').value.trim();
+          if (whereClause) sourceData.where_clause = whereClause;
+          const mappingText = document.getElementById('engineFieldMapping').value.trim();
+          if (mappingText) {
+            try {
+              sourceData.field_mapping = JSON.parse(mappingText);
+            } catch (e) {
+              alert('Invalid JSON in Field mapping');
+              return;
+            }
+          }
+          const filtersText = document.getElementById('engineFilters').value.trim();
+          if (filtersText) {
+            try {
+              sourceData.filters = JSON.parse(filtersText);
+            } catch (e) {
+              alert('Invalid JSON in Filters');
+              return;
+            }
+          }
         }
       } else {
         // HTML/AI Website Scraper mode (default)

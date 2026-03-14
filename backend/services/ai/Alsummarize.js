@@ -2,7 +2,7 @@ const logger = require('../../utils/logger');
 const { getGeminiModel, isAIAvailable } = require('./geminiClient');
 
 /**
- * AIL Summarizer - Processes leads and generates AI-powered summaries
+ * AI Summarizer - Processes leads and generates AI-powered summaries
  * Optimized for the "Instant Analyze" button.
  */
 class AISummarizer {

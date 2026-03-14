@@ -142,8 +142,11 @@ router.post('/add', express.json(), async (req, res) => {
     
     const newSourceId = result.lastID;
     
-    // ✨ CREATE SOURCE-SPECIFIC TABLE
-    const tableName = createSourceTable(newSourceId, sourceData.fieldSchema);
+    // ✨ CREATE SOURCE-SPECIFIC TABLE (support engine field_mapping → column names)
+    const schemaForTable = sourceData.fieldSchema || (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length
+      ? Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]))
+      : undefined);
+    const tableName = createSourceTable(newSourceId, schemaForTable);
     logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
     
     // Create notification for source addition
@@ -198,6 +201,15 @@ router.put('/:id', express.json(), async (req, res) => {
     const sourceJson = JSON.stringify(sourceData);
     await dbRun('UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?', [sourceJson, sourceId, userId]);
     
+    // Ensure source table has columns for engine field_mapping if present
+    if (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length) {
+      const schemaForTable = sourceData.fieldSchema || Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]));
+      try {
+        createSourceTable(sourceId, schemaForTable);
+      } catch (tableErr) {
+        logger.warn(`Could not update source table columns: ${tableErr.message}`);
+      }
+    }
     res.json({ success: true });
   } catch (e) {
     logger.error(`Update source error: ${e.message}`);
@@ -303,8 +315,11 @@ router.post('/', express.json(), async (req, res) => {
     
     const newSourceId = result.lastID;
     
-    // ✨ CREATE SOURCE-SPECIFIC TABLE
-    const tableName = createSourceTable(newSourceId, sourceData.fieldSchema);
+    // ✨ CREATE SOURCE-SPECIFIC TABLE (support engine field_mapping → column names)
+    const schemaForTable = sourceData.fieldSchema || (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length
+      ? Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]))
+      : undefined);
+    const tableName = createSourceTable(newSourceId, schemaForTable);
     logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
     
     // Create notification for source addition
