@@ -355,6 +355,22 @@ async function fetchWithDateSplitting(baseApiUrl, headers, dateField, alreadyFet
   return additionalRecords;
 }
 
+/**
+ * Discover ArcGIS API endpoint from a Hub/datasets/explore URL.
+ * Returns the query endpoint URL or null. Used by the universal "Find endpoint" flow.
+ */
+async function discoverArcGISEndpoint(hubUrl, logger, navigationInstructions = []) {
+  try {
+    const { apiUrl } = await extractArcGISApiInfo(hubUrl, logger, navigationInstructions);
+    return apiUrl || null;
+  } catch (err) {
+    logger.warn(`ArcGIS endpoint discovery failed: ${err.message}`);
+    return null;
+  }
+}
+
 module.exports = {
-  fetchArcGISRecords
+  fetchArcGISRecords,
+  discoverArcGISEndpoint,
+  extractArcGISApiInfo
 };

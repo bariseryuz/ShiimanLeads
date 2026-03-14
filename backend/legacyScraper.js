@@ -27,6 +27,21 @@ const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./c
 const { SCREENSHOT_DIR } = require('./config/paths');
 const engine = require('./engine');
 
+/**
+ * Neutral check: does this URL look like an ArcGIS service or Hub?
+ * Used to avoid running the ArcGIS pipeline on non-ArcGIS URLs (e.g. .NET _Get* endpoints).
+ */
+function urlLooksLikeArcGIS(url) {
+  if (!url || typeof url !== 'string') return false;
+  const u = url.toLowerCase();
+  return (
+    u.includes('arcgis') ||
+    u.includes('featureserver') ||
+    u.includes('/rest/services/') ||
+    /\/datasets\/[^/]+\/(explore|items)/.test(u)
+  );
+}
+
 async function scrapeForUser(userId, userSources, extractionLimits) {
   logger.info(`🚀 Starting FIXED PRODUCTION Scrape for User ${userId}`);
   initProgress(userId, userSources);
@@ -84,8 +99,14 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         }
       }
 
-      // ===== ARCGIS HUB PIPELINE =====
-      if (source.type === 'arcgis') {
+      // ===== ARCGIS HUB PIPELINE (only when URL actually looks like ArcGIS) =====
+      if (source.type === 'arcgis' && !urlLooksLikeArcGIS(source.url)) {
+        logger.info(`🔄 Source "${source.name}" is set as ArcGIS but URL does not look like ArcGIS; using Playwright + API interception instead`);
+        source._usePlaywrightInstead = true;
+        source.forcePlaywrightOnly = true;
+      }
+
+      if (source.type === 'arcgis' && urlLooksLikeArcGIS(source.url)) {
         logger.info(`🗺️ ArcGIS Mode for: ${source.name}`);
         logger.info(`   URL: ${source.url}`);
 
@@ -414,10 +435,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       }
       
       // ===== PLAYWRIGHT SCRAPING =====
-      // Skip Playwright for ArcGIS URLs (they should use JSON API above)
-      const shouldSkipPlaywright = source.url && (source.url.includes('arcgis') || source.url.includes('/rest/services/'));
-      
-      if ((source.usePlaywright || source.method === 'playwright' || source.useAI || source.forcePlaywrightOnly) && !shouldSkipPlaywright) {
+      // Skip Playwright only for URLs that look like ArcGIS (they use ArcGIS pipeline above)
+      const shouldSkipPlaywright = source.type === 'arcgis' && urlLooksLikeArcGIS(source.url);
+
+      if ((source.usePlaywright || source.method === 'playwright' || source.useAI || source.forcePlaywrightOnly || source._usePlaywrightInstead) && !shouldSkipPlaywright) {
         if (source.forcePlaywrightOnly) {
           logger.info(`🎭 Force Playwright Only mode - bypassing JSON API`);
         }

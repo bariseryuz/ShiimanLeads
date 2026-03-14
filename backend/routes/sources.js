@@ -11,6 +11,7 @@ const { createSourceTable } = require('../services/sourceTable');
 const { createNotification } = require('../services/notifications');
 const { loadSources } = require('../services/scraper/helpers');
 const { scrapeForUser } = require('../legacyScraper');
+const { discoverEndpoint } = require('../services/endpointDiscovery');
 
 /**
  * GET /api/sources
@@ -75,6 +76,37 @@ router.get('/mine', async (req, res) => {
     res.json({ data: sources });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * POST /api/sources/discover-endpoint
+ * Universal: given a URL, find the data API endpoint (ArcGIS, _Get*, or from page XHR).
+ */
+router.post('/discover-endpoint', express.json(), async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'URL is required', endpointUrl: null, type: 'unknown', hint: 'Send { "url": "https://..." }.' });
+    }
+    const result = await discoverEndpoint(url.trim(), logger);
+    res.json({
+      endpointUrl: result.endpointUrl,
+      type: result.type,
+      hint: result.hint
+    });
+  } catch (e) {
+    logger.error(`Discover endpoint error: ${e.message}`);
+    res.status(500).json({
+      error: e.message,
+      endpointUrl: null,
+      type: 'unknown',
+      hint: 'Endpoint discovery failed.'
+    });
   }
 });
 

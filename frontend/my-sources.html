@@ -804,8 +804,12 @@
         
         <div class="form-group">
           <label class="form-label" for="sourceUrl">Website URL *</label>
-          <input type="url" id="sourceUrl" class="form-input" placeholder="https://example.com/permits" required>
+          <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+            <input type="url" id="sourceUrl" class="form-input" placeholder="https://example.com/permits" required style="flex: 1; min-width: 200px;">
+            <button type="button" id="findEndpointBtn" class="btn-secondary" style="white-space: nowrap;" title="Find the data API endpoint for this URL">🔍 Find endpoint</button>
+          </div>
           <small style="color: var(--gray-600);" id="urlHintText">The AI bot will visit this page and extract data automatically</small>
+          <small id="discoverHint" style="display: none; color: var(--primary); margin-top: 0.25rem;"></small>
         </div>
         
         <!-- SOURCE TYPE SELECTOR -->
@@ -1017,6 +1021,43 @@
         return false;
       }
     }
+
+    async function findEndpoint() {
+      const urlInput = document.getElementById('sourceUrl');
+      const hintEl = document.getElementById('discoverHint');
+      const btn = document.getElementById('findEndpointBtn');
+      const url = (urlInput && urlInput.value || '').trim();
+      if (!url) {
+        alert('Enter a URL first, then click Find endpoint.');
+        return;
+      }
+      if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; }
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Finding...'; }
+      try {
+        const base = window.location.pathname.startsWith('/') ? '' : (window.location.origin || '');
+        const res = await fetch((base || '') + '/api/my-sources/discover-endpoint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data.endpointUrl) {
+          urlInput.value = data.endpointUrl;
+          if (hintEl) { hintEl.textContent = data.hint || 'Endpoint found.'; hintEl.style.display = 'block'; }
+          if (data.type === 'arcgis' && document.getElementById('sourceType')) document.getElementById('sourceType').value = 'arcgis';
+          else if (data.type === 'json' && document.getElementById('sourceType')) document.getElementById('sourceType').value = 'json';
+          toggleSourceTypeFields();
+        } else {
+          if (hintEl) { hintEl.textContent = data.hint || data.error || 'No endpoint found.'; hintEl.style.display = 'block'; hintEl.style.color = '#64748b'; }
+        }
+      } catch (e) {
+        if (hintEl) { hintEl.textContent = 'Request failed: ' + (e.message || 'network error'); hintEl.style.display = 'block'; hintEl.style.color = '#dc2626'; }
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '🔍 Find endpoint'; }
+    }
+
+    document.getElementById('findEndpointBtn').addEventListener('click', findEndpoint);
 
     // Toggle between HTML and API source types
     function toggleSourceType() {
