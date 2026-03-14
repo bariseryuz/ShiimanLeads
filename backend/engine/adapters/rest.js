@@ -14,15 +14,25 @@ const logger = require('../../utils/logger');
  */
 async function fetch(url, manifest) {
   try {
-    const params = hydrator(manifest.query_params || {});
-    const headers = manifest.headers || { 'User-Agent': 'Mozilla/5.0 (compatible; ShiimanLeads/1.0)' };
-    const response = await axios.get(url, { params, headers, timeout: 60000 });
+    const params = hydrator(manifest.query_params || manifest.params || {});
+    const headers = manifest.headers || { 'User-Agent': 'Mozilla/5.0 (compatible; ShiimanLeads/1.0)', 'Content-Type': 'application/json' };
+    const method = (manifest.method || 'GET').toUpperCase();
+    let response;
+
+    if (method === 'POST') {
+      const bodyRaw = manifest.body !== undefined ? manifest.body : params;
+      const body = typeof bodyRaw === 'string' ? JSON.parse(bodyRaw) : hydrator(bodyRaw);
+      response = await axios.post(url, body, { headers, timeout: 60000 });
+    } else {
+      response = await axios.get(url, { params, headers, timeout: 60000 });
+    }
 
     const data = response.data;
     if (Array.isArray(data)) return data;
     if (data?.results) return data.results;
     if (data?.items) return data.items;
     if (data?.data && Array.isArray(data.data)) return data.data;
+    if (data?.Data && Array.isArray(data.Data)) return data.Data;
     if (data?.features && Array.isArray(data.features)) {
       return data.features.map(f => f.attributes || f);
     }
