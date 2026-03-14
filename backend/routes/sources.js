@@ -142,7 +142,7 @@ router.post('/add', express.json(), async (req, res) => {
     
     const newSourceId = result.lastID;
     
-    // ✨ CREATE SOURCE-SPECIFIC TABLE (support engine field_mapping → column names)
+    // CREATE SOURCE-SPECIFIC TABLE (support engine field_mapping → column names)
     const schemaForTable = sourceData.fieldSchema || (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length
       ? Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]))
       : undefined);

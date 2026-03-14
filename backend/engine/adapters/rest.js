@@ -36,9 +36,16 @@ async function fetch(url, manifest) {
     if (data?.features && Array.isArray(data.features)) {
       return data.features.map(f => f.attributes || f);
     }
+    if (data?.Errors && data.Errors.length) {
+      logger.warn(`[Engine REST Adapter] API returned errors: ${JSON.stringify(data.Errors)}`);
+    }
+    logger.warn(`[Engine REST Adapter] No array found in response (status ${response.status}). Keys: ${Object.keys(data || {}).join(', ')}`);
     return [];
   } catch (err) {
-    logger.error(`[Engine REST Adapter] ${err.message}`);
+    const status = err.response?.status;
+    const body = err.response?.data;
+    logger.error(`[Engine REST Adapter] ${err.message}${status ? ` (HTTP ${status})` : ''}`);
+    if (body && typeof body === 'object') logger.error(`[Engine REST Adapter] Response: ${JSON.stringify(body).slice(0, 300)}`);
     return [];
   }
 }

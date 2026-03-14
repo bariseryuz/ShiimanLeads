@@ -17,7 +17,7 @@
 cd "C:\Users\fa-de\Desktop\data-based lead generation\shiiman-leads"
 git init
 git add .
-git commit -m "Initial commit - Shiiman Leads v1.0"
+git commit -m "Updated Engine mecanism - Shiiman Leads v1.0"
 ```
 
 2. **Create GitHub Repository**:
