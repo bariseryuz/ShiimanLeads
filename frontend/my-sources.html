@@ -1783,26 +1783,27 @@ async function loadScreenshots(sources) {
         }
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
         sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
+        // Always save engine fields when filled (so they show when reopening); use engine when checkbox is checked
+        const jsonMappingText = document.getElementById('engineFieldMapping').value.trim();
+        const jsonFiltersText = document.getElementById('engineFilters').value.trim();
+        if (jsonMappingText) {
+          try {
+            sourceData.field_mapping = JSON.parse(jsonMappingText);
+          } catch (e) {
+            alert('Invalid JSON in Field mapping');
+            return;
+          }
+        }
+        if (jsonFiltersText) {
+          try {
+            sourceData.filters = JSON.parse(jsonFiltersText);
+          } catch (e) {
+            alert('Invalid JSON in Filters');
+            return;
+          }
+        }
         if (document.getElementById('useEngine').checked) {
           sourceData.query_params = sourceData.params;
-          const mappingText = document.getElementById('engineFieldMapping').value.trim();
-          if (mappingText) {
-            try {
-              sourceData.field_mapping = JSON.parse(mappingText);
-            } catch (e) {
-              alert('Invalid JSON in Field mapping');
-              return;
-            }
-          }
-          const filtersText = document.getElementById('engineFilters').value.trim();
-          if (filtersText) {
-            try {
-              sourceData.filters = JSON.parse(filtersText);
-            } catch (e) {
-              alert('Invalid JSON in Filters');
-              return;
-            }
-          }
         }
       } else if (sourceType === 'arcgis') {
         // ArcGIS Hub mode (key grabber + JSON API)
@@ -1839,26 +1840,25 @@ async function loadScreenshots(sources) {
         } else {
           console.log('⚠️ ArcGIS Date Field is empty');
         }
-        if (document.getElementById('useEngine').checked) {
-          const whereClause = document.getElementById('engineWhereClause').value.trim();
-          if (whereClause) sourceData.where_clause = whereClause;
-          const mappingText = document.getElementById('engineFieldMapping').value.trim();
-          if (mappingText) {
-            try {
-              sourceData.field_mapping = JSON.parse(mappingText);
-            } catch (e) {
-              alert('Invalid JSON in Field mapping');
-              return;
-            }
+        // Always save engine fields when filled (so they show when reopening); engine runs when we have where_clause/filters
+        const whereClause = document.getElementById('engineWhereClause').value.trim();
+        if (whereClause) sourceData.where_clause = whereClause;
+        const arcMappingText = document.getElementById('engineFieldMapping').value.trim();
+        if (arcMappingText) {
+          try {
+            sourceData.field_mapping = JSON.parse(arcMappingText);
+          } catch (e) {
+            alert('Invalid JSON in Field mapping');
+            return;
           }
-          const filtersText = document.getElementById('engineFilters').value.trim();
-          if (filtersText) {
-            try {
-              sourceData.filters = JSON.parse(filtersText);
-            } catch (e) {
-              alert('Invalid JSON in Filters');
-              return;
-            }
+        }
+        const arcFiltersText = document.getElementById('engineFilters').value.trim();
+        if (arcFiltersText) {
+          try {
+            sourceData.filters = JSON.parse(arcFiltersText);
+          } catch (e) {
+            alert('Invalid JSON in Filters');
+            return;
           }
         }
       } else {
