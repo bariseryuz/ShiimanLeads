@@ -13,6 +13,7 @@ const { loadSources } = require('../services/scraper/helpers');
 const { scrapeForUser } = require('../legacyScraper');
 const { discoverEndpoint } = require('../services/endpointDiscovery');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
+const { log: auditLog } = require('../services/auditLog');
 
 /**
  * GET /api/sources
@@ -39,8 +40,8 @@ router.get('/', async (req, res) => {
     });
     
     // Also get sources that have leads (in case some were scraped)
-    const leadsRows = await dbAll('SELECT DISTINCT source FROM leads WHERE user_id = ? ORDER BY source', [userId]);
-    leadsRows.forEach(r => sourceNames.add(r.source));
+    const leadsRows = await dbAll('SELECT DISTINCT source_name AS source FROM leads WHERE user_id = ? ORDER BY source_name', [userId]);
+    leadsRows.forEach(r => r.source && sourceNames.add(r.source));
     
     const uniqueSources = Array.from(sourceNames).map(name => ({ name }));
     res.json({ data: uniqueSources });
@@ -224,15 +225,15 @@ router.put('/:id', express.json(), async (req, res) => {
       return res.status(400).json({ error: 'Source name and URL are required' });
     }
     
-    // Check ownership
-    const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+    const existing = await dbGet('SELECT id, source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
     if (!existing) {
       return res.status(404).json({ error: 'Source not found or access denied' });
     }
-    
+    const before = existing.source_data ? JSON.parse(existing.source_data) : null;
     const sourceJson = JSON.stringify(sourceData);
     await dbRun('UPDATE user_sources SET source_data = ? WHERE id = ? AND user_id = ?', [sourceJson, sourceId, userId]);
-    
+    await auditLog({ userId, actorUserId: userId, action: 'source.updated', entityType: 'source', entityId: sourceId, before, after: sourceData, req });
+
     // Ensure source table has columns for engine field_mapping if present
     if (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length) {
       const schemaForTable = sourceData.fieldSchema || Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]));
@@ -260,15 +261,15 @@ router.delete('/:id', async (req, res) => {
     
     logger.info(`Delete request for source ${sourceId} by user ${userId}`);
     
-    // Check ownership before deleting
-    const existing = await dbGet('SELECT id FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+    const existing = await dbGet('SELECT id, source_data FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
     if (!existing) {
       logger.warn(`Source ${sourceId} not found or access denied for user ${userId}`);
       return res.status(404).json({ error: 'Source not found or access denied' });
     }
-    
+    const before = existing.source_data ? JSON.parse(existing.source_data) : null;
     logger.info(`Deleting source ${sourceId} for user ${userId}`);
     await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+    await auditLog({ userId, actorUserId: userId, action: 'source.deleted', entityType: 'source', entityId: sourceId, before, req });
     logger.info(`Successfully deleted source ${sourceId}`);
     res.json({ success: true });
   } catch (e) {

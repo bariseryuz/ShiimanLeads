@@ -1,7 +1,9 @@
 const cron = require('node-cron');
 const logger = require('../../utils/logger');
 const { scrapeForUser } = require('../../legacyScraper');
-const { dbAll } = require('../../db');
+const { dbAll, dbRun } = require('../../db');
+const { runDigestForAllDue } = require('../alerts');
+const { runBackup } = require('../backup');
 
 /**
  * Scrape all users' sources (cron job)
@@ -48,6 +50,34 @@ async function scrapeAllUsers() {
 }
 
 /**
+ * Run lead digest for all users who are due (daily/weekly).
+ */
+async function runDigestJob() {
+  try {
+    await runDigestForAllDue();
+  } catch (e) {
+    logger.error(`Digest job error: ${e.message}`);
+  }
+}
+
+/**
+ * Data retention: delete leads older than LEAD_RETENTION_DAYS.
+ */
+async function runRetentionJob() {
+  const days = parseInt(process.env.LEAD_RETENTION_DAYS || '0', 10);
+  if (days <= 0) return;
+  try {
+    const result = await dbRun(
+      `DELETE FROM leads WHERE created_at < datetime('now', ?)`,
+      [`-${days} days`]
+    );
+    if (result?.changes > 0) logger.info(`Retention: removed ${result.changes} old lead(s)`);
+  } catch (e) {
+    logger.error(`Retention job error: ${e.message}`);
+  }
+}
+
+/**
  * Setup automatic scraping with cron
  */
 function setupAutoScraping() {
@@ -66,8 +96,19 @@ function setupAutoScraping() {
     logger.info('Running initial scrape on startup...');
     scrapeAllUsers().catch(err => logger.error('Startup scrape failed:', err));
   }
+
+  cron.schedule('0 13 * * *', runDigestJob);
+  logger.info('Digest job scheduled (daily 13:00 UTC)');
+
+  cron.schedule('0 3 * * *', runRetentionJob);
+  logger.info('Retention job scheduled (daily 03:00 UTC)');
+
+  cron.schedule('0 4 * * *', () => runBackup().catch(err => logger.error('Backup failed: ' + err.message)));
+  logger.info('Backup job scheduled (daily 04:00 UTC)');
 }
 
 module.exports = {
-  setupAutoScraping
+  setupAutoScraping,
+  runDigestJob,
+  runRetentionJob
 };

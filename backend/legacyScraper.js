@@ -14,6 +14,7 @@ const logger = require('./utils/logger');
 const { dbRun } = require('./db');
 const { insertLeadIfNew } = require('./services/leadInsertion');
 const { trackSourceReliability } = require('./services/reliability');
+const { recordRunStart, recordRunEnd } = require('./services/sourceHealth');
 const { isAIAvailable, extractFromScreenshot, navigateAutonomously } = require('./services/ai');
 const { captureTiledScreenshots } = require('./services/scraper/screenshot');
 const { captureGridScrollScreenshots } = require('./services/scraper/gridScrollScraper');
@@ -63,6 +64,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
     const limits = mergeLimits(source.extractionLimits || {}, extractionLimits);
     updateProgress(userId, { currentSource: source.name });
     const rateLimiter = getRateLimiter(source);
+    let runId = null;
+    try {
+      runId = await recordRunStart(userId, source.id, source.name);
+    } catch (_) {}
 
     try {
       await rateLimiter.waitIfNeeded();
@@ -89,11 +94,13 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           }
           logger.info(`   ✅ Engine complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+          await recordRunEnd(runId, { success: true, recordsFound: (leads || []).length, recordsInserted: sourceNewLeads });
           rateLimiter.onSuccess();
           continue;
         } catch (engineErr) {
           logger.error(`❌ Engine error for ${source.name}: ${engineErr.message}`);
           await trackSourceReliability(source.id, source.name, false, 0);
+          await recordRunEnd(runId, { success: false, errorMessage: engineErr.message });
           rateLimiter.onError();
           continue;
         }
@@ -155,11 +162,13 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
 
           logger.info(`   ✅ ArcGIS scrape complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+          await recordRunEnd(runId, { success: true, recordsFound: records.length, recordsInserted: sourceNewLeads });
           rateLimiter.onSuccess();
           continue;
         } catch (arcgisErr) {
           logger.error(`❌ ArcGIS error for ${source.name}: ${arcgisErr.message}`);
           await trackSourceReliability(source.id, source.name, false, 0);
+          await recordRunEnd(runId, { success: false, errorMessage: arcgisErr.message });
           rateLimiter.onError();
           continue;
         }
@@ -414,10 +423,10 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           logger.info(`   ✅ JSON scrape complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+          await recordRunEnd(runId, { success: true, recordsFound: totalRecords, recordsInserted: sourceNewLeads });
           rateLimiter.onSuccess();
           continue; // Skip to next source
         } catch (jsonErr) {
-          // Provide specific error messages for common issues
           if (jsonErr.code === 'ECONNABORTED' || jsonErr.message.includes('timeout')) {
             logger.error(`⏱️ JSON API timeout for ${source.name}: ${jsonErr.message}`);
             logger.info(`💡 Government APIs can take 2-3 minutes. This is normal for governmental sources.`);
@@ -429,6 +438,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             logger.error(`❌ JSON API error for ${source.name}: ${jsonErr.message}`);
           }
           await trackSourceReliability(source.id, source.name, false, 0);
+          await recordRunEnd(runId, { success: false, errorMessage: jsonErr.message });
           rateLimiter.onError();
           continue;
         }
@@ -520,6 +530,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               
               logger.info(`   ✅ API Interception complete: ${sourceNewLeads} new leads`);
               await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
+              await recordRunEnd(runId, { success: true, recordsFound: (records || []).length, recordsInserted: sourceNewLeads });
               await page.context().close().catch(() => {});
               await browser.close().catch(() => {});
               rateLimiter.onSuccess();
@@ -624,7 +635,11 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         }
       }
       await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
-    } catch (err) { logger.error(`❌ Source Failed: ${err.message}`); }
+      await recordRunEnd(runId, { success: true, recordsInserted: sourceNewLeads });
+    } catch (err) {
+      logger.error(`❌ Source Failed: ${err.message}`);
+      await recordRunEnd(runId, { success: false, errorMessage: err.message });
+    }
   }
   updateProgress(userId, { status: 'completed', endTime: Date.now(), leadsFound: totalInserted });
   return totalInserted;

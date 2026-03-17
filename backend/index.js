@@ -78,10 +78,19 @@ async function sendNotificationEmail(subject, text) {
 // === SERVER SETUP ===
 function startServer() {
   const app = express();
-  
+
   // Trust proxy for secure cookies behind Railway/NGINX
   app.set('trust proxy', 1);
-  
+
+  // Paddle webhook must receive raw body for signature verification (before any body parser)
+  const { handlePaddleWebhook } = require('./routes/billing');
+  app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, res) => {
+    handlePaddleWebhook(req, res).catch((err) => {
+      logger.error(`Paddle webhook error: ${err.message}`);
+      res.status(500).send('webhook error');
+    });
+  });
+
   // Body parsing
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());

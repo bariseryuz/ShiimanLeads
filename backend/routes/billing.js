@@ -82,76 +82,68 @@ router.post('/checkout', requireAuth, express.json(), async (req, res) => {
 });
 
 /**
- * POST /api/billing/webhook
- * Paddle sends JSON with signature header "Paddle-Signature".
+ * Paddle webhook handler. Must be mounted with express.raw({ type: 'application/json' })
+ * so req.body is the raw Buffer (for signature verification).
  */
-router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  try {
-    const secret = process.env.PADDLE_WEBHOOK_SECRET;
-    const signatureHeader = req.get('Paddle-Signature') || req.get('paddle-signature');
-    const verification = verifyPaddleWebhook({ signatureHeader, rawBody: req.body, secret });
-    if (!verification.ok) {
-      logger.warn(`Paddle webhook rejected: ${verification.reason}`);
-      return res.status(401).send('invalid signature');
-    }
-
-    const event = JSON.parse(req.body.toString('utf8'));
-    const eventType = event?.event_type || event?.eventType;
-    const data = event?.data || {};
-
-    // We rely on custom_data.user_id from checkout.
-    const userId = data?.custom_data?.user_id || data?.custom_data?.userId;
-    if (!userId) {
-      logger.warn(`Paddle webhook missing custom_data.user_id for ${eventType}`);
-      return res.status(200).json({ received: true });
-    }
-
-    await ensureBillingAccount(userId);
-
-    // Minimal event handling for sell-ready gating
-    if (eventType === 'subscription.created' || eventType === 'subscription.updated') {
-      const status = String(data?.status || '').toLowerCase();
-      const mapped =
-        status === 'active' ? 'active' :
-        status === 'past_due' ? 'past_due' :
-        status === 'canceled' ? 'canceled' :
-        'inactive';
-
-      const periodEnd = data?.current_billing_period?.ends_at || data?.current_period?.ends_at || null;
-      await updateBillingAccount(userId, {
-        status: mapped,
-        paddle_customer_id: data?.customer_id || data?.customer?.id || null,
-        paddle_subscription_id: data?.id || data?.subscription_id || null,
-        current_period_end: periodEnd,
-        grace_period_ends_at: null
-      });
-
-      await createNotification(userId, 'billing_update', `Billing updated: ${mapped}`);
-    }
-
-    if (eventType === 'subscription.canceled' || eventType === 'subscription.deleted') {
-      await updateBillingAccount(userId, { status: 'canceled' });
-      await createNotification(userId, 'billing_update', 'Subscription canceled');
-    }
-
-    if (eventType === 'transaction.payment_failed' || eventType === 'invoice.payment_failed') {
-      const graceDays = parseInt(process.env.BILLING_GRACE_DAYS || '3', 10);
-      const graceEnds = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000).toISOString();
-      await updateBillingAccount(userId, { status: 'past_due', grace_period_ends_at: graceEnds });
-      await createNotification(userId, 'billing_payment_failed', `Payment failed. Update payment method. Grace until ${graceEnds}.`);
-    }
-
-    if (eventType === 'transaction.paid' || eventType === 'invoice.paid') {
-      await updateBillingAccount(userId, { status: 'active', grace_period_ends_at: null });
-      await createNotification(userId, 'billing_payment_ok', 'Payment received. Subscription active.');
-    }
-
-    res.json({ received: true });
-  } catch (e) {
-    logger.error(`Paddle webhook error: ${e.message}`);
-    res.status(500).send('webhook error');
+async function handlePaddleWebhook(req, res) {
+  const secret = process.env.PADDLE_WEBHOOK_SECRET;
+  const signatureHeader = req.get('Paddle-Signature') || req.get('paddle-signature');
+  const verification = verifyPaddleWebhook({ signatureHeader, rawBody: req.body, secret });
+  if (!verification.ok) {
+    logger.warn(`Paddle webhook rejected: ${verification.reason}`);
+    return res.status(401).send('invalid signature');
   }
-});
+
+  const event = JSON.parse(req.body.toString('utf8'));
+  const eventType = event?.event_type || event?.eventType;
+  const data = event?.data || {};
+
+  const userId = data?.custom_data?.user_id || data?.custom_data?.userId;
+  if (!userId) {
+    logger.warn(`Paddle webhook missing custom_data.user_id for ${eventType}`);
+    return res.json({ received: true });
+  }
+
+  await ensureBillingAccount(userId);
+
+  if (eventType === 'subscription.created' || eventType === 'subscription.updated') {
+    const status = String(data?.status || '').toLowerCase();
+    const mapped =
+      status === 'active' ? 'active' :
+      status === 'past_due' ? 'past_due' :
+      status === 'canceled' ? 'canceled' :
+      'inactive';
+    const periodEnd = data?.current_billing_period?.ends_at || data?.current_period?.ends_at || null;
+    await updateBillingAccount(userId, {
+      status: mapped,
+      paddle_customer_id: data?.customer_id || data?.customer?.id || null,
+      paddle_subscription_id: data?.id || data?.subscription_id || null,
+      current_period_end: periodEnd,
+      grace_period_ends_at: null
+    });
+    await createNotification(userId, 'billing_update', `Billing updated: ${mapped}`);
+  }
+
+  if (eventType === 'subscription.canceled' || eventType === 'subscription.deleted') {
+    await updateBillingAccount(userId, { status: 'canceled' });
+    await createNotification(userId, 'billing_update', 'Subscription canceled');
+  }
+
+  if (eventType === 'transaction.payment_failed' || eventType === 'invoice.payment_failed') {
+    const graceDays = parseInt(process.env.BILLING_GRACE_DAYS || '3', 10);
+    const graceEnds = new Date(Date.now() + graceDays * 24 * 60 * 60 * 1000).toISOString();
+    await updateBillingAccount(userId, { status: 'past_due', grace_period_ends_at: graceEnds });
+    await createNotification(userId, 'billing_payment_failed', `Payment failed. Update payment method. Grace until ${graceEnds}.`);
+  }
+
+  if (eventType === 'transaction.paid' || eventType === 'invoice.paid') {
+    await updateBillingAccount(userId, { status: 'active', grace_period_ends_at: null });
+    await createNotification(userId, 'billing_payment_ok', 'Payment received. Subscription active.');
+  }
+
+  res.json({ received: true });
+}
 
 module.exports = router;
+module.exports.handlePaddleWebhook = handlePaddleWebhook;
 

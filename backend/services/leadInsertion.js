@@ -1,6 +1,7 @@
 const { generateUniqueIdWithFallback, getDeduplicationInfo } = require('./deduplication');
 const { dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
+const { onNewLead } = require('./alerts');
 
 /**
  * Insert lead if new (universal schema support)
@@ -78,6 +79,8 @@ async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, s
       
       if (result && result.lastInsertRowid) {
         logger.info(`✅ Inserted (row ${result.lastInsertRowid})`);
+        const preview = typeof data === 'object' && data !== null ? (data.address || data.name || data.title || data.id || '').toString().slice(0, 120) : '';
+        onNewLead({ userId, sourceName: sourceName || 'unknown', leadCount: 1, leadPreview: preview || undefined }).catch(() => {});
         return true;
       }
       
