@@ -3,6 +3,7 @@ const router = express.Router();
 const { dbAll, dbGet } = require('../db');
 const logger = require('../utils/logger');
 const { scrapeForUser } = require('../legacyScraper'); // Import from legacy scraper
+const { requirePaid } = require('../middleware/billing');
 
 // Import progress tracking from services
 const {
@@ -26,7 +27,7 @@ const {
  *   }
  * }
  */
-router.post('/now', async (req, res) => {
+router.post('/now', requirePaid, async (req, res) => {
   try {
     // Accept userId from request body (from server.js) or session
     const userId = req.body.userId || req.session?.user?.id || 1;
@@ -168,7 +169,7 @@ router.get('/progress', (req, res) => {
  * POST /api/scrape/:id
  * Scrape a single source by ID
  */
-router.post('/:id', async (req, res) => {
+router.post('/:id', requirePaid, async (req, res) => {
   try {
     const userId = req.session?.user?.id || 1;
     const sourceId = parseInt(req.params.id, 10);

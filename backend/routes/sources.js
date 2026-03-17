@@ -12,6 +12,7 @@ const { createNotification } = require('../services/notifications');
 const { loadSources } = require('../services/scraper/helpers');
 const { scrapeForUser } = require('../legacyScraper');
 const { discoverEndpoint } = require('../services/endpointDiscovery');
+const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
 
 /**
  * GET /api/sources
@@ -154,10 +155,9 @@ router.get('/:id', async (req, res) => {
  * POST /api/sources/add
  * Add a new source for current user
  */
-router.post('/add', express.json(), async (req, res) => {
+router.post('/add', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
   try {
-    // Use user ID from session, or default to 1 if not logged in
-    const userId = req.session?.user?.id || 1;
+    const userId = req.session?.user?.id;
     const sourceData = req.body;
     
     // Validate required fields
@@ -315,7 +315,7 @@ router.get('/my-sources', async (req, res) => {
  * POST / (when mounted at /api/my-sources) OR POST /my-sources (when mounted at /api/sources)
  * Create a new source
  */
-router.post('/', express.json(), async (req, res) => {
+router.post('/', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id;
     
@@ -323,6 +323,7 @@ router.post('/', express.json(), async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
+
     const sourceData = req.body;
     
     // Validate required fields

@@ -42,6 +42,37 @@ function createTables(db) {
     verification_token TEXT
   )`);
 
+  // Billing / subscription state (Paddle)
+  db.exec(`CREATE TABLE IF NOT EXISTS billing_accounts (
+    user_id INTEGER PRIMARY KEY,
+    provider TEXT NOT NULL DEFAULT 'paddle',
+    plan_key TEXT NOT NULL DEFAULT 'free',
+    status TEXT NOT NULL DEFAULT 'inactive', -- active|past_due|canceled|inactive
+    paddle_customer_id TEXT,
+    paddle_subscription_id TEXT,
+    current_period_end DATETIME,
+    grace_period_ends_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
+  // Alert preferences
+  db.exec(`CREATE TABLE IF NOT EXISTS notification_settings (
+    user_id INTEGER PRIMARY KEY,
+    instant_email_enabled INTEGER DEFAULT 0,
+    digest_email_enabled INTEGER DEFAULT 1,
+    digest_frequency TEXT DEFAULT 'daily', -- daily|weekly
+    digest_time_utc TEXT DEFAULT '13:00', -- HH:MM
+    last_digest_sent_at DATETIME,
+    webhook_enabled INTEGER DEFAULT 0,
+    webhook_url TEXT,
+    slack_webhook_url TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
   // User sources (custom per-user source configurations)
   db.exec(`CREATE TABLE IF NOT EXISTS user_sources (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +80,56 @@ function createTables(db) {
     source_data TEXT NOT NULL,
     created_at TEXT,
     FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
+  // Source runs (health + history)
+  db.exec(`CREATE TABLE IF NOT EXISTS source_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    source_id INTEGER NOT NULL,
+    source_name TEXT,
+    started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME,
+    status TEXT NOT NULL DEFAULT 'running', -- running|success|failure|stopped
+    records_found INTEGER DEFAULT 0,
+    records_inserted INTEGER DEFAULT 0,
+    error_message TEXT,
+    error_type TEXT,
+    duration_ms INTEGER,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(source_id) REFERENCES user_sources(id)
+  )`);
+
+  // Per-source health summary (broken detection)
+  db.exec(`CREATE TABLE IF NOT EXISTS source_health (
+    source_id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    consecutive_failures INTEGER DEFAULT 0,
+    last_status TEXT, -- success|failure
+    last_success_at DATETIME,
+    last_failure_at DATETIME,
+    last_error_message TEXT,
+    is_broken INTEGER DEFAULT 0,
+    broken_since DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id),
+    FOREIGN KEY(source_id) REFERENCES user_sources(id)
+  )`);
+
+  // Audit trail (who changed what, and when scans ran)
+  db.exec(`CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    actor_user_id INTEGER,
+    action TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    ip TEXT,
+    user_agent TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
   // Inquiries (contact form submissions)
@@ -104,7 +185,10 @@ function createIndexes(db) {
     { name: 'idx_leads_unique', sql: 'CREATE INDEX IF NOT EXISTS idx_leads_unique ON leads(unique_id)' },
     { name: 'idx_notifications_user', sql: 'CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)' },
     { name: 'idx_user_sources_user', sql: 'CREATE INDEX IF NOT EXISTS idx_user_sources_user ON user_sources(user_id)' },
-    { name: 'idx_source_reliability_source', sql: 'CREATE INDEX IF NOT EXISTS idx_source_reliability_source ON source_reliability(source_id)' }
+    { name: 'idx_source_reliability_source', sql: 'CREATE INDEX IF NOT EXISTS idx_source_reliability_source ON source_reliability(source_id)' },
+    { name: 'idx_source_runs_user', sql: 'CREATE INDEX IF NOT EXISTS idx_source_runs_user ON source_runs(user_id, started_at DESC)' },
+    { name: 'idx_source_runs_source', sql: 'CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs(user_id, source_id, started_at DESC)' },
+    { name: 'idx_audit_log_user', sql: 'CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id, created_at DESC)' }
   ];
 
   indexes.forEach(({ name, sql }) => {

@@ -39,6 +39,7 @@ const profileRoutes = require('./routes/profile');
 const adminRoutes = require('./routes/admin');
 const statsRoutes = require('./routes/stats');
 const summarizeRoutes = require('./routes/summarize');
+const billingRoutes = require('./routes/billing');
 
 // === EMAIL CONFIGURATION ===
 let mailTransport = null;
@@ -143,6 +144,7 @@ function startServer() {
   app.use('/api/profile', profileRoutes); // /api/profile
   app.use('/api/admin', adminRoutes);     // /api/admin/*
   app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
+  app.use('/api/billing', billingRoutes); // /api/billing/*
   
   // === DEBUG ENDPOINT (Volume Verification) ===
   app.get('/api/debug/volume-check', (req, res) => {
