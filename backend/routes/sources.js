@@ -355,17 +355,9 @@ router.post('/', requirePaid, enforceSourceLimit, express.json(), async (req, re
       : undefined);
     const tableName = createSourceTable(newSourceId, schemaForTable);
     logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
-    
-    // Create notification for source addition
-    await createNotification(
-      userId,
-      'source_added',
-      `✅ Added new source: ${sourceData.name} with table ${tableName}`
-    );
-    
-    // Optional: Auto-scrape when source is added (controlled by env variable)
+    await createNotification(userId, 'source_added', `✅ Added new source: ${sourceData.name} with table ${tableName}`);
+    await auditLog({ userId, actorUserId: userId, action: 'source.created', entityType: 'source', entityId: newSourceId, after: sourceData, req });
     const AUTO_SCRAPE_ON_ADD = process.env.AUTO_SCRAPE_ON_ADD === 'true';
-    
     if (AUTO_SCRAPE_ON_ADD) {
       logger.info(`New source added by user ${userId}, triggering immediate scrape`);
       scrapeForUser(userId, [sourceData]).then((newLeads) => {

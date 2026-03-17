@@ -3,6 +3,8 @@ const router = express.Router();
 const { dbAll, dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
 const { requireAuth } = require('../middleware/auth');
+const { getNotificationSettings, ensureNotificationSettings } = require('../services/alerts');
+const { getSourceHealthForUser } = require('../services/sourceHealth');
 
 /**
  * GET /api/stats
@@ -23,9 +25,9 @@ router.get('/', requireAuth, async (req, res) => {
     const sourcesRow = await dbGet('SELECT COUNT(*) as count FROM user_sources WHERE user_id = ?', [userId]);
     const activeSources = sourcesRow?.count || 0;
 
-    // Leads by source
+    // Leads by source (column is source_name)
     const leadsBySource = await dbAll(
-      'SELECT source, COUNT(*) as count FROM leads WHERE user_id = ? GROUP BY source ORDER BY count DESC',
+      'SELECT source_name AS source, COUNT(*) as count FROM leads WHERE user_id = ? GROUP BY source_name ORDER BY count DESC',
       [userId]
     );
 
@@ -66,12 +68,12 @@ router.get('/metrics', async (req, res) => {
     // Total sources
     const totalSources = await dbGet('SELECT COUNT(*) as count FROM user_sources WHERE user_id = ?', [userId]);
     
-    // Leads per source breakdown
+    // Leads per source breakdown (column is source_name)
     const leadsPerSource = await dbAll(`
-      SELECT source, COUNT(*) as count 
+      SELECT source_name AS source, COUNT(*) as count 
       FROM leads 
       WHERE user_id = ? 
-      GROUP BY source 
+      GROUP BY source_name 
       ORDER BY count DESC
     `, [userId]);
     
@@ -115,6 +117,100 @@ router.get('/metrics', async (req, res) => {
     });
   } catch (e) {
     logger.error(`Metrics error: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/stats/roi
+ * Usage & ROI: new leads this month, sources scanned, success rate
+ */
+router.get('/roi', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const monthStartIso = monthStart.toISOString();
+
+    const newLeadsThisMonth = await dbGet(
+      'SELECT COUNT(*) as count FROM leads WHERE user_id = ? AND created_at >= ?',
+      [userId, monthStartIso]
+    );
+
+    const runs = await dbAll(
+      'SELECT status, records_inserted FROM source_runs WHERE user_id = ? AND started_at >= ?',
+      [userId, monthStartIso]
+    );
+    const sourcesScanned = runs.length;
+    const successRuns = runs.filter(r => r.status === 'success').length;
+    const successRate = sourcesScanned ? Math.round((successRuns / sourcesScanned) * 100) : 0;
+    const totalInsertedThisMonth = runs.reduce((s, r) => s + (r.records_inserted || 0), 0);
+
+    res.json({
+      success: true,
+      roi: {
+        newLeadsThisMonth: newLeadsThisMonth?.count || 0,
+        sourcesScanned,
+        successRate,
+        totalInsertedThisMonth
+      }
+    });
+  } catch (e) {
+    logger.error(`ROI stats error: ${e.message}`);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+/**
+ * GET /api/stats/notification-settings
+ * GET /api/stats/source-health
+ */
+router.get('/notification-settings', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+    const settings = await getNotificationSettings(userId);
+    res.json({ success: true, settings });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/notification-settings', requireAuth, express.json(), async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+    await ensureNotificationSettings(userId);
+    const { instant_email_enabled, digest_email_enabled, digest_frequency, webhook_enabled, webhook_url, slack_webhook_url } = req.body || {};
+    const updates = [];
+    const values = [];
+    if (typeof instant_email_enabled === 'number') { updates.push('instant_email_enabled = ?'); values.push(instant_email_enabled); }
+    if (typeof digest_email_enabled === 'number') { updates.push('digest_email_enabled = ?'); values.push(digest_email_enabled); }
+    if (digest_frequency !== undefined) { updates.push('digest_frequency = ?'); values.push(digest_frequency); }
+    if (typeof webhook_enabled === 'number') { updates.push('webhook_enabled = ?'); values.push(webhook_enabled); }
+    if (webhook_url !== undefined) { updates.push('webhook_url = ?'); values.push(webhook_url); }
+    if (slack_webhook_url !== undefined) { updates.push('slack_webhook_url = ?'); values.push(slack_webhook_url); }
+    if (updates.length) {
+      values.push(userId);
+      await dbRun(`UPDATE notification_settings SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`, values);
+    }
+    const settings = await getNotificationSettings(userId);
+    res.json({ success: true, settings });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/source-health', requireAuth, async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+    const health = await getSourceHealthForUser(userId);
+    res.json({ success: true, data: health });
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

@@ -622,6 +622,25 @@
       </div>
     </div>
 
+    <!-- Usage / ROI this month -->
+    <div class="card" style="margin-bottom: 2rem;">
+      <h3 class="card-title">Usage this month</h3>
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));">
+        <div>
+          <div class="stat-label">New leads</div>
+          <div class="stat-value" id="roiNewLeads">-</div>
+        </div>
+        <div>
+          <div class="stat-label">Sources scanned</div>
+          <div class="stat-value" id="roiSourcesScanned">-</div>
+        </div>
+        <div>
+          <div class="stat-label">Success rate</div>
+          <div class="stat-value" id="roiSuccessRate">-</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Notifications Section -->
     <div class="card" style="margin-bottom: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -904,6 +923,20 @@
         document.getElementById('activeSources').textContent = stats.activeSources || 0;
       } catch (error) {
         console.error('Failed to load stats:', error);
+      }
+    }
+
+    async function loadRoi() {
+      try {
+        const response = await fetch('/api/stats/roi', { credentials: 'include' });
+        if (!response.ok) return;
+        const data = await response.json();
+        const r = data.roi || {};
+        document.getElementById('roiNewLeads').textContent = r.newLeadsThisMonth ?? '-';
+        document.getElementById('roiSourcesScanned').textContent = r.sourcesScanned ?? '-';
+        document.getElementById('roiSuccessRate').textContent = (r.successRate != null ? r.successRate + '%' : '-');
+      } catch (e) {
+        console.error('Failed to load ROI:', e);
       }
     }
 
@@ -1568,12 +1601,13 @@
     loadStats();
     loadNotifications();
     loadLeads();
-    loadMetrics(); // Load metrics on page load
-    
-    // Refresh notifications, stats, and metrics periodically
-    setInterval(loadNotifications, 30000); // Every 30 seconds
-    setInterval(loadStats, 60000); // Every minute
-    setInterval(loadMetrics, 60000); // Every minute
+    loadMetrics();
+    loadRoi();
+
+    setInterval(loadNotifications, 30000);
+    setInterval(loadStats, 60000);
+    setInterval(loadMetrics, 60000);
+    setInterval(loadRoi, 60000);
 
     // Mobile menu toggle
     function toggleMobileMenu() {

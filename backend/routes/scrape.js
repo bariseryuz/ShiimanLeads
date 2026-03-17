@@ -4,6 +4,7 @@ const { dbAll, dbGet } = require('../db');
 const logger = require('../utils/logger');
 const { scrapeForUser } = require('../legacyScraper'); // Import from legacy scraper
 const { requirePaid } = require('../middleware/billing');
+const { log: auditLog } = require('../services/auditLog');
 
 // Import progress tracking from services
 const {
@@ -80,7 +81,8 @@ router.post('/now', requirePaid, async (req, res) => {
     if (Object.keys(extractionLimits).length > 0) {
       logger.info(`Extraction limits: ${JSON.stringify(extractionLimits)}`);
     }
-    
+    await auditLog({ userId, actorUserId: userId, action: 'scrape.started', entityType: 'scrape', entityId: null, after: { sourcesCount: userSources.length }, req });
+
     // Scrape in background and respond immediately
     scrapeForUser(userId, userSources, extractionLimits).then((newLeads) => {
       logger.info(`Manual scrape completed for user ${userId}: ${newLeads} new leads`);
@@ -190,7 +192,8 @@ router.post('/:id', requirePaid, async (req, res) => {
     }
     sourceConfig._sourceId = sourceRow.id; // Attach source ID for table saving
     logger.info(`Manual scrape triggered for source "${sourceConfig.name}" (ID: ${sourceId}) by user ${userId}`);
-    
+    await auditLog({ userId, actorUserId: userId, action: 'scrape.started', entityType: 'scrape', entityId: sourceId, after: { sourceName: sourceConfig.name }, req });
+
     // Scrape in background and respond immediately
     scrapeForUser(userId, [sourceConfig]).then((newLeads) => {
       logger.info(`Manual scrape completed for source "${sourceConfig.name}": ${newLeads} new leads`);
