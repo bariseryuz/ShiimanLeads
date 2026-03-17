@@ -1,71 +1,108 @@
-# Shiiman Leads - Construction Permit Lead Generator
+# Shiiman Leads — data-based lead generation (permits, jobs, listings)
 
-Automated lead generation system that scrapes construction permits from various sources.
+## What problem this solves
+You need **fresh, qualified leads** from places that don’t offer clean exports (websites, ArcGIS portals, JSON APIs). Shiiman Leads lets you add sources, scrape/fetch them reliably, and keep everything in one place.
 
-## Features
-- **AI-Powered Autonomous Navigation** - Just describe what you want, AI figures out how to extract it
-- Automated scraping with node-cron
-- SQLite database for lead storage
-- API endpoints for lead retrieval
-- Frontend client portal
-- AI-powered lead extraction with Google Gemini
+## Who it’s for
+- Operators, agencies, and teams who need **repeatable** lead acquisition
+- Anyone sourcing leads from **web pages, ArcGIS Hub, or JSON APIs**
 
-## Quick Start - AI Mode (Web Interface)
+## 3 core benefits
+- **Outcome-first scraping**: add a source → click scrape → get leads (no selectors required for website sources)
+- **Multiple source types**: AI Website (Playwright + Gemini), ArcGIS Hub auto-discovery, direct JSON API
+- **Filter & map at ingestion**: optional Universal Engine to normalize fields and keep only leads that match your rules
 
-1. Log in to your dashboard
-2. Go to "My Sources"
-3. Click "+ Add Source"
-4. Fill in:
-   - **Source Name**: e.g., "Phoenix Building Permits"
-   - **Website URL**: The page with the data
-   - **AI Instructions**: "Find and open the building permits table, extract all data from all pages"
-   - **Fields to extract**: permit number, address, contractor name, phone
-5. Click "Save Source"
-6. Click "Scrape Now" and watch AI work its magic! 🪄
+## Quick start (local) — copy/paste
 
-### Example AI Instructions
+### 1) Install + run (backend serves the frontend)
 
-- **Simple:** "Extract all building permits from the table"
-- **With navigation:** "Click the 'Show Table' button, then extract all permits"
-- **Multi-page:** "Extract all permits from every page of the table"
-- **Complex:** "Click Building Permits tab, open the table, extract from all pages"
-
-## How It Works
-
-1. AI visits the URL you provide
-2. Takes screenshots and analyzes the page
-3. Finds buttons, tables, and data automatically
-4. Handles pagination across multiple pages
-5. Extracts and saves all data to your dashboard
-
-No coding or selectors needed - just tell it what you want in plain English!
-
-## Advanced Configuration
-
-See [AI-NAVIGATION-EXAMPLE.md](backend/AI-NAVIGATION-EXAMPLE.md) for detailed examples and API configuration.
-
-## Deployment
-
-### Railway (Recommended)
-1. Push code to GitHub
-2. Connect Railway to your repo
-3. Set environment variables in Railway dashboard
-4. Deploy automatically
-
-### Environment Variables
-- `GEMINI_API_KEY` - Google Gemini API key for AI extraction
-- `FRONTEND_PORT` - Port for the server (Railway sets this automatically)
-
-## Local Development
 ```bash
-cd backend
+cd shiiman-leads/backend
 npm install
-node index.js
+npm start
 ```
 
-Visit `http://localhost:3000`
+Open `http://localhost:3000`.
 
+### 2) Required environment variables
 
+Create `shiiman-leads/backend/.env`:
 
+```bash
+# Required for logins/sessions (set a real secret in production)
+SESSION_SECRET=change-me-please-strong-random
 
-add the stars to the backgroun or anythign thatbwill mak eit look futuristc so when it is sacrolled by the cliend or touched by client it can move itself
+# Required if you use AI Website scraping or AI summarization
+GEMINI_API_KEY=your-gemini-key
+
+# Optional: override SQLite locations (defaults to backend/data/*.db in dev)
+# SQLITE_DB_PATH=./data/shiiman-leads.db
+# SQLITE_SESSIONS_DB_PATH=./data/sessions.db
+
+# Optional: Playwright
+# PLAYWRIGHT_HEADLESS=true
+```
+
+If you want a template, see `.env.example`.
+
+## Common source setup examples (copy/paste JSON)
+These examples map to the “Add Source” UI in `frontend/my-sources.html` (source type + URL + optional engine config).
+
+### ArcGIS (Hub URL, auto API discovery)
+Use when you have a dataset/explore page and want the app to find the real API.
+
+```json
+{
+  "name": "City permits (ArcGIS Hub)",
+  "type": "arcgis",
+  "url": "https://example-city-hub-portal.example.com/datasets/permits/explore",
+  "useEngine": false
+}
+```
+
+### JSON API (direct endpoint + query params)
+Use when you already have an endpoint (or you used “Find endpoint”).
+
+```json
+{
+  "name": "Permits API (last 30 days)",
+  "type": "json",
+  "url": "https://example.gov/api/permits",
+  "query_params": { "StartDate": "{{DATE_30_DAYS_AGO}}", "EndDate": "{{TODAY}}" }
+}
+```
+
+### AI Website (plain-English instructions + field schema)
+Use when there’s no stable API and you need browser automation + extraction.
+
+```json
+{
+  "name": "Permit search website (AI)",
+  "type": "html",
+  "url": "https://example.gov/permits/search",
+  "ai_instructions": "Open the permits table, go through all pages, and extract each row.",
+  "field_schema": ["permit_number", "address", "contractor_name", "phone", "issue_date"]
+}
+```
+
+## Troubleshooting
+- **Missing `GEMINI_API_KEY`**: AI Website scraping and “Instant Analyze” require it. Add it to `backend/.env` and restart.
+- **Playwright browser not installed**: run from `shiiman-leads/backend`:
+
+```bash
+npx playwright install chromium
+```
+
+- **Empty extraction results (AI Website)**:
+  - Try more explicit `ai_instructions` (“click Search”, “set rows-per-page to 100”, “extract from every page”).
+  - Ensure `field_schema` matches what’s visible on the page (use fewer fields first, then expand).
+- **Endpoint discovery misses**:
+  - Some sites hide data behind unusual requests; try clicking the site’s “Search” once manually, then re-run “Find endpoint”.
+  - If you can locate a real endpoint, use the JSON API source type and paste it directly.
+
+## Docs (keep README short)
+- **How everything works**: `MASTER-GUIDE.md`
+- **Universal Engine design**: `ENGINE-BLUEPRINT.md`
+- **Project layout**: `PROJECT-GUIDE.md`
+- **Deploy**: `RAILWAY-DEPLOY.md`
+- **Filters & limits**: `FILTERS-AND-LIMITS.md`

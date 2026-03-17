@@ -1477,27 +1477,39 @@ async function loadScreenshots(sources) {
           document.getElementById('apiMethod').value = source.data.method || 'GET';
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
-          document.getElementById('useEngine').checked = !!(source.data.query_params || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
           document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
           document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
+          document.getElementById('useEngine').checked = !!(source.data.query_params || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
         } else if (sourceType === 'arcgis') {
           document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
           document.getElementById('arcgisDateField').value = source.data.dateField || '';
-          document.getElementById('useEngine').checked = !!(source.data.where_clause || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
           document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
           document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
           document.getElementById('engineWhereClause').value = source.data.where_clause || '';
+          document.getElementById('useEngine').checked = !!(source.data.where_clause || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
         } else {
           document.getElementById('apiMethod').value = 'GET';
           document.getElementById('apiParams').value = '';
           document.getElementById('jsonPath').value = '';
-          document.getElementById('useEngine').checked = false;
-          document.getElementById('engineFieldMapping').value = '';
-          document.getElementById('engineFilters').value = '';
           document.getElementById('engineWhereClause').value = '';
           if (document.getElementById('jsonFields')) {
             document.getElementById('jsonFields').value = '';
           }
+          // Always restore engine fields if saved (e.g. type changed or legacy source)
+          if (source.data.field_mapping && Object.keys(source.data.field_mapping).length) {
+            document.getElementById('engineFieldMapping').value = JSON.stringify(source.data.field_mapping, null, 2);
+          } else {
+            document.getElementById('engineFieldMapping').value = '';
+          }
+          if (source.data.filters && source.data.filters.length) {
+            document.getElementById('engineFilters').value = JSON.stringify(source.data.filters, null, 2);
+          } else {
+            document.getElementById('engineFilters').value = '';
+          }
+          if (source.data.where_clause) {
+            document.getElementById('engineWhereClause').value = source.data.where_clause;
+          }
+          document.getElementById('useEngine').checked = !!(source.data.where_clause || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
         }
         
         document.getElementById('includeKeywords').value = source.data.includeWords?.join(', ') || '';
