@@ -23,6 +23,7 @@
       <div class="nav-links desktop-nav" id="navLinksLoggedOut">
         <a href="#home" style="color: #0066cc; font-weight: 600;"><img src="icons/home.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Home</a>
         <a href="#about" style="color: #000000;"><img src="icons/sources.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> About</a>
+        <a href="#solutions" style="color: #000000;"><img src="icons/dashboard.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Solutions</a>
         <a href="#contact" style="color: #000000;"><img src="icons/mail.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Contact Us</a>
         <a href="/login.html" class="btn-login"><img src="icons/login.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Login</a>
       </div>
@@ -146,6 +147,10 @@
             <span><img src="icons/sources.svg" style="width:16px;height:16px;"></span>
             <span>About</span>
           </a>
+          <a href="#solutions" onclick="toggleMobileMenu()" class="mobile-menu-item" style="color: #000000;">
+            <span><img src="icons/dashboard.svg" style="width:16px;height:16px;"></span>
+            <span>Solutions</span>
+          </a>
           <a href="#contact" onclick="toggleMobileMenu()" class="mobile-menu-item" style="color: #000000;">
             <span><img src="icons/mail.svg" style="width:16px;height:16px;"></span>
             <span>Contact Us</span>
@@ -231,6 +236,85 @@
             Automated scraping and instant delivery
           </p>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tailored Solutions -->
+  <section id="solutions" class="solutions-section" aria-labelledby="solutions-heading">
+    <div class="solutions-inner">
+      <h2 id="solutions-heading" class="solutions-title">Tailored Solutions for Your Business</h2>
+      <div class="solutions-grid">
+        <!-- Tall left: Enterprise -->
+        <article class="solution-card solution-card--tall">
+          <div class="solution-card__body">
+            <h3>Enterprise Solution</h3>
+            <p>Custom data extraction solutions tailored to your business needs. Power enterprise-level data applications and decision-making.</p>
+            <a class="solution-card__link" href="mailto:guidebaris@outlook.com?subject=Enterprise%20inquiry">Contact Sales <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="solution-card__art" aria-hidden="true">
+            <svg viewBox="0 0 200 160" xmlns="http://www.w3.org/2000/svg">
+              <g class="solution-illustration-stroke">
+                <path d="M20 120 L50 95 L80 115 L110 90 L140 108 L170 85 L180 92 L180 130 L20 130 Z"/>
+                <path d="M50 95 L50 70 L80 55 L80 115"/>
+                <path d="M80 55 L110 40 L110 90"/>
+                <path d="M110 40 L140 52 L140 108"/>
+                <rect x="125" y="118" width="38" height="12" rx="2"/>
+                <line x1="128" y1="121" x2="160" y2="121"/>
+                <line x1="128" y1="125" x2="152" y2="125"/>
+                <line x1="128" y1="128" x2="156" y2="128"/>
+              </g>
+            </svg>
+          </div>
+        </article>
+
+        <!-- Top right: SaaS -->
+        <article class="solution-card solution-card--saas">
+          <div class="solution-card__body">
+            <h3>Software as a Service</h3>
+            <p>Flexible subscription plans for individuals, teams, and businesses. Start with a free trial. Scale as you grow.</p>
+            <a class="solution-card__link" href="/signup.html">See All Plans <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="solution-card__art" aria-hidden="true">
+            <svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
+              <g class="solution-illustration-stroke">
+                <path d="M40 100 L160 100 L155 35 L45 35 Z"/>
+                <path d="M45 40 L155 40"/>
+                <rect x="65" y="50" width="70" height="42" rx="3"/>
+                <circle cx="100" cy="22" r="8"/>
+                <path d="M125 18 L132 25 L125 32"/>
+                <path d="M168 48 L175 55 L168 62"/>
+                <path d="M32 48 L39 55 L32 62"/>
+                <path d="M95 12 L100 5 L105 12"/>
+                <path d="M88 18 L100 8 L112 18"/>
+              </g>
+            </svg>
+          </div>
+        </article>
+
+        <!-- Bottom right: Data Service -->
+        <article class="solution-card solution-card--data">
+          <div class="solution-card__body">
+            <h3>Data Service</h3>
+            <p>Quickly obtain complete, high-quality data packages to meet your data needs in a one-stop solution—saving time, effort, and worry.</p>
+            <a class="solution-card__link" href="#contact">Get a demo <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="solution-card__art" aria-hidden="true">
+            <svg viewBox="0 0 200 140" xmlns="http://www.w3.org/2000/svg">
+              <g class="solution-illustration-stroke">
+                <path d="M25 45 L55 35 L85 45 L85 95 L25 95 Z"/>
+                <path d="M115 50 L155 38 L185 50 L185 100 L115 100 Z"/>
+                <path d="M35 55 L75 48"/>
+                <path d="M125 58 L175 52"/>
+                <path d="M40 70 L70 70"/>
+                <path d="M130 72 L170 72"/>
+                <circle cx="100" cy="115" r="18"/>
+                <path d="M100 106 L100 124 M92 118 L108 118"/>
+                <path d="M100 100 L100 97"/>
+              </g>
+            </svg>
+          </div>
+        </article>
       </div>
     </div>
   </section>
@@ -322,6 +406,9 @@
             </li>
             <li style="margin-bottom: 0.75rem;">
               <a href="#about" style="color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.875rem; transition: color 0.2s;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">About Us</a>
+            </li>
+            <li style="margin-bottom: 0.75rem;">
+              <a href="#solutions" style="color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.875rem; transition: color 0.2s;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Solutions</a>
             </li>
             <li style="margin-bottom: 0.75rem;">
               <a href="#contact" style="color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.875rem; transition: color 0.2s;" onmouseover="this.style.color='#6366f1'" onmouseout="this.style.color='rgba(255,255,255,0.7)'">Contact</a>

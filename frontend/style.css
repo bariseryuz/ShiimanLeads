@@ -1603,3 +1603,171 @@ tr:hover {
 .btn-3d span:nth-child(4) {
   transform: rotateX(270deg) translateZ(25px);
 }
+
+/* —— Home: Tailored Solutions section —— */
+.solutions-section {
+  background: #ffffff;
+  padding: 4rem 1.5rem 4.5rem;
+  position: relative;
+  z-index: 10;
+}
+
+.solutions-section .solutions-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.solutions-section .solutions-title {
+  text-align: center;
+  font-size: clamp(1.65rem, 4vw, 2.35rem);
+  font-weight: 800;
+  color: var(--gray-900);
+  margin: 0 0 2.5rem;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.solutions-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 1.25rem;
+  align-items: stretch;
+  min-height: 480px;
+}
+
+.solution-card {
+  border-radius: 18px;
+  padding: 2rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.solution-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+}
+
+.solution-card--tall {
+  grid-row: 1 / -1;
+  background: linear-gradient(165deg, #fff5f5 0%, #fde8e8 100%);
+}
+
+.solution-card--saas {
+  background: linear-gradient(165deg, #f0f7ff 0%, #e8f2fe 100%);
+  flex-direction: row;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.solution-card--data {
+  background: linear-gradient(165deg, #fffbeb 0%, #fef3c7 55%, #fff7ed 100%);
+  flex-direction: row;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.solution-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.solution-card--tall .solution-card__body {
+  margin-bottom: 1rem;
+}
+
+.solution-card h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  margin: 0 0 0.65rem;
+}
+
+.solution-card p {
+  color: var(--gray-600);
+  font-size: 0.95rem;
+  line-height: 1.65;
+  margin: 0 0 1.1rem;
+  flex: 1;
+}
+
+.solution-card__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #0066cc;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  margin-top: auto;
+  width: fit-content;
+}
+
+.solution-card__link:hover {
+  text-decoration: underline;
+}
+
+.solution-card__art {
+  flex-shrink: 0;
+  width: 160px;
+  height: 130px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.solution-card--tall .solution-card__art {
+  width: 100%;
+  height: 200px;
+  margin-top: auto;
+}
+
+.solution-card__art svg {
+  width: 100%;
+  height: 100%;
+  max-width: 220px;
+}
+
+.solution-illustration-stroke {
+  stroke: #2563eb;
+  fill: none;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (max-width: 900px) {
+  .solutions-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    min-height: 0;
+  }
+
+  .solution-card--tall {
+    grid-row: auto;
+    min-height: 380px;
+  }
+
+  .solution-card--saas,
+  .solution-card--data {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .solution-card__art {
+    width: 100%;
+    height: 140px;
+    order: 3;
+  }
+
+  .solution-card--saas .solution-card__art,
+  .solution-card--data .solution-card__art {
+    order: 3;
+  }
+}
