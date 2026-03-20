@@ -30,8 +30,8 @@ const {
  */
 router.post('/now', requirePaid, async (req, res) => {
   try {
-    // Accept userId from request body (from server.js) or session
-    const userId = req.body.userId || req.session?.user?.id || 1;
+    // Logged-in user only (requirePaid already enforced; never use req.body.userId)
+    const userId = req.session.user.id;
     
     // Get extraction limits from request (optional)
     const extractionLimits = req.body.extractionLimits || {};

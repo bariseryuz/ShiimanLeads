@@ -2103,12 +2103,19 @@ async function loadScreenshots(sources) {
         const response = await fetch('/api/scrape/now', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: '{}'
         });
-        const data = await response.json();
-        
-        if (data.success) {
+        const raw = await response.text();
+        let data = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          data = { error: raw.slice(0, 300) || `HTTP ${response.status}` };
+        }
+        console.log('scrapeNow response', response.status, data);
+
+        if (response.ok && data.success) {
           // Show progress modal
           showProgressModal();
           
@@ -2120,13 +2127,18 @@ async function loadScreenshots(sources) {
           btn.disabled = false;
           btn.innerHTML = originalText;
         } else {
-          alert('Failed to start scraping');
+          const msg = data.error || data.message || raw || `HTTP ${response.status}`;
+          if (response.status === 402) {
+            alert(`❌ ${msg}\n\nSubscribe (Billing) or use an admin account / active billing in the database for testing.`);
+          } else {
+            alert(`❌ Could not start scrape (${response.status}): ${msg}`);
+          }
           btn.disabled = false;
           btn.innerHTML = originalText;
         }
       } catch (error) {
         console.error('Scrape error:', error);
-        alert('Failed to start scraping');
+        alert('Failed to start scraping: ' + error.message);
         btn.disabled = false;
         btn.innerHTML = originalText;
       }

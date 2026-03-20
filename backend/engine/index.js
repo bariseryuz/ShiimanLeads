@@ -65,10 +65,16 @@ async function runUniversalPipeline(source) {
  */
 function shouldUseEngine(source) {
   if (!source) return false;
+  const m = source.manifest;
+  if (m && (m.query_params || m.params || m.where_clause || (Array.isArray(m.filters) && m.filters.length))) {
+    return true;
+  }
+  // JSON API saves `params`; UI may set `filters` / `where_clause` without duplicating query_params
   return !!(
     source.query_params ||
+    source.params ||
     source.where_clause ||
-    (source.manifest && (source.manifest.query_params || source.manifest.where_clause || source.manifest.filters))
+    (Array.isArray(source.filters) && source.filters.length > 0)
   );
 }
 
