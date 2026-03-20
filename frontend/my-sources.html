@@ -2287,6 +2287,18 @@ async function loadScreenshots(sources) {
             return;
           }
 
+          // Per-source Scrape/Delete use data-action and live inside #sourcesList.
+          // Header buttons (Scrape Now, Add Source) and empty-state buttons use onclick — ignore here.
+          if (!e.target.closest('#sourcesList')) {
+            return;
+          }
+
+          // Edit uses onclick="editSource(...)" — let it run, don't treat as delegated action
+          const btnWithOnclick = e.target.closest('button[onclick]');
+          if (btnWithOnclick) {
+            return;
+          }
+
           console.log('Click detected, target:', e.target.tagName, e.target.className);
           console.log('Target has data-action?:', e.target.hasAttribute?.('data-action'));
           console.log('Target data-action value:', e.target.getAttribute?.('data-action'));
