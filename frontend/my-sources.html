@@ -2299,37 +2299,11 @@ async function loadScreenshots(sources) {
             return;
           }
 
-          console.log('Click detected, target:', e.target.tagName, e.target.className);
-          console.log('Target has data-action?:', e.target.hasAttribute?.('data-action'));
-          console.log('Target data-action value:', e.target.getAttribute?.('data-action'));
-          
-          // Find the button - more robust approach
-          let button = null;
-          
-          // Check if we clicked directly on a button with data-action
-          if (e.target.tagName === 'BUTTON') {
-            if (e.target.hasAttribute('data-action')) {
-              button = e.target;
-              console.log('✅ Clicked directly on action button');
-            } else {
-              console.log('⚠️ Clicked on button but no data-action (probably Edit button)');
-            }
-          } else {
-            // Clicked on something inside a button (like icon)
-            button = e.target.closest('button[data-action]');
-            if (button) {
-              console.log('✅ Found parent action button via closest()');
-            } else {
-              console.log('❌ No action button found');
-            }
-          }
-          
-          console.log('Final button:', button);
-          console.log('Button action:', button?.getAttribute('data-action'));
-          console.log('Button id:', button?.getAttribute('data-id'));
-          
+          // Always use closest: works for BUTTON, IMG inside button, SPAN, etc.
+          // (Do NOT branch on tagName === 'BUTTON' only — that skips closest for Edit and breaks icon clicks.)
+          const button = e.target.closest('button[data-action]');
           if (!button) {
-            console.log('No action button - ignoring click');
+            // Click was on card chrome (e.g. .source-grid gap) — not a scrape/delete control
             return;
           }
           
