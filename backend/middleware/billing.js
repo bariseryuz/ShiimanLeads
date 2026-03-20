@@ -30,6 +30,11 @@ async function requirePaid(req, res, next) {
   if (!userId) return res.status(401).json({ error: 'Not authenticated' });
   if (role === 'admin') return next();
 
+  // Temporary ops/testing only — set in server env, never in public client
+  if (process.env.ALLOW_UNPAID_SCRAPE === 'true') {
+    return next();
+  }
+
   const acct = await getBillingAccountForUser(userId);
   if (!isPaidActive(acct)) {
     return res.status(402).json({
@@ -49,6 +54,10 @@ async function enforceSourceLimit(req, res, next) {
   const role = req.session?.user?.role;
   if (!userId) return res.status(401).json({ error: 'Not authenticated' });
   if (role === 'admin') return next();
+
+  if (process.env.ALLOW_UNPAID_SCRAPE === 'true') {
+    return next();
+  }
 
   const acct = await getBillingAccountForUser(userId);
   const plan = getPlanConfig(acct.plan_key);

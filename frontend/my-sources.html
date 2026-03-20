@@ -372,7 +372,10 @@
       background: rgba(255, 255, 255, 0.5);
     }
     
+    /* Keep action row above any stray overlap from screenshot panel */
     .source-actions {
+      position: relative;
+      z-index: 2;
       display: flex;
       gap: 0.5rem;
     }
@@ -1057,7 +1060,12 @@
       if (btn) { btn.disabled = false; btn.textContent = '🔍 Find endpoint'; }
     }
 
-    document.getElementById('findEndpointBtn').addEventListener('click', findEndpoint);
+    const findEndpointBtnEl = document.getElementById('findEndpointBtn');
+    if (findEndpointBtnEl) {
+      findEndpointBtnEl.addEventListener('click', findEndpoint);
+    } else {
+      console.warn('findEndpointBtn not found — Find endpoint will be unavailable until modal is in DOM');
+    }
 
     // Toggle between HTML and API source types
     function toggleSourceType() {
@@ -1170,9 +1178,9 @@
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
                 </div>
                 <div class="source-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
-              <button class="btn-small" onclick="editSource(${source.id})"><img src="icons/edit.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Edit</button>
-              <button class="btn-small" data-action="scrape" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/pull.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Scrape</button>
-              <button class="btn-small btn-delete" data-action="delete" data-id="${source.id}" data-name="${escapeHtml(source.data.name)}"><img src="icons/trash.svg" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Delete</button>
+              <button type="button" class="btn-small source-card-action" data-action="edit" data-source-id="${source.id}" data-source-name="${escapeHtmlAttr(source.data.name || '')}"><img src="icons/edit.svg" alt="" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Edit</button>
+              <button type="button" class="btn-small source-card-action" data-action="scrape" data-source-id="${source.id}" data-source-name="${escapeHtmlAttr(source.data.name || '')}"><img src="icons/pull.svg" alt="" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Scrape</button>
+              <button type="button" class="btn-small btn-delete source-card-action" data-action="delete" data-source-id="${source.id}" data-source-name="${escapeHtmlAttr(source.data.name || '')}"><img src="icons/trash.svg" alt="" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Delete</button>
                 </div>
               </div>
               <div class="source-screenshot-panel">
@@ -1569,24 +1577,45 @@ async function loadScreenshots(sources) {
       }
     }
 
+    let scrapeSourceInFlight = false;
     async function scrapeSource(id, name) {
+      if (scrapeSourceInFlight) {
+        console.warn('scrapeSource: ignored duplicate call (already running)');
+        return;
+      }
       if (!confirm(`Start scraping "${name}" now?`)) {
         return;
       }
-      
+      scrapeSourceInFlight = true;
       try {
         const response = await fetch(`/api/scrape/${id}`, {
-          method: 'POST'
+          method: 'POST',
+          credentials: 'include',
+          headers: { Accept: 'application/json' }
         });
-        
+        const raw = await response.text();
+        let data = {};
+        try {
+          data = raw ? JSON.parse(raw) : {};
+        } catch {
+          data = { error: raw.slice(0, 200) || `HTTP ${response.status}` };
+        }
+        console.log('scrapeSource response', response.status, data);
         if (response.ok) {
           alert(`✅ Scraping started for "${name}"`);
         } else {
-          alert('❌ Failed to start scraping');
+          const msg = data.error || data.message || raw || `HTTP ${response.status}`;
+          if (response.status === 402) {
+            alert(`❌ ${msg}\n\nSubscribe in Billing (Paddle) or ask an admin to set your account to admin / active billing.`);
+          } else {
+            alert(`❌ Failed to start scraping (${response.status}): ${msg}`);
+          }
         }
       } catch (error) {
         console.error('Error scraping source:', error);
-        alert('❌ Failed to start scraping');
+        alert('❌ Failed to start scraping: ' + error.message);
+      } finally {
+        scrapeSourceInFlight = false;
       }
     }
 
@@ -1943,8 +1972,13 @@ async function loadScreenshots(sources) {
 
     function escapeHtml(text) {
       const div = document.createElement('div');
-      div.textContent = text;
+      div.textContent = text == null ? '' : String(text);
       return div.innerHTML;
+    }
+
+    /** Safe for double-quoted HTML attributes (data-* names, etc.) */
+    function escapeHtmlAttr(text) {
+      return escapeHtml(text).replace(/"/g, '&quot;');
     }
 
     // Progress modal tracking
@@ -2256,6 +2290,26 @@ async function loadScreenshots(sources) {
         }, true);
 
         sourcesContainer.addEventListener('click', async (e) => {
+          const cardAction = e.target.closest?.('button.source-card-action[data-action]');
+          if (cardAction) {
+            e.preventDefault();
+            const action = cardAction.getAttribute('data-action');
+            const id = parseInt(cardAction.getAttribute('data-source-id'), 10);
+            const name = cardAction.getAttribute('data-source-name') || '';
+            if (action === 'edit') {
+              editSource(id);
+              return;
+            }
+            if (action === 'scrape') {
+              scrapeSource(id, name);
+              return;
+            }
+            if (action === 'delete') {
+              deleteSource(id, name);
+              return;
+            }
+          }
+
           const carouselButton = e.target.closest?.('button[data-carousel]');
           if (carouselButton) {
             e.preventDefault();
@@ -2287,41 +2341,7 @@ async function loadScreenshots(sources) {
             return;
           }
 
-          // Per-source Scrape/Delete use data-action and live inside #sourcesList.
-          // Header buttons (Scrape Now, Add Source) and empty-state buttons use onclick — ignore here.
-          if (!e.target.closest('#sourcesList')) {
-            return;
-          }
-
-          // Edit uses onclick="editSource(...)" — let it run, don't treat as delegated action
-          const btnWithOnclick = e.target.closest('button[onclick]');
-          if (btnWithOnclick) {
-            return;
-          }
-
-          // Always use closest: works for BUTTON, IMG inside button, SPAN, etc.
-          // (Do NOT branch on tagName === 'BUTTON' only — that skips closest for Edit and breaks icon clicks.)
-          const button = e.target.closest('button[data-action]');
-          if (!button) {
-            // Click was on card chrome (e.g. .source-grid gap) — not a scrape/delete control
-            return;
-          }
-          
-          // Prevent event from bubbling up and triggering again
-          e.stopPropagation();
-          e.preventDefault();
-          
-          const action = button.getAttribute('data-action');
-          const id = parseInt(button.getAttribute('data-id'));
-          const name = button.getAttribute('data-name');
-          
-          console.log('Executing action:', action, 'for source:', id, name);
-          
-          if (action === 'delete') {
-            await deleteSource(id, name);
-          } else if (action === 'scrape') {
-            await scrapeSource(id, name);
-          }
+          // Edit / Scrape / Delete: delegated above via .source-card-action (no fragile inline onclick).
         });
         console.log('Event listener attached to sourcesContainer');
       } else {
