@@ -1604,6 +1604,156 @@ tr:hover {
   transform: rotateX(270deg) translateZ(25px);
 }
 
+/* —— About: stats in same layout as Solutions, different pastel palette —— */
+.about-stats-showcase {
+  margin-top: 2.5rem;
+  padding: 0 1.5rem 1rem;
+  position: relative;
+  z-index: 10;
+}
+
+.about-stats-inner {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.stats-asymmetric-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  grid-template-rows: 1fr 1fr;
+  gap: 1.25rem;
+  align-items: stretch;
+  min-height: 420px;
+}
+
+.stat-tile {
+  border-radius: 18px;
+  padding: 1.75rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.08);
+}
+
+/* Mint / emerald — not the Solutions pink */
+.stat-tile--mint {
+  grid-row: 1 / -1;
+  background: linear-gradient(165deg, #ecfdf5 0%, #d1fae5 45%, #a7f3d0 100%);
+}
+
+/* Soft lilac — not the Solutions sky-blue */
+.stat-tile--lilac {
+  background: linear-gradient(165deg, #f5f3ff 0%, #ede9fe 50%, #ddd6fe 100%);
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Warm amber — not the Solutions cream/yellow */
+.stat-tile--amber {
+  background: linear-gradient(165deg, #fffbeb 0%, #fef3c7 50%, #fde68a 100%);
+  flex-direction: row;
+  align-items: center;
+  gap: 1rem;
+}
+
+.stat-tile__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-tile__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gray-600);
+  margin-bottom: 0.5rem;
+}
+
+.stat-tile__value {
+  font-size: clamp(2.75rem, 6vw, 3.75rem);
+  font-weight: 800;
+  color: var(--gray-900);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.stat-tile__value--side {
+  font-size: clamp(2.25rem, 5vw, 3rem);
+}
+
+.stat-tile__desc {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--gray-700);
+  max-width: 28ch;
+}
+
+.stat-tile--side .stat-tile__desc {
+  max-width: none;
+}
+
+.stat-tile__accent {
+  flex-shrink: 0;
+  width: 100%;
+  height: 160px;
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  opacity: 0.85;
+}
+
+.stat-tile__accent--sm {
+  width: 120px;
+  height: 100px;
+  min-height: 100px;
+  margin-top: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-tile__stroke {
+  stroke: #6366f1;
+}
+
+@media (max-width: 900px) {
+  .stats-asymmetric-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    min-height: 0;
+  }
+
+  .stat-tile--mint {
+    grid-row: auto;
+    min-height: 320px;
+  }
+
+  .stat-tile--lilac,
+  .stat-tile--amber {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .stat-tile__accent--sm {
+    width: 100%;
+    height: 100px;
+    order: 3;
+  }
+}
+
 /* —— Home: Tailored Solutions section —— */
 .solutions-section {
   background: #ffffff;

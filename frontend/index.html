@@ -208,33 +208,45 @@
     </h2>
     
     <div class="card" style="max-width: 900px; margin: 0 auto;">
-      <p style="color: var(--gray-700); line-height: 1.8; font-size: 1.125rem; margin-bottom: 1.5rem;">
+      <p style="color: var(--gray-700); line-height: 1.8; font-size: 1.125rem; margin-bottom: 0;">
         Shiiman Leads finds and delivers targeted company and project data tailored to your vertical. We crawl public and licensed sources, extract verified contact and project details, clean and deduplicate results, and provide them in CSV, API, or direct database import formats. All collection is done with respect for site terms and privacy rules so you get reliable, actionable leads without the overhead.
       </p>
-      
-      <div class="stats-grid" style="margin-top: 3rem;">
-        <div class="stat-card">
-          <div class="stat-label"> Multi-Source Data</div>
-          <div class="stat-value">10+</div>
-          <p style="color: var(--gray-600); margin-top: 0.5rem; font-size: 0.875rem;">
-            With the basic plan you can access up to 10 data sources.
-          </p>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-label">AI-Powered</div>
-          <div class="stat-value">98%</div>
-          <p style="color: var(--gray-600); margin-top: 0.5rem; font-size: 0.875rem;">
-            Accuracy with Google Gemini AI
-          </p>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-label">Real-Time</div>
-          <div class="stat-value">24/7</div>
-          <p style="color: var(--gray-600); margin-top: 0.5rem; font-size: 0.875rem;">
-            Automated scraping and instant delivery
-          </p>
+    </div>
+
+    <!-- Stats: same asymmetric layout as Solutions (1 tall + 2 stacked), distinct palette -->
+    <div class="about-stats-showcase">
+      <div class="about-stats-inner">
+        <div class="stats-asymmetric-grid" role="list">
+          <article class="stat-tile stat-tile--tall stat-tile--mint" role="listitem">
+            <div class="stat-tile__content">
+              <div class="stat-tile__label">Multi-Source Data</div>
+              <div class="stat-tile__value">10+</div>
+              <p class="stat-tile__desc">With the basic plan you can access up to 10 data sources.</p>
+            </div>
+            <div class="stat-tile__accent" aria-hidden="true">
+              <svg viewBox="0 0 120 100" xmlns="http://www.w3.org/2000/svg"><g class="stat-tile__stroke" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 75 L35 50 L60 65 L85 40 L110 55"/><circle cx="35" cy="38" r="6"/><circle cx="85" cy="30" r="6"/></g></svg>
+            </div>
+          </article>
+          <article class="stat-tile stat-tile--side stat-tile--lilac" role="listitem">
+            <div class="stat-tile__content">
+              <div class="stat-tile__label">AI-Powered</div>
+              <div class="stat-tile__value stat-tile__value--side">98%</div>
+              <p class="stat-tile__desc">Accuracy with Google Gemini AI</p>
+            </div>
+            <div class="stat-tile__accent stat-tile__accent--sm" aria-hidden="true">
+              <svg viewBox="0 0 100 90" xmlns="http://www.w3.org/2000/svg"><g class="stat-tile__stroke" fill="none" stroke-width="1.75" stroke-linecap="round"><path d="M20 70 L80 70 L78 25 L22 25 Z"/><path d="M35 40 L65 40"/><circle cx="50" cy="18" r="7"/></g></svg>
+            </div>
+          </article>
+          <article class="stat-tile stat-tile--side stat-tile--amber" role="listitem">
+            <div class="stat-tile__content">
+              <div class="stat-tile__label">Real-Time</div>
+              <div class="stat-tile__value stat-tile__value--side">24/7</div>
+              <p class="stat-tile__desc">Automated scraping and instant delivery</p>
+            </div>
+            <div class="stat-tile__accent stat-tile__accent--sm" aria-hidden="true">
+              <svg viewBox="0 0 100 90" xmlns="http://www.w3.org/2000/svg"><g class="stat-tile__stroke" fill="none" stroke-width="1.75" stroke-linecap="round"><circle cx="50" cy="48" r="22"/><path d="M50 38 L50 52 M44 46 L56 46"/><path d="M50 28 L50 22"/></g></svg>
+            </div>
+          </article>
         </div>
       </div>
     </div>
