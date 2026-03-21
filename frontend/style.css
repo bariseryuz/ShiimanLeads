@@ -10,6 +10,14 @@ html {
   width: 100%;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE and Edge */
+  scroll-behavior: smooth;
+}
+
+/* Anchor targets clear fixed navbar */
+#contact,
+#solutions,
+#about {
+  scroll-margin-top: 5.5rem;
 }
 
 html::-webkit-scrollbar {
@@ -396,8 +404,24 @@ gap: 6rem;
   backdrop-filter: blur(10px);
 }
 
+/* Long-form hero headline: readable width, softer pill */
+.hero-title--story {
+  max-width: min(52rem, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  padding: 1.25rem 1.5rem;
+  border-radius: 28px;
+  font-size: clamp(1.35rem, 3.8vw, 2.65rem);
+  line-height: 1.25;
+}
+
+.hero-headline-plain {
+  color: #ffffff;
+}
+
 .gradient-text {
-  background: linear-gradient(to right, #a8edea, #fed6e3);
+  /* Sky → violet (distinct from earlier teal/pink) */
+  background: linear-gradient(105deg, #38bdf8 0%, #818cf8 45%, #e879f9 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -408,6 +432,16 @@ gap: 6rem;
   margin-bottom: 2rem;
   opacity: 0.95;
   line-height: 1.8;
+}
+
+.hero-subtitle--lead {
+  max-width: min(48rem, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 0;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: clamp(0.95rem, 2vw, 1.125rem);
+  line-height: 1.75;
 }
 
 .hero-cta {
