@@ -72,3 +72,4 @@ function hydrator(params) {
 }
 
 module.exports = hydrator;
+module.exports.hydrateString = hydrateString;

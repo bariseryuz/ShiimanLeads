@@ -5,6 +5,7 @@
 
 const axios = require('axios');
 const hydrator = require('../hydrator');
+const hydrateString = typeof hydrator.hydrateString === 'function' ? hydrator.hydrateString : (s) => s;
 const logger = require('../../utils/logger');
 
 const TIMEOUT_MS = Math.min(
@@ -12,15 +13,37 @@ const TIMEOUT_MS = Math.min(
   600000
 );
 
+function mergeHeaders(manifest) {
+  return {
+    'User-Agent': 'Mozilla/5.0 (compatible; ShiimanLeads/1.0)',
+    ...(manifest.headers && typeof manifest.headers === 'object' ? manifest.headers : {}),
+  };
+}
+
+/** Flat object → application/x-www-form-urlencoded (nested values JSON-stringified). */
+function objectToUrlEncodedString(obj) {
+  const flat = hydrator({ ...(obj || {}) });
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(flat)) {
+    if (v === null || v === undefined) continue;
+    if (typeof v === 'object' && !Array.isArray(v)) {
+      p.append(k, JSON.stringify(v));
+    } else {
+      p.append(k, String(v));
+    }
+  }
+  return p.toString();
+}
+
 /**
  * @param {string} url - Full API URL (e.g. https://api.example.com/search)
- * @param {Object} manifest - { query_params, params, method, body, headers }
+ * @param {Object} manifest - { query_params, params, method, body, headers, post_body_format }
  * @returns {Array} Raw items (response.data.results || response.data.items || response.data or array)
  */
 async function fetch(url, manifest) {
   try {
     const params = hydrator(manifest.query_params || manifest.params || {});
-    const headers = manifest.headers || { 'User-Agent': 'Mozilla/5.0 (compatible; ShiimanLeads/1.0)', 'Content-Type': 'application/json' };
+    const mergedHeaders = mergeHeaders(manifest);
     const method = (manifest.method || 'GET').toUpperCase();
     let response;
 
@@ -28,11 +51,68 @@ async function fetch(url, manifest) {
     logger.info(`[Engine REST Adapter] ${method} ${safeUrl}${(url || '').length > 160 ? '…' : ''} (timeout ${TIMEOUT_MS}ms)`);
 
     if (method === 'POST') {
-      const bodyRaw = manifest.body !== undefined ? manifest.body : params;
-      const body = typeof bodyRaw === 'string' ? JSON.parse(bodyRaw) : hydrator(bodyRaw);
-      response = await axios.post(url, body, { headers, timeout: TIMEOUT_MS });
+      const postFmt = String(manifest.post_body_format || manifest.postBodyFormat || 'json').toLowerCase();
+      const ct = mergedHeaders['Content-Type'] || mergedHeaders['content-type'] || '';
+      const isForm =
+        postFmt === 'form' ||
+        postFmt === 'urlencoded' ||
+        postFmt === 'application/x-www-form-urlencoded' ||
+        String(ct).toLowerCase().includes('x-www-form-urlencoded');
+
+      if (isForm) {
+        if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
+          mergedHeaders['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+        }
+        if (mergedHeaders['content-type']) delete mergedHeaders['content-type'];
+
+        let bodyPayload;
+        if (manifest.body !== undefined && manifest.body !== null) {
+          if (typeof manifest.body === 'string') {
+            bodyPayload = hydrateString(manifest.body);
+          } else if (typeof manifest.body === 'object') {
+            bodyPayload = objectToUrlEncodedString(manifest.body);
+          } else {
+            bodyPayload = String(manifest.body);
+          }
+        } else {
+          bodyPayload = objectToUrlEncodedString(params);
+        }
+
+        if (!bodyPayload || !String(bodyPayload).trim()) {
+          logger.warn(
+            `[Engine REST Adapter] POST (form) body is empty — paste Payload from DevTools (same as browser: application/x-www-form-urlencoded).`
+          );
+        } else {
+          const s = String(bodyPayload);
+          logger.info(`[Engine REST Adapter] POST (form) body length=${s.length} preview=${s.slice(0, 140)}${s.length > 140 ? '…' : ''}`);
+        }
+
+        response = await axios.post(url, bodyPayload, { headers: mergedHeaders, timeout: TIMEOUT_MS });
+      } else {
+        const bodyRaw = manifest.body !== undefined ? manifest.body : params;
+        let body;
+        if (typeof bodyRaw === 'string') {
+          body = JSON.parse(bodyRaw);
+        } else {
+          body = hydrator(bodyRaw);
+        }
+        if (
+          body &&
+          typeof body === 'object' &&
+          !Array.isArray(body) &&
+          Object.keys(body).length === 0
+        ) {
+          logger.warn(
+            `[Engine REST Adapter] POST body is {} — DataTables/city portals usually return no rows until you paste the Payload JSON from DevTools (POST body or Query Parameters).`
+          );
+        }
+        if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
+          mergedHeaders['Content-Type'] = 'application/json';
+        }
+        response = await axios.post(url, body, { headers: mergedHeaders, timeout: TIMEOUT_MS });
+      }
     } else {
-      response = await axios.get(url, { params, headers, timeout: TIMEOUT_MS });
+      response = await axios.get(url, { params, headers: mergedHeaders, timeout: TIMEOUT_MS });
     }
 
     const data = response.data;
@@ -41,6 +121,9 @@ async function fetch(url, manifest) {
     if (data?.items) return data.items;
     if (data?.data && Array.isArray(data.data)) return data.data;
     if (data?.Data && Array.isArray(data.Data)) return data.Data;
+    // DataTables / legacy ASP.NET grids
+    if (data?.aaData && Array.isArray(data.aaData)) return data.aaData;
+    if (data?.rows && Array.isArray(data.rows)) return data.rows;
     if (data?.features && Array.isArray(data.features)) {
       return data.features.map(f => f.attributes || f);
     }
@@ -52,9 +135,16 @@ async function fetch(url, manifest) {
   } catch (err) {
     const status = err.response?.status;
     const body = err.response?.data;
-    logger.error(`[Engine REST Adapter] ${err.message}${status ? ` (HTTP ${status})` : ''}`);
-    if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')) {
-      logger.error(`[Engine REST Adapter] Hint: URL may require POST + a site-specific JSON body (e.g. DataTables), not ArcGIS query params. Or use AI Website Scraper. Set REST_ADAPTER_TIMEOUT_MS if the API is legitimately slow.`);
+    const isTimeout =
+      err.code === 'ECONNABORTED' ||
+      err.code === 'ETIMEDOUT' ||
+      /timeout/i.test(err.message || '');
+    if (isTimeout) {
+      logger.error(
+        `[Engine REST Adapter] TIMEOUT after ${TIMEOUT_MS}ms — usually NOT a "needs more seconds" problem. City/portal URLs often hang or never answer this client until you use the real API (ArcGIS/open data), POST + exact browser body, or AI Website Scraper. Only raise REST_ADAPTER_TIMEOUT_MS for endpoints that are known-slow but correct.`
+      );
+    } else {
+      logger.error(`[Engine REST Adapter] ${err.message}${status ? ` (HTTP ${status})` : ''}${err.code ? ` [code=${err.code}]` : ''}`);
     }
     if (body && typeof body === 'object') logger.error(`[Engine REST Adapter] Response: ${JSON.stringify(body).slice(0, 300)}`);
     return [];

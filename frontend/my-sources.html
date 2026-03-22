@@ -847,9 +847,22 @@
           </div>
 
           <div class="form-group" id="apiPostBodyWrap" style="display: none;">
-            <label class="form-label" for="apiPostBody">POST body JSON (optional)</label>
-            <textarea id="apiPostBody" class="form-input" rows="5" placeholder='If set, this is sent as the JSON POST body. For DataTables / _Get* endpoints, paste the JSON body from DevTools → Network (copy payload).'></textarea>
-            <small style="color: var(--gray-600);">Shown when <strong>HTTP Method</strong> is POST. If <strong>empty</strong>, the Query Parameters JSON above is sent as the POST body (works for many ArcGIS <code>/query</code> URLs). City portals often need a <strong>custom body</strong> here instead.</small>
+            <label class="form-label" for="apiPostBodyFormat">POST body format</label>
+            <select id="apiPostBodyFormat" class="form-input" style="max-width: 28rem;">
+              <option value="json">JSON (Content-Type: application/json) — ArcGIS / most REST APIs</option>
+              <option value="form">Form URL-encoded (Content-Type: application/x-www-form-urlencoded) — Phoenix &amp; many ASP.NET tables</option>
+            </select>
+            <small style="color: var(--gray-600); display: block; margin-top: 0.35rem;">Check DevTools → <strong>Headers</strong> → <strong>Request content-type</strong>. Phoenix uses <strong>form</strong>, not JSON.</small>
+          </div>
+          <div class="form-group" id="apiPostBodyTextWrap" style="display: none;">
+            <label class="form-label" for="apiPostBody">POST body (optional)</label>
+            <textarea id="apiPostBody" class="form-input" rows="5" placeholder=""></textarea>
+            <small id="apiPostBodyHint" style="color: var(--gray-600);">If empty, Query Parameters JSON is used as the POST body.</small>
+          </div>
+          <div class="form-group" id="apiRequestHeadersWrap" style="display: none;">
+            <label class="form-label" for="apiRequestHeaders">Optional request headers (JSON)</label>
+            <textarea id="apiRequestHeaders" class="form-input" rows="2" placeholder='{"Cookie":"only if the site requires session (paste from DevTools → Request headers)"}'></textarea>
+            <small style="color: var(--gray-600);">Rare. Try without first. Load balancers may need a fresh session cookie.</small>
           </div>
           
           <div class="form-group">
@@ -1122,16 +1135,44 @@
         sourceTypeHint.textContent = 'Choose "AI Website Scraper" for regular websites. Choose "JSON API" if you have a direct API endpoint (like ArcGIS FeatureServer URLs).';
       }
 
-      const postWrap = document.getElementById('apiPostBodyWrap');
+      updateApiPostBodyUi();
+    }
+
+    function updateApiPostBodyUi() {
+      const sourceType = document.getElementById('sourceType').value;
+      const isJsonApi = sourceType === 'json';
       const apiMethodEl = document.getElementById('apiMethod');
-      if (postWrap && apiMethodEl) {
-        postWrap.style.display = (isJsonApi && apiMethodEl.value === 'POST') ? 'block' : 'none';
+      const isPost = apiMethodEl && apiMethodEl.value === 'POST';
+      const showPostDetails = isJsonApi && isPost;
+      const postWrap = document.getElementById('apiPostBodyWrap');
+      const postTextWrap = document.getElementById('apiPostBodyTextWrap');
+      const hdrWrap = document.getElementById('apiRequestHeadersWrap');
+      if (postWrap) postWrap.style.display = showPostDetails ? 'block' : 'none';
+      if (postTextWrap) postTextWrap.style.display = showPostDetails ? 'block' : 'none';
+      if (hdrWrap) hdrWrap.style.display = isJsonApi ? 'block' : 'none';
+
+      const fmtEl = document.getElementById('apiPostBodyFormat');
+      const ta = document.getElementById('apiPostBody');
+      const hint = document.getElementById('apiPostBodyHint');
+      if (!showPostDetails || !fmtEl || !ta || !hint) return;
+      if (fmtEl.value === 'form') {
+        ta.placeholder = 'Raw form string from DevTools → Payload (e.g. draw=1&start=0&length=50&...)';
+        hint.innerHTML =
+          'Must match <strong>application/x-www-form-urlencoded</strong> (see Network → Headers). If empty, flat Query Parameters JSON is encoded as form fields.';
+      } else {
+        ta.placeholder = 'JSON body e.g. {"where":"1=1","f":"json"} — use when Content-Type is application/json';
+        hint.innerHTML =
+          'If <strong>empty</strong>, Query Parameters JSON is sent as the POST body (typical for ArcGIS <code>/query</code>).';
       }
     }
 
     const apiMethodSelect = document.getElementById('apiMethod');
     if (apiMethodSelect) {
       apiMethodSelect.addEventListener('change', toggleSourceTypeFields);
+    }
+    const apiPostBodyFormatSelect = document.getElementById('apiPostBodyFormat');
+    if (apiPostBodyFormatSelect) {
+      apiPostBodyFormatSelect.addEventListener('change', updateApiPostBodyUi);
     }
 
     // Toggle field schema visibility (kept for compatibility)
@@ -1424,6 +1465,10 @@ async function loadScreenshots(sources) {
       document.getElementById('sourceType').value = 'html';
       document.getElementById('arcgisNavigation').value = '';
       document.getElementById('arcgisDateField').value = '';
+      const _fmt = document.getElementById('apiPostBodyFormat');
+      if (_fmt) _fmt.value = 'json';
+      const _hdr = document.getElementById('apiRequestHeaders');
+      if (_hdr) _hdr.value = '';
       toggleSourceTypeFields(); // Initialize UI based on type
       
       // Set proxy to enabled by default
@@ -1501,16 +1546,32 @@ async function loadScreenshots(sources) {
         if (sourceType === 'json') {
           document.getElementById('apiMethod').value = source.data.method || 'GET';
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
+          const fmtEl = document.getElementById('apiPostBodyFormat');
+          if (fmtEl) {
+            fmtEl.value = source.data.post_body_format === 'form' ? 'form' : 'json';
+          }
           const postBodyEl = document.getElementById('apiPostBody');
           if (postBodyEl) {
-            postBodyEl.value = source.data.body && typeof source.data.body === 'object'
-              ? JSON.stringify(source.data.body, null, 2)
+            if (source.data.body === undefined || source.data.body === null) {
+              postBodyEl.value = '';
+            } else if (typeof source.data.body === 'string') {
+              postBodyEl.value = source.data.body;
+              if (fmtEl && !source.data.post_body_format) fmtEl.value = 'form';
+            } else {
+              postBodyEl.value = JSON.stringify(source.data.body, null, 2);
+            }
+          }
+          const hdrEl = document.getElementById('apiRequestHeaders');
+          if (hdrEl) {
+            hdrEl.value = source.data.headers && typeof source.data.headers === 'object'
+              ? JSON.stringify(source.data.headers, null, 2)
               : '';
           }
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
           document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
           document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
           document.getElementById('useEngine').checked = !!(source.data.query_params || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
+          updateApiPostBodyUi();
         } else if (sourceType === 'arcgis') {
           document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
           document.getElementById('arcgisDateField').value = source.data.dateField || '';
@@ -1523,6 +1584,10 @@ async function loadScreenshots(sources) {
           document.getElementById('apiParams').value = '';
           const postBodyClear = document.getElementById('apiPostBody');
           if (postBodyClear) postBodyClear.value = '';
+          const fmtClear = document.getElementById('apiPostBodyFormat');
+          if (fmtClear) fmtClear.value = 'json';
+          const hdrClear = document.getElementById('apiRequestHeaders');
+          if (hdrClear) hdrClear.value = '';
           document.getElementById('jsonPath').value = '';
           document.getElementById('engineWhereClause').value = '';
           if (document.getElementById('jsonFields')) {
@@ -1883,16 +1948,58 @@ async function loadScreenshots(sources) {
         }
         const postBodyEl = document.getElementById('apiPostBody');
         const postBodyText = postBodyEl ? postBodyEl.value.trim() : '';
+        const postFmtEl = document.getElementById('apiPostBodyFormat');
+        const postBodyFormat = postFmtEl && postFmtEl.value === 'form' ? 'form' : 'json';
+
+        if (sourceData.method === 'POST') {
+          sourceData.post_body_format = postBodyFormat;
+        } else {
+          delete sourceData.post_body_format;
+        }
+
         if (sourceData.method === 'POST' && postBodyText) {
-          try {
-            sourceData.body = JSON.parse(normalizeJsonQuotes(postBodyText));
-          } catch (err) {
-            alert('Invalid JSON in POST body\n\n' + (err.message || ''));
-            return;
+          if (postBodyFormat === 'form') {
+            sourceData.body = postBodyText;
+          } else {
+            try {
+              sourceData.body = JSON.parse(normalizeJsonQuotes(postBodyText));
+            } catch (err) {
+              alert('Invalid JSON in POST body\n\n' + (err.message || ''));
+              return;
+            }
           }
         } else {
           delete sourceData.body;
         }
+
+        const hdrTextEl = document.getElementById('apiRequestHeaders');
+        const hdrText = hdrTextEl ? hdrTextEl.value.trim() : '';
+        if (hdrText) {
+          try {
+            sourceData.headers = JSON.parse(normalizeJsonQuotes(hdrText));
+          } catch (err) {
+            alert('Invalid JSON in Optional request headers\n\n' + (err.message || ''));
+            return;
+          }
+        } else {
+          delete sourceData.headers;
+        }
+
+        if (sourceData.method === 'POST') {
+          const paramsKeys = sourceData.params && typeof sourceData.params === 'object' ? Object.keys(sourceData.params).length : 0;
+          const hasStrBody = typeof sourceData.body === 'string' && sourceData.body.length > 0;
+          const hasObjBody =
+            sourceData.body && typeof sourceData.body === 'object' && !Array.isArray(sourceData.body) && Object.keys(sourceData.body).length > 0;
+          if (paramsKeys === 0 && !hasStrBody && !hasObjBody) {
+            alert(
+              'JSON API + POST needs a non-empty body or Query Parameters.\n\n' +
+              'If DevTools shows content-type: application/x-www-form-urlencoded, set POST body format to Form URL-encoded and paste the Payload string.\n\n' +
+              'If both are empty, the server returns Data: [].'
+            );
+            return;
+          }
+        }
+
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
         sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;
         // Always save engine fields when filled (so they show when reopening); use engine when checkbox is checked

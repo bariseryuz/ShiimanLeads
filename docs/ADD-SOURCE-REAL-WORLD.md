@@ -191,13 +191,17 @@ URLs like `https://apps-secure.phoenix.gov/.../_GetIssuedPermitData` are usually
 
 The Universal Engine’s **REST adapter** does a simple **GET** (or a generic POST with your `body`) and expects a JSON **array** in the response (`data`, `Data`, `features`, …). That rarely matches these portals **as-is**.
 
+**Important:** Choosing **HTTP POST** in the form is not enough. If **Query Parameters** is `{}` and **POST body** is empty, the app sends an empty body — the server responds with `Data: []` / `Total: 0` (same as a bare request).
+
+**Phoenix DevTools often show `content-type: application/x-www-form-urlencoded` (not JSON).** In My Sources, set **POST body format** to **Form URL-encoded** and paste the **raw Payload** string (e.g. `draw=1&start=0&...`). If you leave **JSON** selected, the app sends `application/json`, which the server may ignore.
+
 **What to do instead:**
 
 1. **Find an open ArcGIS or public API** for the same data (many cities mirror data on ArcGIS Hub or Socrata).
 2. Or use **AI Website Scraper**: open the search page URL, and describe how to run the search and read the table.
 3. Advanced: replicate the **exact POST body** from browser DevTools → Network (copy as cURL), then configure **HTTP Method: POST** and put the JSON body in source config (`body` / params) — fragile when the site changes.
 
-**Timeouts:** If you still point the engine at a URL that waits forever, you’ll see `timeout of 60000ms exceeded` in logs — the endpoint isn’t responding like a simple API.
+**Timeouts in logs:** A timeout almost always means the **request is wrong for this adapter** (internal `/_Get*` URL, missing body/cookies, GET to a POST-only endpoint) — not that you should “just increase the timer.” Fix the **URL/strategy** first (ArcGIS/open API, DevTools POST body, or AI scraper). Raising `REST_ADAPTER_TIMEOUT_MS` only helps when the endpoint is **correct** but legitimately slow (e.g. huge ArcGIS query).
 
 ---
 
