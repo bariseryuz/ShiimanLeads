@@ -845,6 +845,12 @@
             <textarea id="apiParams" class="form-input" rows="6" placeholder='{"where": "1=1", "outFields": "*", "f": "json", "resultRecordCount": 1000}'></textarea>
             <small style="color: var(--gray-600);">For ArcGIS: Add where, outFields, f, resultRecordCount. See <a href="https://github.com/bariseryuz/ShiimanLeads/blob/main/backend/HOW-TO-ARCGIS.md" target="_blank" style="color: #10b981; text-decoration: underline;">ArcGIS Guide</a></small>
           </div>
+
+          <div class="form-group" id="apiPostBodyWrap" style="display: none;">
+            <label class="form-label" for="apiPostBody">POST body JSON (optional)</label>
+            <textarea id="apiPostBody" class="form-input" rows="5" placeholder='If set, this is sent as the JSON POST body. For DataTables / _Get* endpoints, paste the JSON body from DevTools → Network (copy payload).'></textarea>
+            <small style="color: var(--gray-600);">Shown when <strong>HTTP Method</strong> is POST. If <strong>empty</strong>, the Query Parameters JSON above is sent as the POST body (works for many ArcGIS <code>/query</code> URLs). City portals often need a <strong>custom body</strong> here instead.</small>
+          </div>
           
           <div class="form-group">
             <label class="form-label" for="jsonPath">JSONPath Filter (Optional)</label>
@@ -1115,6 +1121,17 @@
       } else {
         sourceTypeHint.textContent = 'Choose "AI Website Scraper" for regular websites. Choose "JSON API" if you have a direct API endpoint (like ArcGIS FeatureServer URLs).';
       }
+
+      const postWrap = document.getElementById('apiPostBodyWrap');
+      const apiMethodEl = document.getElementById('apiMethod');
+      if (postWrap && apiMethodEl) {
+        postWrap.style.display = (isJsonApi && apiMethodEl.value === 'POST') ? 'block' : 'none';
+      }
+    }
+
+    const apiMethodSelect = document.getElementById('apiMethod');
+    if (apiMethodSelect) {
+      apiMethodSelect.addEventListener('change', toggleSourceTypeFields);
     }
 
     // Toggle field schema visibility (kept for compatibility)
@@ -1484,6 +1501,12 @@ async function loadScreenshots(sources) {
         if (sourceType === 'json') {
           document.getElementById('apiMethod').value = source.data.method || 'GET';
           document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
+          const postBodyEl = document.getElementById('apiPostBody');
+          if (postBodyEl) {
+            postBodyEl.value = source.data.body && typeof source.data.body === 'object'
+              ? JSON.stringify(source.data.body, null, 2)
+              : '';
+          }
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
           document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
           document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
@@ -1498,6 +1521,8 @@ async function loadScreenshots(sources) {
         } else {
           document.getElementById('apiMethod').value = 'GET';
           document.getElementById('apiParams').value = '';
+          const postBodyClear = document.getElementById('apiPostBody');
+          if (postBodyClear) postBodyClear.value = '';
           document.getElementById('jsonPath').value = '';
           document.getElementById('engineWhereClause').value = '';
           if (document.getElementById('jsonFields')) {
@@ -1855,6 +1880,18 @@ async function loadScreenshots(sources) {
         } catch (err) {
           alert('Invalid JSON in Query Parameters field\n\n' + (err.message || ''));
           return;
+        }
+        const postBodyEl = document.getElementById('apiPostBody');
+        const postBodyText = postBodyEl ? postBodyEl.value.trim() : '';
+        if (sourceData.method === 'POST' && postBodyText) {
+          try {
+            sourceData.body = JSON.parse(normalizeJsonQuotes(postBodyText));
+          } catch (err) {
+            alert('Invalid JSON in POST body\n\n' + (err.message || ''));
+            return;
+          }
+        } else {
+          delete sourceData.body;
         }
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
         sourceData.forcePlaywrightOnly = document.getElementById('forcePlaywrightOnly').checked;

@@ -7,9 +7,14 @@ const axios = require('axios');
 const hydrator = require('../hydrator');
 const logger = require('../../utils/logger');
 
+const TIMEOUT_MS = Math.min(
+  Math.max(parseInt(process.env.REST_ADAPTER_TIMEOUT_MS || '120000', 10) || 120000, 5000),
+  600000
+);
+
 /**
  * @param {string} url - Full API URL (e.g. https://api.example.com/search)
- * @param {Object} manifest - { query_params: { min_price: "{{DAYS_AGO_30}}", ... }, ... }
+ * @param {Object} manifest - { query_params, params, method, body, headers }
  * @returns {Array} Raw items (response.data.results || response.data.items || response.data or array)
  */
 async function fetch(url, manifest) {
@@ -19,12 +24,15 @@ async function fetch(url, manifest) {
     const method = (manifest.method || 'GET').toUpperCase();
     let response;
 
+    const safeUrl = (url || '').slice(0, 160);
+    logger.info(`[Engine REST Adapter] ${method} ${safeUrl}${(url || '').length > 160 ? '…' : ''} (timeout ${TIMEOUT_MS}ms)`);
+
     if (method === 'POST') {
       const bodyRaw = manifest.body !== undefined ? manifest.body : params;
       const body = typeof bodyRaw === 'string' ? JSON.parse(bodyRaw) : hydrator(bodyRaw);
-      response = await axios.post(url, body, { headers, timeout: 60000 });
+      response = await axios.post(url, body, { headers, timeout: TIMEOUT_MS });
     } else {
-      response = await axios.get(url, { params, headers, timeout: 60000 });
+      response = await axios.get(url, { params, headers, timeout: TIMEOUT_MS });
     }
 
     const data = response.data;
@@ -45,6 +53,9 @@ async function fetch(url, manifest) {
     const status = err.response?.status;
     const body = err.response?.data;
     logger.error(`[Engine REST Adapter] ${err.message}${status ? ` (HTTP ${status})` : ''}`);
+    if (err.code === 'ECONNABORTED' || /timeout/i.test(err.message || '')) {
+      logger.error(`[Engine REST Adapter] Hint: URL may require POST + a site-specific JSON body (e.g. DataTables), not ArcGIS query params. Or use AI Website Scraper. Set REST_ADAPTER_TIMEOUT_MS if the API is legitimately slow.`);
+    }
     if (body && typeof body === 'object') logger.error(`[Engine REST Adapter] Response: ${JSON.stringify(body).slice(0, 300)}`);
     return [];
   }
