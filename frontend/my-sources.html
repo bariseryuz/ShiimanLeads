@@ -892,8 +892,8 @@
           </div>
           <div class="form-group" style="margin-top: 0.5rem;">
             <label class="form-label" for="engineFilters">Filters (only save leads that pass) JSON</label>
-            <textarea id="engineFilters" class="form-input" rows="3" placeholder='[{"field": "budget", "operator": ">", "value": 50000}, {"field": "type", "operator": "==", "value": "Commercial"}]'></textarea>
-            <small style="color: var(--gray-600);">Operators: &gt;, &lt;, ==, contains, in, between, days_ago. Leave empty to save all.</small>
+            <textarea id="engineFilters" class="form-input" rows="3" placeholder='[{"field":"construction_cost","operator":">","value":50000}]'></textarea>
+            <small style="color: var(--gray-600);">Must be a JSON <strong>array</strong> <code>[...]</code> of rules (not a single <code>{...}</code> unless it auto-wraps). Operators: &gt;, &lt;, ==, contains, in, between, days_ago. Leave empty to save all.</small>
           </div>
           <div id="engineWhereClauseWrap" style="display: none; margin-top: 0.5rem;">
             <label class="form-label" for="engineWhereClause">ArcGIS where clause (optional)</label>
@@ -1793,6 +1793,40 @@ async function loadScreenshots(sources) {
       editingSourceId = null;
     }
 
+    /**
+     * Normalize smart/curly quotes (Word, iOS, Docs) that break JSON.parse.
+     */
+    function normalizeJsonQuotes(str) {
+      if (!str || typeof str !== 'string') return str;
+      return str
+        .replace(/^\uFEFF/, '')
+        .replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"')
+        .replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+    }
+
+    /**
+     * Filters must be an array of rules. Single-object rules are wrapped in [...].
+     * @returns {Array|null} null if empty string
+     */
+    function parseEngineFiltersInput(raw) {
+      const t = (raw || '').trim();
+      if (!t) return null;
+      const normalized = normalizeJsonQuotes(t);
+      let parsed;
+      try {
+        parsed = JSON.parse(normalized);
+      } catch (e) {
+        throw new Error(e.message || 'parse failed');
+      }
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && 'field' in parsed && 'operator' in parsed) {
+        return [parsed];
+      }
+      if (!Array.isArray(parsed)) {
+        throw new Error('Filters must be a JSON array. Example: [{"field":"construction_cost","operator":">","value":50000}]');
+      }
+      return parsed;
+    }
+
     document.getElementById('sourceForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       
@@ -1817,9 +1851,9 @@ async function loadScreenshots(sources) {
         sourceData.method = document.getElementById('apiMethod').value;
         const paramsText = document.getElementById('apiParams').value.trim();
         try {
-          sourceData.params = paramsText ? JSON.parse(paramsText) : {};
+          sourceData.params = paramsText ? JSON.parse(normalizeJsonQuotes(paramsText)) : {};
         } catch (err) {
-          alert('Invalid JSON in Query Parameters field');
+          alert('Invalid JSON in Query Parameters field\n\n' + (err.message || ''));
           return;
         }
         sourceData.jsonPath = document.getElementById('jsonPath').value.trim() || null;
@@ -1829,17 +1863,18 @@ async function loadScreenshots(sources) {
         const jsonFiltersText = document.getElementById('engineFilters').value.trim();
         if (jsonMappingText) {
           try {
-            sourceData.field_mapping = JSON.parse(jsonMappingText);
+            sourceData.field_mapping = JSON.parse(normalizeJsonQuotes(jsonMappingText));
           } catch (e) {
-            alert('Invalid JSON in Field mapping');
+            alert('Invalid JSON in Field mapping\n\n' + (e.message || ''));
             return;
           }
         }
         if (jsonFiltersText) {
           try {
-            sourceData.filters = JSON.parse(jsonFiltersText);
+            const parsedFilters = parseEngineFiltersInput(jsonFiltersText);
+            if (parsedFilters) sourceData.filters = parsedFilters;
           } catch (e) {
-            alert('Invalid JSON in Filters');
+            alert('Invalid JSON in Filters\n\n' + (e.message || '') + '\n\nTip: Use square brackets — one rule: [{"field":"construction_cost","operator":">","value":50000}]');
             return;
           }
         }
@@ -1887,18 +1922,19 @@ async function loadScreenshots(sources) {
         const arcMappingText = document.getElementById('engineFieldMapping').value.trim();
         if (arcMappingText) {
           try {
-            sourceData.field_mapping = JSON.parse(arcMappingText);
+            sourceData.field_mapping = JSON.parse(normalizeJsonQuotes(arcMappingText));
           } catch (e) {
-            alert('Invalid JSON in Field mapping');
+            alert('Invalid JSON in Field mapping\n\n' + (e.message || ''));
             return;
           }
         }
         const arcFiltersText = document.getElementById('engineFilters').value.trim();
         if (arcFiltersText) {
           try {
-            sourceData.filters = JSON.parse(arcFiltersText);
+            const parsedArcFilters = parseEngineFiltersInput(arcFiltersText);
+            if (parsedArcFilters) sourceData.filters = parsedArcFilters;
           } catch (e) {
-            alert('Invalid JSON in Filters');
+            alert('Invalid JSON in Filters\n\n' + (e.message || '') + '\n\nTip: Use square brackets — [{"field":"construction_cost","operator":">","value":50000}]');
             return;
           }
         }

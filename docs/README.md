@@ -102,7 +102,9 @@ npx playwright install chromium
 
 ## Docs (keep README short)
 - **How everything works**: `MASTER-GUIDE.md`
+- **Filtering (architecture + layers)**: `FILTERING-ARCHITECTURE.md` ← start here for “how filtering works”
+- **Adding a source (real scenarios, what to type where)**: `ADD-SOURCE-REAL-WORLD.md` ← easiest onboarding
+- **Filter rules & limits (operators, JSON)**: `FILTERS-AND-LIMITS.md`
 - **Universal Engine design**: `ENGINE-BLUEPRINT.md`
 - **Project layout**: `PROJECT-GUIDE.md`
 - **Deploy**: `RAILWAY-DEPLOY.md`
-- **Filters & limits**: `FILTERS-AND-LIMITS.md`

@@ -82,7 +82,11 @@ function dbRun(sql, params = []) {
   return new Promise((resolve, reject) => {
     try {
       const result = db.prepare(sql).run(params);
-      resolve(result);
+      // better-sqlite3 exposes lastInsertRowid; many routes expect lastID (node-sqlite3 style)
+      resolve({
+        ...result,
+        lastID: result.lastInsertRowid
+      });
     } catch (err) {
       logger.error(`dbRun error: ${err.message}`);
       reject(err);
