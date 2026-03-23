@@ -59,6 +59,10 @@ async function fetch(url, manifest) {
         postFmt === 'application/x-www-form-urlencoded' ||
         String(ct).toLowerCase().includes('x-www-form-urlencoded');
 
+      logger.info(
+        `[Engine REST Adapter] POST encoding: ${isForm ? 'form-urlencoded' : 'json'} (source post_body_format=${manifest.post_body_format || 'json'})`
+      );
+
       if (isForm) {
         if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
           mergedHeaders['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
@@ -103,7 +107,9 @@ async function fetch(url, manifest) {
           Object.keys(body).length === 0
         ) {
           logger.warn(
-            `[Engine REST Adapter] POST body is {} — DataTables/city portals usually return no rows until you paste the Payload JSON from DevTools (POST body or Query Parameters).`
+            `[Engine REST Adapter] POST body is {} using JSON encoding — server will return no rows. ` +
+              `Phoenix/ASP.NET endpoints use form data: open the source in My Sources → set "POST body format" to Form URL-encoded → paste the Payload string from DevTools. ` +
+              `If you already use JSON APIs (ArcGIS), paste JSON into Query Parameters or POST body.`
           );
         }
         if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
@@ -126,6 +132,23 @@ async function fetch(url, manifest) {
     if (data?.rows && Array.isArray(data.rows)) return data.rows;
     if (data?.features && Array.isArray(data.features)) {
       return data.features.map(f => f.attributes || f);
+    }
+    // ArcGIS REST / GeoServices error payload (HTTP 200 with { error: { code, message, details } })
+    if (data?.error) {
+      const e = data.error;
+      const code = e && typeof e === 'object' && e.code != null ? ` code=${e.code}` : '';
+      const msg =
+        e && typeof e === 'object' && e.message != null
+          ? String(e.message)
+          : typeof e === 'string'
+            ? e
+            : JSON.stringify(e);
+      const details =
+        e && typeof e === 'object' && e.details != null
+          ? ` details=${JSON.stringify(e.details).slice(0, 500)}`
+          : '';
+      logger.error(`[Engine REST Adapter] ArcGIS/API error${code}: ${msg}${details}`);
+      return [];
     }
     if (data?.Errors && data.Errors.length) {
       logger.warn(`[Engine REST Adapter] API returned errors: ${JSON.stringify(data.Errors)}`);
