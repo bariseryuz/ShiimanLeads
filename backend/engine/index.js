@@ -5,6 +5,7 @@
 
 const transformer = require('./transformer');
 const validator = require('./validator');
+const { sanitizeLead } = require('./sanitize');
 const restAdapter = require('./adapters/rest');
 const arcgisAdapter = require('./adapters/arcgis');
 const aiVisionAdapter = require('./adapters/ai-vision');
@@ -17,7 +18,8 @@ const logger = require('../utils/logger');
  */
 async function runUniversalPipeline(source) {
   try {
-    const manifest = source;
+    const manifest =
+      source.manifest && typeof source.manifest === 'object' ? { ...source.manifest, ...source } : source;
     // Support legacy param names: params -> query_params for JSON
     if (!manifest.query_params && manifest.params && (source.type === 'json' || source.method === 'json')) {
       manifest.query_params = manifest.params;
@@ -42,9 +44,12 @@ async function runUniversalPipeline(source) {
     const fieldMapping = manifest.field_mapping || manifest.fieldSchema || {};
     const filters = manifest.filters || [];
 
+    const doSanitize = manifest.sanitize !== false;
+
     for (const rawItem of rawLeads) {
       const dataToMap = rawItem.attributes || rawItem;
-      const cleanLead = transformer(dataToMap, fieldMapping);
+      let cleanLead = transformer(dataToMap, fieldMapping);
+      if (doSanitize) cleanLead = sanitizeLead(cleanLead);
       if (validator(cleanLead, filters)) {
         processedLeads.push(cleanLead);
       }
@@ -65,16 +70,13 @@ async function runUniversalPipeline(source) {
  */
 function shouldUseEngine(source) {
   if (!source) return false;
-  const m = source.manifest;
-  if (m && (m.query_params || m.params || m.where_clause || (Array.isArray(m.filters) && m.filters.length))) {
-    return true;
-  }
-  // JSON API saves `params`; UI may set `filters` / `where_clause` without duplicating query_params
+  if (source.type === 'legacy_arcgis' || source.useLegacyArcgis === true) return false;
+  const m = source.manifest && typeof source.manifest === 'object' ? { ...source.manifest, ...source } : source;
   return !!(
-    source.query_params ||
-    source.params ||
-    source.where_clause ||
-    (Array.isArray(source.filters) && source.filters.length > 0)
+    m.query_params ||
+    m.params ||
+    m.where_clause ||
+    (Array.isArray(m.filters) && m.filters.length > 0)
   );
 }
 

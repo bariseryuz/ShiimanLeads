@@ -5,10 +5,12 @@
 
 const axios = require('axios');
 const hydrator = require('../hydrator');
+const { mergeRequestHeaders } = require('../requestDefaults');
 const logger = require('../../utils/logger');
 
 /**
- * Build where clause from rules array if manifest has rules; else use manifest.where_clause
+ * Build where clause from rules array if manifest has rules; else use manifest.where_clause.
+ * Prefer manifest.where_clause for complex SQL (LIKE, OR, nested logic); use rules only for simple AND equalities.
  * @param {Object} manifest - { where_clause: "1=1" } or { rules: [ { field, api_field, operator, value } ] }
  * @returns {string} SQL-like where clause
  */
@@ -50,11 +52,21 @@ async function fetch(url, manifest) {
       ...(manifest.query_params || {})
     });
 
-    const response = await axios.get(queryUrl, { params, timeout: 90000 });
+    const effectiveLimit = Math.max(parseInt(params.resultRecordCount, 10) || 1000, 1);
+    const headers = mergeRequestHeaders(manifest, queryUrl);
+
+    const response = await axios.get(queryUrl, { params, headers, timeout: 90000 });
     const data = response.data;
 
     if (data?.features && Array.isArray(data.features)) {
-      return data.features.map(f => f.attributes || f);
+      const rows = data.features.map(f => f.attributes || f);
+      if (rows.length > 0 && rows.length === effectiveLimit) {
+        logger.warn(
+          `[Engine ArcGIS Adapter] Warning: Data likely capped (${rows.length} features === resultRecordCount ${effectiveLimit}). ` +
+            `Use type "legacy_arcgis" for full pagination, or split with where_clause / date ranges.`
+        );
+      }
+      return rows;
     }
     if (Array.isArray(data)) return data;
     return [];

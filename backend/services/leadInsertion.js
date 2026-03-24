@@ -7,7 +7,17 @@ const { onNewLead } = require('./alerts');
  * Insert lead if new (universal schema support)
  * Works with ANY field structure - permits, universities, products, real estate, etc.
  */
-async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, sourceId, sourceUrl }) {
+async function insertLeadIfNew({
+  raw,
+  sourceName,
+  lead,
+  extractedData,
+  userId,
+  sourceId,
+  sourceUrl,
+  primaryIdField,
+  primary_id_field
+}) {
   try {
     // Validate
     if (!lead || typeof lead !== 'object') {
@@ -23,11 +33,14 @@ async function insertLeadIfNew({ raw, sourceName, lead, extractedData, userId, s
     const data = extractedData || lead;
     
     // Get deduplication info (for logging)
-    const dedupInfo = getDeduplicationInfo(data);
+    const idOpts = {
+      primaryIdField: primaryIdField || primary_id_field
+    };
+    const dedupInfo = getDeduplicationInfo(data, idOpts);
     logger.debug(`🔍 Deduplication using: ${dedupInfo.strategy}, top field: ${dedupInfo.topField?.field || 'none'}`);
     
-    // Generate universal unique ID
-    const uniqueId = generateUniqueIdWithFallback(data);
+    // Generate universal unique ID (manifest primary_id_field when set)
+    const uniqueId = generateUniqueIdWithFallback(data, idOpts);
     logger.info(`🔑 Unique ID: ${uniqueId.substring(0, 60)}`);
     
     try {

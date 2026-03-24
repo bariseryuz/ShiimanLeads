@@ -368,3 +368,34 @@ ApplicationDate >= '{{DATE_30_DAYS_AGO}}'
 ---
 
 **You’re done.** This document plus **PROJECT-GUIDE.md** and **ENGINE-BLUEPRINT.md** give you full coverage of what the tool does and where everything lives. Use **MASTER-GUIDE.md** as your main “learn everything one by one” reference.
+
+
+
+The Shiiman Manifest Standard (v2)
+
+
+1. Connection Strategy (type)
+Use engine (default): For small datasets (< 1,000 records) or fast JSON APIs.
+Use legacy_arcgis: For ArcGIS layers with > 1,000 records or those requiring resultOffset pagination.
+
+
+2.  Headers & Security
+The engine now defaults to browser-like headers.
+Always set manifest.headers.Referer manually if the target site (like ArcGIS Experience Builder) requires it to authorize the request.
+
+
+3.  Deduplication (primary_id_field)
+The Rule: Do not rely on "Smart Scoring" for production sources.
+Action: Explicitly define primary_id_field in the manifest using the stable ID from the source (e.g., OBJECTID, GlobalID, or a unique slug).
+Result: This field becomes the anchor for the unique_id in the DB, preventing duplicate leads across multiple runs.
+
+
+4.  Filtering (where_clause)
+For simple logic, use rules.
+For complex logic (ArcGIS SQL, OR statements, or Date filters), use where_clause.
+Note: The engine sends this string as-is; ensure it matches the target API's SQL dialect.
+
+
+5.  Data Sanitization
+Data is automatically trimmed and currency is coerced to numbers by engine/sanitize.js.
+To disable this for a specific source, set "sanitize": false in the manifest.

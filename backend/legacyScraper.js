@@ -43,6 +43,17 @@ function urlLooksLikeArcGIS(url) {
   );
 }
 
+/** Manifest Golden Standard: explicit anchor field for dedupe (after field_mapping). */
+function primaryIdOpts(source) {
+  if (!source || typeof source !== 'object') return {};
+  const nested = source.manifest && typeof source.manifest === 'object';
+  const p =
+    source.primary_id_field ||
+    source.primaryIdField ||
+    (nested ? source.manifest.primary_id_field || source.manifest.primaryIdField : undefined);
+  return p ? { primaryIdField: p } : {};
+}
+
 async function scrapeForUser(userId, userSources, extractionLimits) {
   logger.info(`🚀 Starting FIXED PRODUCTION Scrape for User ${userId}`);
   initProgress(userId, userSources);
@@ -86,7 +97,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               lead,
               userId,
               sourceId: source.id,
-              sourceUrl: source.url
+              sourceUrl: source.url,
+              ...primaryIdOpts(source)
             })) {
               sourceNewLeads++;
               totalInserted++;
@@ -113,8 +125,11 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         source.forcePlaywrightOnly = true;
       }
 
-      if (source.type === 'arcgis' && urlLooksLikeArcGIS(source.url)) {
+      if ((source.type === 'arcgis' || source.type === 'legacy_arcgis') && urlLooksLikeArcGIS(source.url)) {
         logger.info(`🗺️ ArcGIS Mode for: ${source.name}`);
+        if (source.type === 'legacy_arcgis') {
+          logger.info(`   🔁 legacy_arcgis: using fetchArcGISRecords pagination (not the Engine 1k cap)`);
+        }
         logger.info(`   URL: ${source.url}`);
 
         try {
@@ -153,7 +168,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               lead: mappedLead,
               userId,
               sourceId: source.id,
-              sourceUrl: apiUrl
+              sourceUrl: apiUrl,
+              ...primaryIdOpts(source)
             })) {
               sourceNewLeads++;
               totalInserted++;
@@ -343,7 +359,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 lead: mappedLead,
                 userId,
                 sourceId: source.id,
-                sourceUrl: source.url
+                sourceUrl: source.url,
+                ...primaryIdOpts(source)
               })) {
                 sourceNewLeads++;
                 totalInserted++;
@@ -446,7 +463,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       
       // ===== PLAYWRIGHT SCRAPING =====
       // Skip Playwright only for URLs that look like ArcGIS (they use ArcGIS pipeline above)
-      const shouldSkipPlaywright = source.type === 'arcgis' && urlLooksLikeArcGIS(source.url);
+      const shouldSkipPlaywright =
+        (source.type === 'arcgis' || source.type === 'legacy_arcgis') && urlLooksLikeArcGIS(source.url);
 
       if ((source.usePlaywright || source.method === 'playwright' || source.useAI || source.forcePlaywrightOnly || source._usePlaywrightInstead) && !shouldSkipPlaywright) {
         if (source.forcePlaywrightOnly) {
@@ -521,7 +539,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                   lead: record, 
                   userId, 
                   sourceId: source.id, 
-                  sourceUrl: source.url 
+                  sourceUrl: source.url,
+                  ...primaryIdOpts(source)
                 })) {
                   sourceNewLeads++;
                   totalInserted++;
@@ -555,7 +574,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               const aiLeads = await extractFromScreenshot(tile.buffer, source.name, source.fieldSchema);
               if (aiLeads) {
                 for (const lead of aiLeads) {
-                  if (await insertLeadIfNew({ raw: JSON.stringify(lead), sourceName: source.name, lead, userId, sourceId: source.id, sourceUrl: source.url })) {
+                  if (await insertLeadIfNew({ raw: JSON.stringify(lead), sourceName: source.name, lead, userId, sourceId: source.id, sourceUrl: source.url, ...primaryIdOpts(source) })) {
                     sourceNewLeads++; totalInserted++;
                   }
                 }
@@ -587,7 +606,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
               if (aiLeads) {
                 for (const lead of aiLeads) {
                   if (isTotalRowLimitReached(totalInserted, limits)) { hasMorePages = false; break; }
-                  if (await insertLeadIfNew({ raw: JSON.stringify(lead), sourceName: source.name, lead, userId, sourceId: source.id, sourceUrl: source.url })) {
+                  if (await insertLeadIfNew({ raw: JSON.stringify(lead), sourceName: source.name, lead, userId, sourceId: source.id, sourceUrl: source.url, ...primaryIdOpts(source) })) {
                     sourceNewLeads++; totalInserted++;
                   }
                 }

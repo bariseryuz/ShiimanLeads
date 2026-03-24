@@ -265,12 +265,48 @@ function generateUniqueId(lead, strategy = 'smart') {
 }
 
 /**
+ * Resolve manifest `primary_id_field` (final field name after mapping) from lead or _raw.
+ * @param {Object} lead
+ * @param {string} fieldName
+ * @returns {*}
+ */
+function resolvePrimaryIdValue(lead, fieldName) {
+  if (!fieldName || !lead || typeof lead !== 'object') return undefined;
+  const v = lead[fieldName];
+  if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  if (lead._raw && typeof lead._raw === 'object') {
+    const r = lead._raw[fieldName];
+    if (r !== undefined && r !== null && String(r).trim() !== '') return r;
+  }
+  return undefined;
+}
+
+/**
  * Generate unique ID with automatic fallback (NEVER returns null)
  * @param {Object} lead - Lead object
+ * @param {Object} [options] - { primaryIdField?, primary_id_field? } from manifest (explicit anchor field)
  * @returns {string} Unique ID (guaranteed)
  */
-function generateUniqueIdWithFallback(lead) {
+function generateUniqueIdWithFallback(lead, options = {}) {
   try {
+    const primaryField = options.primaryIdField || options.primary_id_field;
+    if (primaryField) {
+      const rawVal = resolvePrimaryIdValue(lead, primaryField);
+      if (rawVal !== undefined && rawVal !== null) {
+        const s = safeString(rawVal).trim();
+        if (s.length > 0) {
+          const norm = normalizeString(s);
+          const body = (norm && norm.length > 0 ? norm : s).substring(0, 120);
+          const id = `anchor:${primaryField}:${body}`;
+          logger.debug(`🔑 Manifest primary_id_field '${primaryField}' → unique_id`);
+          return id.length > 512 ? id.substring(0, 512) : id;
+        }
+      }
+      logger.warn(
+        `⚠️ primary_id_field "${primaryField}" missing or empty on lead; falling back to smart dedupe`
+      );
+    }
+
     // Try strategies in order
     const strategies = ['smart', 'combined', 'hash'];
     
@@ -447,16 +483,16 @@ function deduplicateBatch(leads) {
  * @param {Object} lead - Lead object
  * @returns {Object} Info about detected fields
  */
-function getDeduplicationInfo(lead) {
+function getDeduplicationInfo(lead, options = {}) {
   try {
     const fields = extractImportantFields(lead);
-    
+    const primaryField = options.primaryIdField || options.primary_id_field;
     return {
       totalFields: Object.keys(lead).length,
       importantFields: fields.length,
       topField: fields[0] || null,
-      strategy: fields.length > 0 ? 'field-based' : 'hash-based',
-      uniqueId: generateUniqueIdWithFallback(lead)
+      strategy: primaryField ? 'manifest-primary_id_field' : fields.length > 0 ? 'field-based' : 'hash-based',
+      uniqueId: generateUniqueIdWithFallback(lead, options)
     };
   } catch (err) {
     return {
@@ -476,6 +512,7 @@ module.exports = {
   deduplicateBatch,
   extractImportantFields,
   getDeduplicationInfo,
+  resolvePrimaryIdValue,
   safeString,
   safeHash,
   normalizeString

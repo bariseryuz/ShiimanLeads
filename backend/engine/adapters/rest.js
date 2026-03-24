@@ -6,6 +6,7 @@
 const axios = require('axios');
 const hydrator = require('../hydrator');
 const hydrateString = typeof hydrator.hydrateString === 'function' ? hydrator.hydrateString : (s) => s;
+const { mergeRequestHeaders } = require('../requestDefaults');
 const logger = require('../../utils/logger');
 
 const TIMEOUT_MS = Math.min(
@@ -13,11 +14,20 @@ const TIMEOUT_MS = Math.min(
   600000
 );
 
-function mergeHeaders(manifest) {
-  return {
-    'User-Agent': 'Mozilla/5.0 (compatible; ShiimanLeads/1.0)',
-    ...(manifest.headers && typeof manifest.headers === 'object' ? manifest.headers : {}),
-  };
+function warnIfLikelyCapped(rowCount, manifest) {
+  const cap = Math.max(parseInt(manifest.limit, 10) || 1000, 1);
+  if (rowCount > 0 && rowCount === cap) {
+    logger.warn(
+      `[Engine REST Adapter] Warning: Data likely capped (${rowCount} rows === limit ${cap}). ` +
+        `If the dataset is larger, raise "limit", add pagination params, or use legacy_arcgis / Playwright for full coverage.`
+    );
+  }
+}
+
+function returnRows(rows, manifest) {
+  const list = Array.isArray(rows) ? rows : [];
+  warnIfLikelyCapped(list.length, manifest);
+  return list;
 }
 
 /** Flat object → application/x-www-form-urlencoded (nested values JSON-stringified). */
@@ -43,7 +53,7 @@ function objectToUrlEncodedString(obj) {
 async function fetch(url, manifest) {
   try {
     const params = hydrator(manifest.query_params || manifest.params || {});
-    const mergedHeaders = mergeHeaders(manifest);
+    const mergedHeaders = mergeRequestHeaders(manifest, url);
     const method = (manifest.method || 'GET').toUpperCase();
     let response;
 
@@ -122,16 +132,22 @@ async function fetch(url, manifest) {
     }
 
     const data = response.data;
-    if (Array.isArray(data)) return data;
-    if (data?.results) return data.results;
-    if (data?.items) return data.items;
-    if (data?.data && Array.isArray(data.data)) return data.data;
-    if (data?.Data && Array.isArray(data.Data)) return data.Data;
+    if (Array.isArray(data)) {
+      warnIfLikelyCapped(data.length, manifest);
+      return data;
+    }
+    if (data?.results) return returnRows(data.results, manifest);
+    if (data?.items) return returnRows(data.items, manifest);
+    if (data?.data && Array.isArray(data.data)) return returnRows(data.data, manifest);
+    if (data?.Data && Array.isArray(data.Data)) return returnRows(data.Data, manifest);
     // DataTables / legacy ASP.NET grids
-    if (data?.aaData && Array.isArray(data.aaData)) return data.aaData;
-    if (data?.rows && Array.isArray(data.rows)) return data.rows;
+    if (data?.aaData && Array.isArray(data.aaData)) return returnRows(data.aaData, manifest);
+    if (data?.rows && Array.isArray(data.rows)) return returnRows(data.rows, manifest);
     if (data?.features && Array.isArray(data.features)) {
-      return data.features.map(f => f.attributes || f);
+      return returnRows(
+        data.features.map(f => f.attributes || f),
+        manifest
+      );
     }
     // ArcGIS REST / GeoServices error payload (HTTP 200 with { error: { code, message, details } })
     if (data?.error) {
