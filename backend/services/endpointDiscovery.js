@@ -12,6 +12,55 @@ const { probeRowCount } = require('../engine/adapters/rest');
 
 const MAX_CANDIDATES_TO_PROBE = parseInt(process.env.ENDPOINT_DISCOVERY_MAX_PROBE || '20', 10) || 20;
 
+/**
+ * Pull .../FeatureServer/N/query URLs out of a full request URL (including ArcGIS /sharing/proxy?https://...).
+ * @param {string} fullUrl
+ * @returns {string[]}
+ */
+function extractFeatureServerQueryUrls(fullUrl) {
+  if (!fullUrl || typeof fullUrl !== 'string') return [];
+  const re = /(https?:\/\/[^\s"'<>]+\/FeatureServer\/\d+\/query)/gi;
+  const m = fullUrl.match(re);
+  return m ? [...new Set(m.map(u => u.replace(/\/+$/, '')))] : [];
+}
+
+/**
+ * Endpoints that look like APIs in DevTools but are not tabular JSON for leads (basemap tiles, SDK, etc.).
+ * @param {string} url
+ * @returns {boolean}
+ */
+function isDiscoveryNoiseEndpoint(url) {
+  if (!url || isNoiseUrl(url)) return true;
+  const l = url.split('?')[0].toLowerCase();
+  if (l.includes('basemaps.arcgis.com')) return true;
+  if (l.includes('js.arcgis.com')) return true;
+  if (l.includes('static.arcgis.com')) return true;
+  if (l.includes('vectortileserver') || l.includes('vector_tileserver')) return true;
+  if (l.includes('/tilemap/')) return true;
+  if (l.includes('/vector_tileserver/')) return true;
+  if (/\/imageserver\/[^/]+\/tile\b/i.test(l)) return true;
+  if (l.includes('world_basemap') || l.includes('world_hillshade')) return true;
+  return false;
+}
+
+/** Soft positive signals for municipal / operational datasets (sector-agnostic). */
+function dataIntentBoost(url) {
+  const l = (url || '').toLowerCase();
+  let b = 0;
+  if (/(permit|planning|inspection|license|issued|violation|parcel|address|zoning|code enforce)/i.test(l)) b += 85;
+  if (/(demolition|construction|building|application)/i.test(l)) b += 35;
+  return b;
+}
+
+/** Downrank reference / basemap layers that are rarely the “business” table users want. */
+function referenceLayerPenalty(url) {
+  const l = (url || '').toLowerCase();
+  let p = 0;
+  if (/(roads|centerline|boundary|basemap|evacuation|hillshade|contour|hydro)/i.test(l)) p += 55;
+  if (/services1\.arcgis\.com.*evacuation/i.test(l)) p += 40;
+  return p;
+}
+
 /** URL already looks like a data endpoint (no discovery needed) */
 function isLikelyEndpoint(url) {
   if (!url || typeof url !== 'string') return false;
@@ -55,8 +104,15 @@ function isNoiseUrl(u) {
  */
 function isCandidateApiUrl(reqUrl) {
   if (!reqUrl || isNoiseUrl(reqUrl)) return false;
-  const u = reqUrl.split('?')[0].toLowerCase();
+  const pathOnly = reqUrl.split('?')[0] || '';
+  if (isDiscoveryNoiseEndpoint(pathOnly)) return false;
 
+  const inners = extractFeatureServerQueryUrls(reqUrl);
+  if (inners.length) {
+    return inners.some(u => !isDiscoveryNoiseEndpoint(u));
+  }
+
+  const u = pathOnly.toLowerCase();
   if (u.includes('/_get')) return true;
   if (u.includes('/query') && (u.includes('featureserver') || u.includes('arcgis') || u.includes('rest/services'))) return true;
   if (u.includes('/api/') && !u.includes('/analytics')) return true;
@@ -69,7 +125,15 @@ function isCandidateApiUrl(reqUrl) {
   return false;
 }
 
+/**
+ * Rank candidates: prefer FeatureServer/query on operational layers, penalize basemap/tiles/noise.
+ * @param {string} url
+ * @returns {number}
+ */
 function scoreCandidateHeuristic(url) {
+  if (!url) return -9999;
+  if (isDiscoveryNoiseEndpoint(url)) return -9999;
+
   let s = 0;
   const l = url.toLowerCase();
   const pathOnly = (url.split('?')[0] || '').toLowerCase();
@@ -89,6 +153,10 @@ function scoreCandidateHeuristic(url) {
   if (l.includes('/rest/services')) s += 40;
   if (l.includes('odata')) s += 35;
   if (l.includes('.ashx')) s += 25;
+
+  s += dataIntentBoost(url);
+  s -= referenceLayerPenalty(url);
+
   s += Math.min(url.length, 300) / 1000;
   return s;
 }
@@ -112,10 +180,22 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
       if (req.resourceType() !== 'xhr' && req.resourceType() !== 'fetch') return;
       const reqUrl = req.url();
       if (!isCandidateApiUrl(reqUrl)) return;
-      const base = reqUrl.split('?')[0];
-      if (seen.has(base)) return;
-      seen.add(base);
-      candidateUrls.push(base);
+
+      const toAdd = [];
+      const inners = extractFeatureServerQueryUrls(reqUrl);
+      if (inners.length) {
+        inners.forEach(u => {
+          if (!isDiscoveryNoiseEndpoint(u)) toAdd.push(u);
+        });
+      } else {
+        const base = reqUrl.split('?')[0];
+        if (!isDiscoveryNoiseEndpoint(base)) toAdd.push(base);
+      }
+      for (const base of toAdd) {
+        if (seen.has(base)) continue;
+        seen.add(base);
+        candidateUrls.push(base);
+      }
     });
 
     await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(timeoutMs, 60000) });
@@ -140,22 +220,45 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
 }
 
 /**
+ * Ensure probe uses JSON + permissive WHERE so we rank **layers** by who returns rows.
+ * (User-specific demolition filters often match zero rows on the wrong layer — discovery would then fail every probe.)
+ * @param {object} probeManifest
+ * @returns {object}
+ */
+function buildProbeManifest(probeManifest = {}) {
+  const m = { ...probeManifest };
+  const qp = { ...(m.query_params || m.params || {}) };
+  if (qp.f == null || qp.f === '') qp.f = 'json';
+  qp.where = '1=1';
+  if (qp.outFields == null || qp.outFields === '') qp.outFields = '*';
+  m.query_params = qp;
+  return m;
+}
+
+/**
  * Probe candidates with the same query/body as the user's manifest; pick highest row count.
+ * Does not return a misleading "guess" when all probes return 0 rows — caller should show ranked list for manual pick.
  * @param {string[]} candidates - Base URLs (no query) from network capture
  * @param {object} probeManifest - Same shape as engine manifest (query_params, method, body, …)
- * @returns {Promise<{ url: string|null, rowCount: number }>}
+ * @returns {Promise<{ url: string|null, rowCount: number, rankedCandidates: string[] }>}
  */
 async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
-  if (!candidates || !candidates.length) return { url: null, rowCount: 0 };
+  if (!candidates || !candidates.length) {
+    return { url: null, rowCount: 0, rankedCandidates: [] };
+  }
 
-  const ranked = [...new Set(candidates)].sort((a, b) => scoreCandidateHeuristic(b) - scoreCandidateHeuristic(a));
+  const ranked = [...new Set(candidates)]
+    .filter(u => scoreCandidateHeuristic(u) > -9000)
+    .sort((a, b) => scoreCandidateHeuristic(b) - scoreCandidateHeuristic(a));
   const toProbe = ranked.slice(0, MAX_CANDIDATES_TO_PROBE);
+
+  const manifest = buildProbeManifest(probeManifest);
 
   let bestUrl = null;
   let bestCount = 0;
 
   for (const url of toProbe) {
-    const { rowCount } = await probeRowCount(url, probeManifest);
+    const { rowCount } = await probeRowCount(url, manifest);
     if (rowCount > bestCount) {
       bestCount = rowCount;
       bestUrl = url;
@@ -168,16 +271,15 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
 
   if (bestUrl && bestCount > 0) {
     logger.info(`[EndpointDiscovery] Best probed endpoint: ${bestUrl} (${bestCount} rows)`);
-    return { url: bestUrl, rowCount: bestCount };
+    return { url: bestUrl, rowCount: bestCount, rankedCandidates: ranked };
   }
 
-  if (toProbe.length) {
-    const fallback = toProbe[0];
-    logger.info(`[EndpointDiscovery] Probes returned no rows; using top-ranked candidate: ${fallback}`);
-    return { url: fallback, rowCount: 0 };
-  }
-
-  return { url: null, rowCount: 0 };
+  logger.warn(
+    `[EndpointDiscovery] No candidate returned rows with probe (where/outFields). ` +
+      `Pick a URL from the ranked list manually or paste .../FeatureServer/N/query from DevTools. ` +
+      `Top heuristic: ${ranked[0] || 'none'}`
+  );
+  return { url: null, rowCount: 0, rankedCandidates: ranked };
 }
 
 /**
@@ -187,8 +289,9 @@ async function discoverBestFromPage(pageUrl, probeManifest, timeoutMs = 20000) {
   const candidates = await discoverCandidateUrlsFromPage(pageUrl, timeoutMs);
   if (!candidates.length) return { endpointUrl: null, rowCount: 0, candidates: [] };
 
-  const { url, rowCount } = await pickBestEndpointByProbing(candidates, probeManifest);
-  return { endpointUrl: url, rowCount, candidates };
+  const { url, rowCount, rankedCandidates } = await pickBestEndpointByProbing(candidates, probeManifest);
+  const listForUi = rankedCandidates && rankedCandidates.length ? rankedCandidates : candidates;
+  return { endpointUrl: url, rowCount, candidates: listForUi };
 }
 
 /** Legacy: best heuristic candidate (prefer ArcGIS /query over bare FeatureServer/N) */
@@ -251,10 +354,7 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       return {
         endpointUrl,
         type: 'json',
-        hint:
-          rowCount > 0
-            ? `Data endpoint selected by probe (${rowCount} rows with your parameters).`
-            : 'Data API endpoint detected from page requests (probed with your parameters).',
+        hint: `Data endpoint selected by probe (${rowCount} row(s) with probe parameters). Paste your own where/outFields in Query Parameters if needed.`,
         rowCount,
         candidates
       };
@@ -263,7 +363,7 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       return {
         endpointUrl: null,
         type: 'json',
-        hint: `Found ${candidates.length} API candidate(s) but none returned rows with current parameters. Adjust query/POST body or open the page and search again.`,
+        hint: `Found ${candidates.length} ranked API candidate(s) but none returned rows when probed (try widening where to 1=1 in Query Parameters, or paste the exact .../FeatureServer/N/query URL from DevTools).`,
         candidates
       };
     }
