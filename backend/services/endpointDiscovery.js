@@ -72,7 +72,17 @@ function isCandidateApiUrl(reqUrl) {
 function scoreCandidateHeuristic(url) {
   let s = 0;
   const l = url.toLowerCase();
-  if (l.includes('featureserver') || (l.includes('/query') && l.includes('arcgis'))) s += 120;
+  const pathOnly = (url.split('?')[0] || '').toLowerCase();
+
+  // ArcGIS: data lives at .../FeatureServer/N/query — not at .../FeatureServer/N (layer metadata).
+  if (pathOnly.includes('featureserver') && pathOnly.includes('/query')) {
+    s += 260;
+  } else if (/\/featureserver\/\d+\/?$/i.test(url.split('?')[0] || '')) {
+    s += 35;
+  } else if (l.includes('featureserver') || (l.includes('/query') && l.includes('arcgis'))) {
+    s += 120;
+  }
+
   if (l.includes('/_get')) s += 90;
   if (l.includes('/api/')) s += 50;
   if (l.includes('graphql')) s += 45;
@@ -181,12 +191,14 @@ async function discoverBestFromPage(pageUrl, probeManifest, timeoutMs = 20000) {
   return { endpointUrl: url, rowCount, candidates };
 }
 
-/** Legacy: first candidate only (no probing) */
+/** Legacy: best heuristic candidate (prefer ArcGIS /query over bare FeatureServer/N) */
 async function discoverFromPage(pageUrl, timeoutMs = 20000) {
   const candidates = await discoverCandidateUrlsFromPage(pageUrl, timeoutMs);
-  const first = candidates[0] || null;
-  if (first) logger.info(`[EndpointDiscovery] Found from page (first candidate): ${first}`);
-  return first;
+  if (!candidates.length) return null;
+  const sorted = [...new Set(candidates)].sort((a, b) => scoreCandidateHeuristic(b) - scoreCandidateHeuristic(a));
+  const best = sorted[0];
+  if (best) logger.info(`[EndpointDiscovery] Found from page (top heuristic): ${best}`);
+  return best;
 }
 
 /**
