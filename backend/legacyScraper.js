@@ -27,6 +27,7 @@ const { setupApiInterceptor, waitForApiResponse, extractRecordsFromApiResponse }
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
 const engine = require('./engine');
+const { tryHealJsonEndpoint } = require('./services/endpointSelfHeal');
 
 /**
  * Neutral check: does this URL look like an ArcGIS service or Hub?
@@ -88,7 +89,14 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
       if (engine.shouldUseEngine(source)) {
         try {
           logger.info(`✨ Using Universal Engine for: ${source.name}`);
-          const leads = await engine.runUniversalPipeline(source);
+          let leads = await engine.runUniversalPipeline(source);
+          if (leads.length === 0) {
+            const heal = await tryHealJsonEndpoint(source, userId);
+            if (heal.healed) {
+              logger.info(`[SelfHeal] Retrying Universal Engine for "${source.name}" with repaired endpoint`);
+              leads = await engine.runUniversalPipeline(source);
+            }
+          }
           for (const lead of leads) {
             if (isTotalRowLimitReached(totalInserted, limits)) break;
             if (await insertLeadIfNew({

@@ -5,13 +5,19 @@
 
 const axios = require('axios');
 const hydrator = require('../hydrator');
-const hydrateString = typeof hydrator.hydrateString === 'function' ? hydrator.hydrateString : (s) => s;
+const hydrateString = typeof hydrator.hydrateString === 'function' ? hydrator.hydrateString : s => s;
 const { mergeRequestHeaders } = require('../requestDefaults');
+const { extractRowsFromApiJson } = require('../jsonResponseRows');
 const logger = require('../../utils/logger');
 
 const TIMEOUT_MS = Math.min(
   Math.max(parseInt(process.env.REST_ADAPTER_TIMEOUT_MS || '120000', 10) || 120000, 5000),
   600000
+);
+
+const PROBE_TIMEOUT_MS = Math.min(
+  Math.max(parseInt(process.env.REST_PROBE_TIMEOUT_MS || '15000', 10) || 15000, 3000),
+  120000
 );
 
 function warnIfLikelyCapped(rowCount, manifest) {
@@ -46,17 +52,92 @@ function objectToUrlEncodedString(obj) {
 }
 
 /**
+ * Low-level HTTP execution (used by fetch and endpoint probing). Does not parse rows or log per-request errors.
+ * @param {string} url
+ * @param {Object} manifest
+ * @param {{ timeoutMs?: number }} [opts]
+ * @returns {Promise<import('axios').AxiosResponse>}
+ */
+async function executeRestRequest(url, manifest, opts = {}) {
+  const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : TIMEOUT_MS;
+  const params = hydrator(manifest.query_params || manifest.params || {});
+  const mergedHeaders = mergeRequestHeaders(manifest, url);
+  const method = (manifest.method || 'GET').toUpperCase();
+
+  if (method === 'POST') {
+    const postFmt = String(manifest.post_body_format || manifest.postBodyFormat || 'json').toLowerCase();
+    const ct = mergedHeaders['Content-Type'] || mergedHeaders['content-type'] || '';
+    const isForm =
+      postFmt === 'form' ||
+      postFmt === 'urlencoded' ||
+      postFmt === 'application/x-www-form-urlencoded' ||
+      String(ct).toLowerCase().includes('x-www-form-urlencoded');
+
+    if (isForm) {
+      if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
+        mergedHeaders['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+      }
+      if (mergedHeaders['content-type']) delete mergedHeaders['content-type'];
+
+      let bodyPayload;
+      if (manifest.body !== undefined && manifest.body !== null) {
+        if (typeof manifest.body === 'string') {
+          bodyPayload = hydrateString(manifest.body);
+        } else if (typeof manifest.body === 'object') {
+          bodyPayload = objectToUrlEncodedString(manifest.body);
+        } else {
+          bodyPayload = String(manifest.body);
+        }
+      } else {
+        bodyPayload = objectToUrlEncodedString(params);
+      }
+
+      return axios.post(url, bodyPayload, { headers: mergedHeaders, timeout: timeoutMs });
+    }
+
+    const bodyRaw = manifest.body !== undefined ? manifest.body : params;
+    let body;
+    if (typeof bodyRaw === 'string') {
+      body = JSON.parse(bodyRaw);
+    } else {
+      body = hydrator(bodyRaw);
+    }
+    if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
+      mergedHeaders['Content-Type'] = 'application/json';
+    }
+    return axios.post(url, body, { headers: mergedHeaders, timeout: timeoutMs });
+  }
+
+  return axios.get(url, { params, headers: mergedHeaders, timeout: timeoutMs });
+}
+
+/**
+ * Silent row-count probe for endpoint discovery (short timeout, no error spam).
+ * @returns {Promise<{ rowCount: number, data?: * }>}
+ */
+async function probeRowCount(url, manifest) {
+  try {
+    const response = await executeRestRequest(url, manifest, { timeoutMs: PROBE_TIMEOUT_MS });
+    const data = response.data;
+    if (data && typeof data === 'object' && data.error) {
+      return { rowCount: 0, data };
+    }
+    const rows = extractRowsFromApiJson(data);
+    return { rowCount: rows.length, data };
+  } catch {
+    return { rowCount: 0 };
+  }
+}
+
+/**
  * @param {string} url - Full API URL (e.g. https://api.example.com/search)
  * @param {Object} manifest - { query_params, params, method, body, headers, post_body_format }
  * @returns {Array} Raw items (response.data.results || response.data.items || response.data or array)
  */
 async function fetch(url, manifest) {
   try {
-    const params = hydrator(manifest.query_params || manifest.params || {});
     const mergedHeaders = mergeRequestHeaders(manifest, url);
     const method = (manifest.method || 'GET').toUpperCase();
-    let response;
-
     const safeUrl = (url || '').slice(0, 160);
     logger.info(`[Engine REST Adapter] ${method} ${safeUrl}${(url || '').length > 160 ? '…' : ''} (timeout ${TIMEOUT_MS}ms)`);
 
@@ -74,11 +155,6 @@ async function fetch(url, manifest) {
       );
 
       if (isForm) {
-        if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
-          mergedHeaders['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
-        }
-        if (mergedHeaders['content-type']) delete mergedHeaders['content-type'];
-
         let bodyPayload;
         if (manifest.body !== undefined && manifest.body !== null) {
           if (typeof manifest.body === 'string') {
@@ -89,7 +165,7 @@ async function fetch(url, manifest) {
             bodyPayload = String(manifest.body);
           }
         } else {
-          bodyPayload = objectToUrlEncodedString(params);
+          bodyPayload = objectToUrlEncodedString(hydrator(manifest.query_params || manifest.params || {}));
         }
 
         if (!bodyPayload || !String(bodyPayload).trim()) {
@@ -100,10 +176,8 @@ async function fetch(url, manifest) {
           const s = String(bodyPayload);
           logger.info(`[Engine REST Adapter] POST (form) body length=${s.length} preview=${s.slice(0, 140)}${s.length > 140 ? '…' : ''}`);
         }
-
-        response = await axios.post(url, bodyPayload, { headers: mergedHeaders, timeout: TIMEOUT_MS });
       } else {
-        const bodyRaw = manifest.body !== undefined ? manifest.body : params;
+        const bodyRaw = manifest.body !== undefined ? manifest.body : hydrator(manifest.query_params || manifest.params || {});
         let body;
         if (typeof bodyRaw === 'string') {
           body = JSON.parse(bodyRaw);
@@ -122,34 +196,17 @@ async function fetch(url, manifest) {
               `If you already use JSON APIs (ArcGIS), paste JSON into Query Parameters or POST body.`
           );
         }
-        if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
-          mergedHeaders['Content-Type'] = 'application/json';
-        }
-        response = await axios.post(url, body, { headers: mergedHeaders, timeout: TIMEOUT_MS });
       }
-    } else {
-      response = await axios.get(url, { params, headers: mergedHeaders, timeout: TIMEOUT_MS });
     }
 
+    const response = await executeRestRequest(url, manifest);
     const data = response.data;
+
     if (Array.isArray(data)) {
       warnIfLikelyCapped(data.length, manifest);
       return data;
     }
-    if (data?.results) return returnRows(data.results, manifest);
-    if (data?.items) return returnRows(data.items, manifest);
-    if (data?.data && Array.isArray(data.data)) return returnRows(data.data, manifest);
-    if (data?.Data && Array.isArray(data.Data)) return returnRows(data.Data, manifest);
-    // DataTables / legacy ASP.NET grids
-    if (data?.aaData && Array.isArray(data.aaData)) return returnRows(data.aaData, manifest);
-    if (data?.rows && Array.isArray(data.rows)) return returnRows(data.rows, manifest);
-    if (data?.features && Array.isArray(data.features)) {
-      return returnRows(
-        data.features.map(f => f.attributes || f),
-        manifest
-      );
-    }
-    // ArcGIS REST / GeoServices error payload (HTTP 200 with { error: { code, message, details } })
+
     if (data?.error) {
       const e = data.error;
       const code = e && typeof e === 'object' && e.code != null ? ` code=${e.code}` : '';
@@ -166,6 +223,12 @@ async function fetch(url, manifest) {
       logger.error(`[Engine REST Adapter] ArcGIS/API error${code}: ${msg}${details}`);
       return [];
     }
+
+    const rows = extractRowsFromApiJson(data);
+    if (rows.length > 0) {
+      return returnRows(rows, manifest);
+    }
+
     if (data?.Errors && data.Errors.length) {
       logger.warn(`[Engine REST Adapter] API returned errors: ${JSON.stringify(data.Errors)}`);
     }
@@ -190,4 +253,4 @@ async function fetch(url, manifest) {
   }
 }
 
-module.exports = { fetch };
+module.exports = { fetch, executeRestRequest, probeRowCount };

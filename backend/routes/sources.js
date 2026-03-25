@@ -91,15 +91,20 @@ router.post('/discover-endpoint', express.json(), async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
-    const { url } = req.body || {};
+    const { url, probeManifest } = req.body || {};
     if (!url || typeof url !== 'string') {
       return res.status(400).json({ error: 'URL is required', endpointUrl: null, type: 'unknown', hint: 'Send { "url": "https://..." }.' });
     }
-    const result = await discoverEndpoint(url.trim(), logger);
+    const result =
+      probeManifest && typeof probeManifest === 'object'
+        ? await discoverEndpoint(url.trim(), { probeManifest, logger })
+        : await discoverEndpoint(url.trim(), logger);
     res.json({
       endpointUrl: result.endpointUrl,
       type: result.type,
-      hint: result.hint
+      hint: result.hint,
+      rowCount: result.rowCount,
+      candidates: result.candidates
     });
   } catch (e) {
     logger.error(`Discover endpoint error: ${e.message}`);
