@@ -57,6 +57,92 @@ function ensureArcGISFeatureLayerQueryUrl(url) {
   return url;
 }
 
+/** True when URL targets a Feature Layer query endpoint (GET params: where, f, outFields, …). */
+function isArcGISFeatureLayerQueryUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  return /\/featureserver\/\d+\/query/i.test(url);
+}
+
+/**
+ * Universal Engine JSON sources often omit ArcGIS query params; bare /query then returns wrong or tiny pages.
+ * Mirrors defaults from engine/adapters/arcgis.js.
+ * @param {Object} params - Hydrated query params
+ * @param {Object} manifest
+ */
+function mergeArcGISQueryDefaults(params, manifest) {
+  const p = { ...(params || {}) };
+  if (p.f == null || p.f === '') p.f = 'json';
+  if (p.outFields == null || p.outFields === '') p.outFields = '*';
+  if (p.where == null || p.where === '') p.where = manifest.where_clause || '1=1';
+  const rc = parseInt(p.resultRecordCount, 10);
+  if (!Number.isFinite(rc) || rc < 1) {
+    const lim = parseInt(manifest.limit, 10);
+    p.resultRecordCount = Number.isFinite(lim) && lim > 0 ? lim : 1000;
+  }
+  return p;
+}
+
+/** Most hosted FeatureServers cap a single response at 1000 (see layer maxRecordCount). */
+const ARCGIS_PAGE_SIZE_CAP = 1000;
+
+/**
+ * Fetch all pages for ArcGIS Feature Layer /query (resultOffset + exceededTransferLimit).
+ * @param {string} requestUrl - …/FeatureServer/N/query
+ * @param {Object} manifest
+ * @returns {Promise<Array>}
+ */
+async function fetchArcGISFeatureLayerQueryAll(requestUrl, manifest) {
+  const mergedHeaders = mergeRequestHeaders(manifest, requestUrl);
+  let baseParams = hydrator(manifest.query_params || manifest.params || {});
+  baseParams = mergeArcGISQueryDefaults(baseParams, manifest);
+  const requested = Math.max(parseInt(baseParams.resultRecordCount, 10) || 1000, 1);
+  const pageSize = Math.min(requested, ARCGIS_PAGE_SIZE_CAP);
+  baseParams.resultRecordCount = pageSize;
+
+  let offset = 0;
+  const allRows = [];
+  const maxPages = Math.max(parseInt(process.env.REST_ARCGIS_MAX_PAGES || '500', 10) || 500, 1);
+  let pageNum = 0;
+
+  while (pageNum < maxPages) {
+    const params = { ...baseParams, resultOffset: offset };
+    const response = await axios.get(requestUrl, { params, headers: mergedHeaders, timeout: TIMEOUT_MS });
+    const data = response.data;
+
+    if (data?.error) {
+      const e = data.error;
+      const code = e && typeof e === 'object' && e.code != null ? ` code=${e.code}` : '';
+      const msg =
+        e && typeof e === 'object' && e.message != null
+          ? String(e.message)
+          : typeof e === 'string'
+            ? e
+            : JSON.stringify(e);
+      logger.error(`[Engine REST Adapter] ArcGIS/API error${code}: ${msg}`);
+      return [];
+    }
+
+    const rows = extractRowsFromApiJson(data);
+    allRows.push(...rows);
+    pageNum += 1;
+
+    if (!data.exceededTransferLimit) break;
+    if (rows.length === 0) break;
+    offset += rows.length;
+    logger.info(
+      `[Engine REST Adapter] ArcGIS pagination: page ${pageNum}, +${rows.length} rows (total ${allRows.length}, next offset ${offset})`
+    );
+  }
+
+  if (pageNum >= maxPages && allRows.length > 0) {
+    logger.warn(
+      `[Engine REST Adapter] ArcGIS pagination stopped at REST_ARCGIS_MAX_PAGES (${maxPages}) — raise env or narrow where_clause if needed.`
+    );
+  }
+
+  return returnRows(allRows, manifest);
+}
+
 /** Flat object → application/x-www-form-urlencoded (nested values JSON-stringified). */
 function objectToUrlEncodedString(obj) {
   const flat = hydrator({ ...(obj || {}) });
@@ -89,9 +175,13 @@ async function executeRestRequest(url, manifest, opts = {}) {
   url = resolvedUrl;
 
   const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : TIMEOUT_MS;
-  const params = hydrator(manifest.query_params || manifest.params || {});
+  let params = hydrator(manifest.query_params || manifest.params || {});
   const mergedHeaders = mergeRequestHeaders(manifest, url);
   const method = (manifest.method || 'GET').toUpperCase();
+
+  if (method === 'GET' && isArcGISFeatureLayerQueryUrl(url)) {
+    params = mergeArcGISQueryDefaults(params, manifest);
+  }
 
   if (method === 'POST') {
     const postFmt = String(manifest.post_body_format || manifest.postBodyFormat || 'json').toLowerCase();
@@ -227,6 +317,10 @@ async function fetch(url, manifest) {
           );
         }
       }
+    }
+
+    if (method === 'GET' && isArcGISFeatureLayerQueryUrl(requestUrl)) {
+      return await fetchArcGISFeatureLayerQueryAll(requestUrl, manifest);
     }
 
     const response = await executeRestRequest(requestUrl, manifest);
