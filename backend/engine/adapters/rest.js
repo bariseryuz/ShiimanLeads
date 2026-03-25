@@ -36,6 +36,27 @@ function returnRows(rows, manifest) {
   return list;
 }
 
+/**
+ * ArcGIS: layer URL .../FeatureServer/N returns metadata, not rows.
+ * Data is always at .../FeatureServer/N/query (GET params = where, f, outFields, …).
+ */
+function ensureArcGISFeatureLayerQueryUrl(url) {
+  if (!url || typeof url !== 'string') return url;
+  const lower = url.toLowerCase();
+  if (!lower.includes('featureserver') || lower.includes('/query')) return url;
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/\/$/, '');
+    if (/\/featureserver\/\d+$/i.test(path)) {
+      u.pathname = `${path}/query`;
+      return u.toString();
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  return url;
+}
+
 /** Flat object → application/x-www-form-urlencoded (nested values JSON-stringified). */
 function objectToUrlEncodedString(obj) {
   const flat = hydrator({ ...(obj || {}) });
@@ -59,6 +80,14 @@ function objectToUrlEncodedString(obj) {
  * @returns {Promise<import('axios').AxiosResponse>}
  */
 async function executeRestRequest(url, manifest, opts = {}) {
+  const resolvedUrl = ensureArcGISFeatureLayerQueryUrl(url);
+  if (resolvedUrl !== url) {
+    logger.info(
+      `[Engine REST Adapter] ArcGIS layer URL normalized to /query: ${resolvedUrl.slice(0, 180)}${resolvedUrl.length > 180 ? '…' : ''}`
+    );
+  }
+  url = resolvedUrl;
+
   const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : TIMEOUT_MS;
   const params = hydrator(manifest.query_params || manifest.params || {});
   const mergedHeaders = mergeRequestHeaders(manifest, url);
@@ -136,10 +165,11 @@ async function probeRowCount(url, manifest) {
  */
 async function fetch(url, manifest) {
   try {
-    const mergedHeaders = mergeRequestHeaders(manifest, url);
+    const requestUrl = ensureArcGISFeatureLayerQueryUrl(url);
+    const mergedHeaders = mergeRequestHeaders(manifest, requestUrl);
     const method = (manifest.method || 'GET').toUpperCase();
-    const safeUrl = (url || '').slice(0, 160);
-    logger.info(`[Engine REST Adapter] ${method} ${safeUrl}${(url || '').length > 160 ? '…' : ''} (timeout ${TIMEOUT_MS}ms)`);
+    const safeUrl = (requestUrl || '').slice(0, 160);
+    logger.info(`[Engine REST Adapter] ${method} ${safeUrl}${(requestUrl || '').length > 160 ? '…' : ''} (timeout ${TIMEOUT_MS}ms)`);
 
     if (method === 'POST') {
       const postFmt = String(manifest.post_body_format || manifest.postBodyFormat || 'json').toLowerCase();
@@ -199,7 +229,7 @@ async function fetch(url, manifest) {
       }
     }
 
-    const response = await executeRestRequest(url, manifest);
+    const response = await executeRestRequest(requestUrl, manifest);
     const data = response.data;
 
     if (Array.isArray(data)) {
@@ -253,4 +283,4 @@ async function fetch(url, manifest) {
   }
 }
 
-module.exports = { fetch, executeRestRequest, probeRowCount };
+module.exports = { fetch, executeRestRequest, probeRowCount, ensureArcGISFeatureLayerQueryUrl };
