@@ -19,9 +19,14 @@ async function insertLeadIfNew({
   primary_id_field
 }) {
   try {
-    // Validate
-    if (!lead || typeof lead !== 'object') {
-      logger.error(`❌ Invalid lead object`);
+    // Validate (arrays are typeof 'object' but not valid lead rows)
+    if (lead == null || typeof lead !== 'object' || Array.isArray(lead)) {
+      logger.error(
+        `❌ Invalid lead object (expected plain object; got ${lead === null ? 'null' : Array.isArray(lead) ? 'array' : typeof lead})` +
+          (typeof lead === 'string' || typeof lead === 'number'
+            ? ` preview=${String(lead).slice(0, 80)}`
+            : '')
+      );
       return false;
     }
     

@@ -47,9 +47,21 @@ async function runUniversalPipeline(source) {
     const doSanitize = manifest.sanitize !== false;
 
     for (const rawItem of rawLeads) {
-      const dataToMap = rawItem.attributes || rawItem;
+      const dataToMap =
+        rawItem && typeof rawItem === 'object' && rawItem.attributes != null ? rawItem.attributes : rawItem;
       let cleanLead = transformer(dataToMap, fieldMapping);
       if (doSanitize) cleanLead = sanitizeLead(cleanLead);
+      if (
+        cleanLead == null ||
+        typeof cleanLead !== 'object' ||
+        Array.isArray(cleanLead)
+      ) {
+        logger.warn(
+          `[Engine] Skipped row: expected object after mapping, got ${cleanLead === null ? 'null' : Array.isArray(cleanLead) ? 'array' : typeof cleanLead}. ` +
+            `Check API shape and field_mapping (ArcGIS rows should be objects or feature.attributes).`
+        );
+        continue;
+      }
       if (validator(cleanLead, filters)) {
         processedLeads.push(cleanLead);
       }
