@@ -813,6 +813,11 @@
           </div>
           <small style="color: var(--gray-600);" id="urlHintText">The AI bot will visit this page and extract data automatically</small>
           <small id="discoverHint" style="display: none; color: var(--primary); margin-top: 0.25rem;"></small>
+          <div id="discoverCandidatesWrap" style="display: none; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--gray-50); max-height: 300px; overflow: auto;">
+            <div style="font-weight: 600; font-size: 0.875rem; margin-bottom: 0.5rem; color: var(--gray-700);">API candidates</div>
+            <div style="font-size: 0.75rem; color: var(--gray-600); margin-bottom: 0.5rem;">Probed with <code>f=json</code>, <code>where=1=1</code>, <code>outFields=*</code> — pick the layer that matches your data (higher row count usually means the main table).</div>
+            <table id="discoverCandidatesTable" style="width:100%; font-size: 0.8rem; border-collapse: collapse;"></table>
+          </div>
         </div>
         
         <!-- SOURCE TYPE SELECTOR -->
@@ -1044,6 +1049,100 @@
       }
     }
 
+    function buildProbeManifestForDiscover() {
+      const raw = document.getElementById('apiParams') && document.getElementById('apiParams').value
+        ? document.getElementById('apiParams').value.trim()
+        : '';
+      const fallback = { query_params: { f: 'json', where: '1=1', outFields: '*' } };
+      if (!raw) return fallback;
+      try {
+        const o = JSON.parse(normalizeJsonQuotes(raw));
+        if (o && typeof o === 'object' && !Array.isArray(o)) {
+          return { query_params: o };
+        }
+      } catch (_) {
+        /* ignore */
+      }
+      return fallback;
+    }
+
+    function clearDiscoverCandidatesPanel() {
+      const wrap = document.getElementById('discoverCandidatesWrap');
+      const table = document.getElementById('discoverCandidatesTable');
+      if (wrap) wrap.style.display = 'none';
+      if (table) table.innerHTML = '';
+    }
+
+    function renderDiscoverCandidates(probeResults, selectedUrl) {
+      const wrap = document.getElementById('discoverCandidatesWrap');
+      const table = document.getElementById('discoverCandidatesTable');
+      if (!wrap || !table) return;
+      table.innerHTML = '';
+      if (!probeResults || !probeResults.length) {
+        wrap.style.display = 'none';
+        return;
+      }
+      wrap.style.display = 'block';
+      const thead = document.createElement('thead');
+      const hr = document.createElement('tr');
+      ['Rows', 'Score', 'URL', ''].forEach((label, i) => {
+        const th = document.createElement('th');
+        th.textContent = label;
+        th.style.textAlign = i === 3 ? 'right' : 'left';
+        th.style.padding = '6px 8px';
+        th.style.borderBottom = '1px solid var(--gray-200)';
+        hr.appendChild(th);
+      });
+      thead.appendChild(hr);
+      table.appendChild(thead);
+      const tbody = document.createElement('tbody');
+      probeResults.forEach(r => {
+        const tr = document.createElement('tr');
+        const tdN = document.createElement('td');
+        tdN.textContent = String(r.rowCount ?? 0);
+        tdN.style.padding = '6px 8px';
+        tdN.style.verticalAlign = 'top';
+        const tdS = document.createElement('td');
+        tdS.textContent = String(r.score ?? '');
+        tdS.style.padding = '6px 8px';
+        tdS.style.verticalAlign = 'top';
+        const tdU = document.createElement('td');
+        tdU.style.padding = '6px 8px';
+        tdU.style.wordBreak = 'break-all';
+        tdU.textContent = (r.url || '') + (selectedUrl && r.url === selectedUrl ? ' ★' : '');
+        const tdB = document.createElement('td');
+        tdB.style.padding = '6px 8px';
+        tdB.style.textAlign = 'right';
+        const useBtn = document.createElement('button');
+        useBtn.type = 'button';
+        useBtn.className = 'btn-secondary';
+        useBtn.style.fontSize = '0.75rem';
+        useBtn.textContent = 'Use';
+        useBtn.addEventListener('click', () => {
+          const urlInput = document.getElementById('sourceUrl');
+          if (urlInput && r.url) urlInput.value = r.url;
+          const st = document.getElementById('sourceType');
+          if (st) {
+            st.value = 'json';
+            toggleSourceTypeFields();
+          }
+          const hint = document.getElementById('discoverHint');
+          if (hint) {
+            hint.textContent = 'URL set from candidate list. Adjust Query Parameters (where) for your filters, then save.';
+            hint.style.display = 'block';
+            hint.style.color = '#059669';
+          }
+        });
+        tdB.appendChild(useBtn);
+        tr.appendChild(tdN);
+        tr.appendChild(tdS);
+        tr.appendChild(tdU);
+        tr.appendChild(tdB);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+    }
+
     async function findEndpoint() {
       const urlInput = document.getElementById('sourceUrl');
       const hintEl = document.getElementById('discoverHint');
@@ -1053,26 +1152,37 @@
         alert('Enter a URL first, then click Find endpoint.');
         return;
       }
+      clearDiscoverCandidatesPanel();
       if (hintEl) { hintEl.style.display = 'none'; hintEl.textContent = ''; }
       if (btn) { btn.disabled = true; btn.textContent = '⏳ Finding...'; }
       try {
         const base = window.location.pathname.startsWith('/') ? '' : (window.location.origin || '');
+        const probeManifest = buildProbeManifestForDiscover();
         const res = await fetch((base || '') + '/api/my-sources/discover-endpoint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ url })
+          body: JSON.stringify({ url, probeManifest })
         });
         const data = await res.json().catch(() => ({}));
         if (data.endpointUrl) {
           urlInput.value = data.endpointUrl;
-          if (hintEl) { hintEl.textContent = data.hint || 'Endpoint found.'; hintEl.style.display = 'block'; }
+          if (hintEl) {
+            hintEl.textContent = data.hint || 'Endpoint found.';
+            hintEl.style.display = 'block';
+            hintEl.style.color = '#059669';
+          }
           if (data.type === 'arcgis' && document.getElementById('sourceType')) document.getElementById('sourceType').value = 'arcgis';
           else if (data.type === 'json' && document.getElementById('sourceType')) document.getElementById('sourceType').value = 'json';
           toggleSourceTypeFields();
         } else {
-          if (hintEl) { hintEl.textContent = data.hint || data.error || 'No endpoint found.'; hintEl.style.display = 'block'; hintEl.style.color = '#64748b'; }
+          if (hintEl) {
+            hintEl.textContent = data.hint || data.error || 'No endpoint found.';
+            hintEl.style.display = 'block';
+            hintEl.style.color = '#64748b';
+          }
         }
+        renderDiscoverCandidates(data.probeResults || [], data.endpointUrl || null);
       } catch (e) {
         if (hintEl) { hintEl.textContent = 'Request failed: ' + (e.message || 'network error'); hintEl.style.display = 'block'; hintEl.style.color = '#dc2626'; }
       }
@@ -1881,6 +1991,7 @@ async function loadScreenshots(sources) {
     function closeModal() {
       document.getElementById('sourceModal').classList.remove('show');
       editingSourceId = null;
+      clearDiscoverCandidatesPanel();
     }
 
     /**

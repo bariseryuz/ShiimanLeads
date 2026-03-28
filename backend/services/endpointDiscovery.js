@@ -244,7 +244,7 @@ function buildProbeManifest(probeManifest = {}) {
  */
 async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
   if (!candidates || !candidates.length) {
-    return { url: null, rowCount: 0, rankedCandidates: [] };
+    return { url: null, rowCount: 0, rankedCandidates: [], probeResults: [] };
   }
 
   const ranked = [...new Set(candidates)]
@@ -254,24 +254,30 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
 
   const manifest = buildProbeManifest(probeManifest);
 
-  let bestUrl = null;
-  let bestCount = 0;
-
+  /** @type {{ url: string, rowCount: number, score: number }[]} */
+  const probeResults = [];
   for (const url of toProbe) {
     const { rowCount } = await probeRowCount(url, manifest);
-    if (rowCount > bestCount) {
-      bestCount = rowCount;
-      bestUrl = url;
-      if (rowCount >= 50) {
-        logger.info(`[EndpointDiscovery] Strong match: ${url} (${rowCount} rows)`);
-        break;
-      }
+    probeResults.push({
+      url,
+      rowCount,
+      score: Math.round(scoreCandidateHeuristic(url))
+    });
+  }
+  probeResults.sort((a, b) => b.rowCount - a.rowCount || b.score - a.score);
+
+  let bestUrl = null;
+  let bestCount = 0;
+  for (const r of probeResults) {
+    if (r.rowCount > bestCount) {
+      bestCount = r.rowCount;
+      bestUrl = r.url;
     }
   }
 
   if (bestUrl && bestCount > 0) {
     logger.info(`[EndpointDiscovery] Best probed endpoint: ${bestUrl} (${bestCount} rows)`);
-    return { url: bestUrl, rowCount: bestCount, rankedCandidates: ranked };
+    return { url: bestUrl, rowCount: bestCount, rankedCandidates: ranked, probeResults };
   }
 
   logger.warn(
@@ -279,7 +285,7 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
       `Pick a URL from the ranked list manually or paste .../FeatureServer/N/query from DevTools. ` +
       `Top heuristic: ${ranked[0] || 'none'}`
   );
-  return { url: null, rowCount: 0, rankedCandidates: ranked };
+  return { url: null, rowCount: 0, rankedCandidates: ranked, probeResults };
 }
 
 /**
@@ -287,11 +293,16 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
  */
 async function discoverBestFromPage(pageUrl, probeManifest, timeoutMs = 20000) {
   const candidates = await discoverCandidateUrlsFromPage(pageUrl, timeoutMs);
-  if (!candidates.length) return { endpointUrl: null, rowCount: 0, candidates: [] };
+  if (!candidates.length) return { endpointUrl: null, rowCount: 0, candidates: [], probeResults: [] };
 
-  const { url, rowCount, rankedCandidates } = await pickBestEndpointByProbing(candidates, probeManifest);
+  const { url, rowCount, rankedCandidates, probeResults } = await pickBestEndpointByProbing(candidates, probeManifest);
   const listForUi = rankedCandidates && rankedCandidates.length ? rankedCandidates : candidates;
-  return { endpointUrl: url, rowCount, candidates: listForUi };
+  return {
+    endpointUrl: url,
+    rowCount,
+    candidates: listForUi,
+    probeResults: probeResults || []
+  };
 }
 
 /** Legacy: best heuristic candidate (prefer ArcGIS /query over bare FeatureServer/N) */
@@ -348,36 +359,49 @@ async function discoverEndpoint(url, logOrOpts = logger) {
 
   log.info('[EndpointDiscovery] Page URL detected, listening for API requests...');
 
-  if (probeManifest && Object.keys(probeManifest).length > 0) {
-    const { endpointUrl, rowCount, candidates } = await discoverBestFromPage(trimmed, probeManifest, 20000);
-    if (endpointUrl) {
-      return {
-        endpointUrl,
-        type: 'json',
-        hint: `Data endpoint selected by probe (${rowCount} row(s) with probe parameters). Paste your own where/outFields in Query Parameters if needed.`,
-        rowCount,
-        candidates
-      };
-    }
-    if (candidates && candidates.length) {
-      return {
-        endpointUrl: null,
-        type: 'json',
-        hint: `Found ${candidates.length} ranked API candidate(s) but none returned rows when probed (try widening where to 1=1 in Query Parameters, or paste the exact .../FeatureServer/N/query URL from DevTools).`,
-        candidates
-      };
-    }
+  const defaultProbe = { query_params: { f: 'json', where: '1=1', outFields: '*' } };
+  const effectiveProbe =
+    probeManifest && typeof probeManifest === 'object' && Object.keys(probeManifest).length > 0
+      ? probeManifest
+      : defaultProbe;
+
+  const { endpointUrl, rowCount, candidates, probeResults } = await discoverBestFromPage(trimmed, effectiveProbe, 20000);
+  if (endpointUrl) {
+    return {
+      endpointUrl,
+      type: 'json',
+      hint: `Data endpoint selected by probe (${rowCount} row(s); probe used where=1=1). Adjust Query Parameters for your filters.`,
+      rowCount,
+      candidates,
+      probeResults
+    };
+  }
+  if (candidates && candidates.length) {
+    return {
+      endpointUrl: null,
+      type: 'json',
+      hint: `Found ${candidates.length} API candidate(s); none returned rows on probe. Pick one below or paste .../FeatureServer/N/query from DevTools.`,
+      candidates,
+      probeResults
+    };
   }
 
   const found = await discoverFromPage(trimmed, 20000);
   if (found) {
-    return { endpointUrl: found, type: 'json', hint: 'Data API endpoint detected from page requests.' };
+    return {
+      endpointUrl: found,
+      type: 'json',
+      hint: 'Data API endpoint detected from page requests (heuristic only; no row probe). Prefer a full discover run with network capture.',
+      candidates: [found],
+      probeResults: []
+    };
   }
 
   return {
     endpointUrl: null,
     type: 'page',
-    hint: 'No data API endpoint detected. You can keep this URL to scrape as a webpage (AI or intercept).'
+    hint: 'No data API endpoint detected. You can keep this URL to scrape as a webpage (AI or intercept).',
+    probeResults: []
   };
 }
 
