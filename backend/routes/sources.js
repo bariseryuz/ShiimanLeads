@@ -105,7 +105,8 @@ router.post('/discover-endpoint', express.json(), async (req, res) => {
       hint: result.hint,
       rowCount: result.rowCount,
       candidates: result.candidates,
-      probeResults: result.probeResults
+      probeResults: result.probeResults,
+      aiSuggestion: result.aiSuggestion
     });
   } catch (e) {
     logger.error(`Discover endpoint error: ${e.message}`);

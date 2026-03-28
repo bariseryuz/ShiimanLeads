@@ -1056,7 +1056,11 @@
       const fallback = { query_params: { f: 'json', where: '1=1', outFields: '*' } };
       if (!raw) return fallback;
       try {
-        const o = JSON.parse(normalizeJsonQuotes(raw));
+        const normalized =
+          typeof normalizeJsonQuotes === 'function'
+            ? normalizeJsonQuotes(raw)
+            : raw.replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"').replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+        const o = JSON.parse(normalized);
         if (o && typeof o === 'object' && !Array.isArray(o)) {
           return { query_params: o };
         }
@@ -1165,6 +1169,19 @@
           body: JSON.stringify({ url, probeManifest })
         });
         const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          const msg = data.error || data.hint || 'HTTP ' + res.status;
+          if (hintEl) {
+            hintEl.textContent =
+              res.status === 401
+                ? 'Not logged in — refresh the page and sign in, then try Find endpoint again.'
+                : 'Find endpoint failed: ' + msg;
+            hintEl.style.display = 'block';
+            hintEl.style.color = '#dc2626';
+          }
+          renderDiscoverCandidates([], null);
+          return;
+        }
         if (data.endpointUrl) {
           urlInput.value = data.endpointUrl;
           if (hintEl) {

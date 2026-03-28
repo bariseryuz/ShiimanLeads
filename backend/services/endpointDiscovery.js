@@ -9,8 +9,66 @@ const logger = require('../utils/logger');
 const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./scraper/stealth');
 const { discoverArcGISEndpoint } = require('./scraper/arcgis');
 const { probeRowCount } = require('../engine/adapters/rest');
+const { getGeminiModel, isAIAvailable } = require('./ai/geminiClient');
 
 const MAX_CANDIDATES_TO_PROBE = parseInt(process.env.ENDPOINT_DISCOVERY_MAX_PROBE || '20', 10) || 20;
+
+/** Set ENDPOINT_DISCOVERY_USE_GEMINI=false to skip Gemini even when GEMINI_API_KEY is set. */
+function geminiDiscoveryEnabled() {
+  return process.env.ENDPOINT_DISCOVERY_USE_GEMINI !== 'false';
+}
+
+/**
+ * Ask Gemini which probed ArcGIS/REST URL is best for tabular operational data (permits, inspections, etc.).
+ * Advisory only — row-count probe still wins for endpointUrl unless you merge in UI.
+ * @param {{ url: string, rowCount: number, score: number }[]} probeResults
+ * @param {string} pageUrlHint
+ * @returns {Promise<{ recommendedUrl: string|null, reason: string }|null>}
+ */
+async function suggestEndpointWithGemini(probeResults, pageUrlHint = '') {
+  if (!geminiDiscoveryEnabled() || !isAIAvailable() || !probeResults || probeResults.length === 0) {
+    return null;
+  }
+  try {
+    const model = getGeminiModel('endpoint_discovery');
+    const lines = probeResults.slice(0, 25).map(
+      (r, i) => `${i + 1}. rows=${r.rowCount} heuristicScore=${r.score} url=${r.url}`
+    );
+    const prompt = `You pick the single best API endpoint for extracting municipal / government TABULAR data (permits, applications, inspections, licenses, violations).
+
+Prefer: services named Planning, Permits including adress phone number, issue date and any other details we might need for communication with the clients. Code Enforcement, Licensing, Inspections, Open Data tables.
+Avoid: basemaps, parcels-only if the goal is permits, roads/centerlines, boundaries, evacuation zones, hillshade, VectorTileServer.
+
+Page opened: ${pageUrlHint || 'unknown'}
+
+Candidates (each probed with JSON where=1=1; rowCount is how many rows returned):
+${lines.join('\n')}
+
+Reply with ONLY valid JSON, no markdown:
+{"recommendedUrl":"<exact url string copied from the list above, or null if none suitable>","reason":"<one short sentence>"}`;
+
+    const result = await model.generateContent(prompt);
+    const raw = (await result.response.text()).trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
+    const parsed = JSON.parse(raw);
+    const reason = parsed && typeof parsed.reason === 'string' ? parsed.reason.trim().slice(0, 400) : '';
+    const rawRec = parsed && Object.prototype.hasOwnProperty.call(parsed, 'recommendedUrl') ? parsed.recommendedUrl : null;
+    if (rawRec === null || rawRec === undefined) {
+      return { recommendedUrl: null, reason: reason || 'No recommendation.' };
+    }
+    const rec = typeof rawRec === 'string' ? rawRec.trim() : '';
+    if (!rec) {
+      return { recommendedUrl: null, reason: reason || 'No URL chosen.' };
+    }
+    if (probeResults.some(p => p.url === rec)) {
+      logger.info(`[EndpointDiscovery] Gemini recommends: ${rec.slice(0, 120)}…`);
+      return { recommendedUrl: rec, reason };
+    }
+    logger.warn(`[EndpointDiscovery] Gemini returned URL not in probe list; ignoring.`);
+  } catch (e) {
+    logger.warn(`[EndpointDiscovery] Gemini suggestion failed: ${e.message}`);
+  }
+  return null;
+}
 
 /**
  * Pull .../FeatureServer/N/query URLs out of a full request URL (including ArcGIS /sharing/proxy?https://...).
@@ -177,8 +235,10 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
 
     page.on('request', req => {
       if (req.method() !== 'GET' && req.method() !== 'POST') return;
-      if (req.resourceType() !== 'xhr' && req.resourceType() !== 'fetch') return;
       const reqUrl = req.url();
+      const rt = req.resourceType();
+      const looksLikeFeatureQuery = /\/featureserver\/\d+\/query/i.test(reqUrl);
+      if (!looksLikeFeatureQuery && rt !== 'xhr' && rt !== 'fetch') return;
       if (!isCandidateApiUrl(reqUrl)) return;
 
       const toAdd = [];
@@ -199,7 +259,7 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
     });
 
     await page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: Math.min(timeoutMs, 60000) });
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(8000);
     const searchBtn = page.locator('button:has-text("Search"), button[type="submit"], input[type="submit"], [type="submit"]');
     if (await searchBtn.count() > 0) {
       await searchBtn.first().click({ timeout: 5000 }).catch(() => {});
@@ -293,15 +353,28 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
  */
 async function discoverBestFromPage(pageUrl, probeManifest, timeoutMs = 20000) {
   const candidates = await discoverCandidateUrlsFromPage(pageUrl, timeoutMs);
-  if (!candidates.length) return { endpointUrl: null, rowCount: 0, candidates: [], probeResults: [] };
+  if (!candidates.length) {
+    return { endpointUrl: null, rowCount: 0, candidates: [], probeResults: [], aiSuggestion: null };
+  }
 
   const { url, rowCount, rankedCandidates, probeResults } = await pickBestEndpointByProbing(candidates, probeManifest);
   const listForUi = rankedCandidates && rankedCandidates.length ? rankedCandidates : candidates;
+
+  let aiSuggestion = null;
+  if (probeResults && probeResults.length > 0) {
+    try {
+      aiSuggestion = await suggestEndpointWithGemini(probeResults, pageUrl);
+    } catch (e) {
+      logger.warn(`[EndpointDiscovery] Gemini advisory: ${e.message}`);
+    }
+  }
+
   return {
     endpointUrl: url,
     rowCount,
     candidates: listForUi,
-    probeResults: probeResults || []
+    probeResults: probeResults || [],
+    aiSuggestion
   };
 }
 
@@ -365,24 +438,34 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       ? probeManifest
       : defaultProbe;
 
-  const { endpointUrl, rowCount, candidates, probeResults } = await discoverBestFromPage(trimmed, effectiveProbe, 20000);
+  const { endpointUrl, rowCount, candidates, probeResults, aiSuggestion } = await discoverBestFromPage(
+    trimmed,
+    effectiveProbe,
+    20000
+  );
+  const aiHint =
+    aiSuggestion && aiSuggestion.reason
+      ? ` Gemini: ${aiSuggestion.reason}${aiSuggestion.recommendedUrl ? ` Suggested URL: ${aiSuggestion.recommendedUrl}` : ''}`
+      : '';
   if (endpointUrl) {
     return {
       endpointUrl,
       type: 'json',
-      hint: `Data endpoint selected by probe (${rowCount} row(s); probe used where=1=1). Adjust Query Parameters for your filters.`,
+      hint: `Data endpoint selected by probe (${rowCount} row(s); probe used where=1=1). Adjust Query Parameters for your filters.${aiHint}`,
       rowCount,
       candidates,
-      probeResults
+      probeResults,
+      aiSuggestion
     };
   }
   if (candidates && candidates.length) {
     return {
       endpointUrl: null,
       type: 'json',
-      hint: `Found ${candidates.length} API candidate(s); none returned rows on probe. Pick one below or paste .../FeatureServer/N/query from DevTools.`,
+      hint: `Found ${candidates.length} API candidate(s); none returned rows on probe. Pick one below or paste .../FeatureServer/N/query from DevTools.${aiHint}`,
       candidates,
-      probeResults
+      probeResults,
+      aiSuggestion
     };
   }
 
@@ -410,6 +493,7 @@ module.exports = {
   discoverBestFromPage,
   discoverCandidateUrlsFromPage,
   pickBestEndpointByProbing,
+  suggestEndpointWithGemini,
   isLikelyEndpoint,
   isArcGISHubUrl
 };
