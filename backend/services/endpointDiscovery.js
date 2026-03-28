@@ -112,15 +112,52 @@ async function suggestEndpointWithGemini(probeResults, pageUrlHint = '') {
 }
 
 /**
+ * Unwrap URL-encoded inner URLs (ArcGIS /sharing/proxy?https%3A%2F%2F...%2FFeatureServer%2F0%2Fquery).
+ * @param {string} s
+ * @returns {string}
+ */
+function expandUrlForPatternMatch(s) {
+  if (!s || typeof s !== 'string') return '';
+  const seen = new Set([s]);
+  let cur = s;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const next = decodeURIComponent(cur.replace(/\+/g, '%20'));
+      if (next === cur || seen.has(next)) break;
+      seen.add(next);
+      cur = next;
+    } catch {
+      break;
+    }
+  }
+  return [...seen].join('\n');
+}
+
+/**
  * Pull .../FeatureServer/N/query URLs out of a full request URL (including ArcGIS /sharing/proxy?https://...).
+ * Runs on raw and progressively decoded forms so encoded proxies still match.
  * @param {string} fullUrl
  * @returns {string[]}
  */
 function extractFeatureServerQueryUrls(fullUrl) {
   if (!fullUrl || typeof fullUrl !== 'string') return [];
   const re = /(https?:\/\/[^\s"'<>]+\/FeatureServer\/\d+\/query)/gi;
-  const m = fullUrl.match(re);
-  return m ? [...new Set(m.map(u => u.replace(/\/+$/, '')))] : [];
+  const out = new Set();
+  const haystack = expandUrlForPatternMatch(fullUrl);
+  for (const chunk of haystack.split('\n')) {
+    const m = chunk.match(re);
+    if (m) m.forEach(u => out.add(u.replace(/\/+$/, '')));
+  }
+  return [...out];
+}
+
+/** True if URL (possibly encoded) references a Feature Layer query endpoint. */
+function urlLooksLikeFeatureLayerQuery(reqUrl) {
+  if (!reqUrl) return false;
+  if (/\/featureserver\/\d+\/query/i.test(reqUrl)) return true;
+  const expanded = expandUrlForPatternMatch(reqUrl);
+  if (/\/featureserver\/\d+\/query/i.test(expanded)) return true;
+  return /%2[fF]featureserver%2[fF]\d+%2[fF]query/i.test(reqUrl);
 }
 
 /**
@@ -278,7 +315,7 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
       if (req.method() !== 'GET' && req.method() !== 'POST') return;
       const reqUrl = req.url();
       const rt = req.resourceType();
-      const looksLikeFeatureQuery = /\/featureserver\/\d+\/query/i.test(reqUrl);
+      const looksLikeFeatureQuery = urlLooksLikeFeatureLayerQuery(reqUrl);
       if (!looksLikeFeatureQuery && rt !== 'xhr' && rt !== 'fetch') return;
       if (!isCandidateApiUrl(reqUrl)) return;
 
@@ -311,6 +348,10 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
 
     if (candidateUrls.length) {
       logger.info(`[EndpointDiscovery] Collected ${candidateUrls.length} candidate URL(s) from page`);
+    } else {
+      logger.warn(
+        `[EndpointDiscovery] No candidate URLs captured from network (page may be login-only, non-ArcGIS, or APIs use patterns we do not listen for). ${pageUrl}`
+      );
     }
     return candidateUrls;
   } catch (err) {
@@ -329,7 +370,8 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
 function buildProbeManifest(probeManifest = {}) {
   const m = { ...probeManifest };
   const qp = { ...(m.query_params || m.params || {}) };
-  if (qp.f == null || qp.f === '') qp.f = 'json';
+  // Discovery must probe JSON — users often paste f=pbf from DevTools, which yields 0 JSON rows.
+  qp.f = 'json';
   qp.where = '1=1';
   if (qp.outFields == null || qp.outFields === '') qp.outFields = '*';
   m.query_params = qp;
