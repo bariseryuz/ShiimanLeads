@@ -818,6 +818,7 @@
             <div style="font-size: 0.75rem; color: var(--gray-600); margin-bottom: 0.5rem;">Probed with <code>f=json</code>, <code>where=1=1</code>, <code>outFields=*</code> — pick the layer that matches your data (higher row count usually means the main table).</div>
             <table id="discoverCandidatesTable" style="width:100%; font-size: 0.8rem; border-collapse: collapse;"></table>
           </div>
+          <div id="discoverApiGuidesWrap" style="display: none; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid #c7d2fe; border-radius: 8px; background: #f8fafc; max-height: 420px; overflow: auto;"></div>
         </div>
         
         <!-- SOURCE TYPE SELECTOR -->
@@ -1075,6 +1076,96 @@
       const table = document.getElementById('discoverCandidatesTable');
       if (wrap) wrap.style.display = 'none';
       if (table) table.innerHTML = '';
+      const guides = document.getElementById('discoverApiGuidesWrap');
+      if (guides) {
+        guides.style.display = 'none';
+        guides.innerHTML = '';
+      }
+    }
+
+    function renderApiGuides(apiGuides) {
+      const wrap = document.getElementById('discoverApiGuidesWrap');
+      if (!wrap) return;
+      wrap.innerHTML = '';
+      if (!apiGuides || !apiGuides.length) {
+        wrap.style.display = 'none';
+        return;
+      }
+      wrap.style.display = 'block';
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:600;margin-bottom:0.5rem;color:#3730a3;font-size:0.9rem;';
+      title.textContent = 'How to pull data (AI) — parameters & example';
+      wrap.appendChild(title);
+      apiGuides.forEach((g, idx) => {
+        const det = document.createElement('details');
+        det.style.marginBottom = '0.75rem';
+        const sum = document.createElement('summary');
+        sum.style.cursor = 'pointer';
+        sum.style.fontWeight = '600';
+        sum.style.fontSize = '0.85rem';
+        sum.textContent = (g.title || g.url || 'API ' + (idx + 1)).slice(0, 120);
+        det.appendChild(sum);
+        const meta = document.createElement('p');
+        meta.style.cssText = 'font-size:0.8rem;color:#475569;margin:0.35rem 0;';
+        meta.textContent = (g.httpMethod || 'GET') + ' — ' + (g.howToPull || '');
+        det.appendChild(meta);
+        const link = document.createElement('p');
+        link.style.cssText = 'word-break:break-all;font-size:0.72rem;margin:0.25rem 0;';
+        const a = document.createElement('a');
+        a.href = g.url || '#';
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = g.url || '';
+        link.appendChild(a);
+        det.appendChild(link);
+        if (Array.isArray(g.parameters) && g.parameters.length) {
+          const ul = document.createElement('ul');
+          ul.style.cssText = 'font-size:0.78rem;margin:0.35rem 0;padding-left:1.1rem;';
+          g.parameters.forEach(p => {
+            const li = document.createElement('li');
+            const code = document.createElement('code');
+            code.textContent = p.name || '';
+            li.appendChild(code);
+            li.appendChild(document.createTextNode(' — ' + (p.role || '') + ' '));
+            const em = document.createElement('em');
+            em.textContent = 'e.g. ' + (p.example != null ? String(p.example) : '');
+            li.appendChild(em);
+            ul.appendChild(li);
+          });
+          det.appendChild(ul);
+        }
+        const preLbl = document.createElement('div');
+        preLbl.style.cssText = 'font-size:0.72rem;font-weight:600;margin-top:0.35rem;';
+        preLbl.textContent = 'Example Query Parameters (JSON):';
+        det.appendChild(preLbl);
+        const pre = document.createElement('pre');
+        pre.style.cssText = 'font-size:0.68rem;overflow:auto;max-height:140px;background:#fff;border:1px solid var(--gray-200);padding:0.5rem;border-radius:6px;white-space:pre-wrap;';
+        pre.textContent = g.queryParamsJsonExample || '{}';
+        det.appendChild(pre);
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn-secondary';
+        btn.style.cssText = 'font-size:0.72rem;margin-top:0.35rem;';
+        btn.textContent = 'Apply example to Query Parameters';
+        btn.addEventListener('click', () => {
+          const raw = g.queryParamsJsonExample;
+          const apiEl = document.getElementById('apiParams');
+          if (!apiEl || !raw) return;
+          try {
+            const o = JSON.parse(raw);
+            apiEl.value = JSON.stringify(o, null, 2);
+          } catch {
+            apiEl.value = raw;
+          }
+          const st = document.getElementById('sourceType');
+          if (st) {
+            st.value = 'json';
+            toggleSourceTypeFields();
+          }
+        });
+        det.appendChild(btn);
+        wrap.appendChild(det);
+      });
     }
 
     function renderDiscoverCandidates(probeResults, selectedUrl) {
@@ -1180,6 +1271,7 @@
             hintEl.style.color = '#dc2626';
           }
           renderDiscoverCandidates([], null);
+          renderApiGuides([]);
           return;
         }
         if (data.endpointUrl) {
@@ -1200,6 +1292,7 @@
           }
         }
         renderDiscoverCandidates(data.probeResults || [], data.endpointUrl || null);
+        renderApiGuides(data.apiGuides || []);
       } catch (e) {
         if (hintEl) { hintEl.textContent = 'Request failed: ' + (e.message || 'network error'); hintEl.style.display = 'block'; hintEl.style.color = '#dc2626'; }
       }

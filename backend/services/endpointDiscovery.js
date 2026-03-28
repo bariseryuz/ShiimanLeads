@@ -19,55 +19,96 @@ function geminiDiscoveryEnabled() {
 }
 
 /**
- * Ask Gemini which probed ArcGIS/REST URL is best for tabular operational data (permits, inspections, etc.).
- * Advisory only — row-count probe still wins for endpointUrl unless you merge in UI.
+ * Gemini: pick best URL + per-candidate pull guide (method, parameters, example Query Parameters JSON for Shiiman).
  * @param {{ url: string, rowCount: number, score: number }[]} probeResults
  * @param {string} pageUrlHint
- * @returns {Promise<{ recommendedUrl: string|null, reason: string }|null>}
+ * @returns {Promise<{ recommendedUrl: string|null, reason: string, apiGuides: object[] }|null>}
  */
-async function suggestEndpointWithGemini(probeResults, pageUrlHint = '') {
+async function enrichDiscoveryWithGemini(probeResults, pageUrlHint = '') {
   if (!geminiDiscoveryEnabled() || !isAIAvailable() || !probeResults || probeResults.length === 0) {
     return null;
   }
   try {
     const model = getGeminiModel('endpoint_discovery');
-    const lines = probeResults.slice(0, 25).map(
+    const lines = probeResults.slice(0, 20).map(
       (r, i) => `${i + 1}. rows=${r.rowCount} heuristicScore=${r.score} url=${r.url}`
     );
-    const prompt = `You pick the single best API endpoint for extracting municipal / government TABULAR data (permits, applications, inspections, licenses, violations).
+    const prompt = `You help configure HTTP data pulls for a lead app (permits, inspections, licenses, open data).
 
-Prefer: services named Planning, Permits including adress phone number, issue date and any other details we might need for communication with the clients. Code Enforcement, Licensing, Inspections, Open Data tables.
-Avoid: basemaps, parcels-only if the goal is permits, roads/centerlines, boundaries, evacuation zones, hillshade, VectorTileServer.
+Page URL: ${pageUrlHint || 'unknown'}
 
-Page opened: ${pageUrlHint || 'unknown'}
-
-Candidates (each probed with JSON where=1=1; rowCount is how many rows returned):
+Candidates (each probed with JSON where=1=1; rowCount = rows returned for that layer):
 ${lines.join('\n')}
 
-Reply with ONLY valid JSON, no markdown:
-{"recommendedUrl":"<exact url string copied from the list above, or null if none suitable>","reason":"<one short sentence>"}`;
+Tasks:
+1) Pick recommendedUrl — best for TABULAR operational data (permits, applications, inspections). Prefer Planning/Permits/Inspections layers. Avoid basemaps, roads-only, evacuation, VectorTileServer unless no alternative.
+2) For EACH candidate URL above, output ONE object in apiGuides with the SAME url string (exact match).
+   - ArcGIS .../FeatureServer/N/query: httpMethod GET; parameters must include f, where, outFields, returnGeometry, resultRecordCount (and common optional: outSR, orderByFields, spatialRel). Explain each briefly.
+   - Non-ArcGIS REST: describe real query params or POST body fields.
+   - queryParamsJsonExample: a SINGLE LINE string that is valid JSON (escaped) suitable for Shiiman "Query Parameters" — e.g. {"f":"json","where":"1=1","outFields":"*","returnGeometry":"false","resultRecordCount":"1000"}
+   - howToPull: one sentence (GET with query string vs POST).
+
+Return ONLY valid JSON, no markdown:
+{
+  "recommendedUrl":"<exact url from list or null>",
+  "reason":"<short>",
+  "apiGuides":[
+    {
+      "url":"<exact url from list>",
+      "title":"<short label>",
+      "httpMethod":"GET",
+      "parameters":[{"name":"f","role":"output format","example":"json"}],
+      "queryParamsJsonExample":"{\"f\":\"json\",\"where\":\"1=1\",\"outFields\":\"*\",\"returnGeometry\":\"false\"}",
+      "howToPull":"<one sentence>"
+    }
+  ]
+}
+apiGuides length must equal the number of candidate lines (${lines.length}).`;
 
     const result = await model.generateContent(prompt);
     const raw = (await result.response.text()).trim().replace(/^```json\s*/i, '').replace(/```\s*$/i, '');
     const parsed = JSON.parse(raw);
     const reason = parsed && typeof parsed.reason === 'string' ? parsed.reason.trim().slice(0, 400) : '';
     const rawRec = parsed && Object.prototype.hasOwnProperty.call(parsed, 'recommendedUrl') ? parsed.recommendedUrl : null;
-    if (rawRec === null || rawRec === undefined) {
-      return { recommendedUrl: null, reason: reason || 'No recommendation.' };
+    let recommendedUrl = null;
+    if (rawRec !== null && rawRec !== undefined) {
+      const rec = typeof rawRec === 'string' ? rawRec.trim() : '';
+      if (rec && probeResults.some(p => p.url === rec)) {
+        recommendedUrl = rec;
+        logger.info(`[EndpointDiscovery] Gemini recommends: ${rec.slice(0, 120)}…`);
+      } else if (rec) {
+        logger.warn(`[EndpointDiscovery] Gemini recommendedUrl not in probe list; ignoring.`);
+      }
     }
-    const rec = typeof rawRec === 'string' ? rawRec.trim() : '';
-    if (!rec) {
-      return { recommendedUrl: null, reason: reason || 'No URL chosen.' };
-    }
-    if (probeResults.some(p => p.url === rec)) {
-      logger.info(`[EndpointDiscovery] Gemini recommends: ${rec.slice(0, 120)}…`);
-      return { recommendedUrl: rec, reason };
-    }
-    logger.warn(`[EndpointDiscovery] Gemini returned URL not in probe list; ignoring.`);
+
+    const guidesIn = Array.isArray(parsed.apiGuides) ? parsed.apiGuides : [];
+    const allowed = new Set(probeResults.map(p => p.url));
+    const apiGuides = guidesIn
+      .filter(g => g && typeof g.url === 'string' && allowed.has(g.url))
+      .map(g => ({
+        url: g.url,
+        title: typeof g.title === 'string' ? g.title.slice(0, 200) : '',
+        httpMethod: typeof g.httpMethod === 'string' ? g.httpMethod : 'GET',
+        parameters: Array.isArray(g.parameters) ? g.parameters : [],
+        queryParamsJsonExample:
+          typeof g.queryParamsJsonExample === 'string' ? g.queryParamsJsonExample.slice(0, 4000) : '',
+        howToPull: typeof g.howToPull === 'string' ? g.howToPull.slice(0, 500) : ''
+      }));
+
+    return { recommendedUrl, reason: reason || '', apiGuides };
   } catch (e) {
-    logger.warn(`[EndpointDiscovery] Gemini suggestion failed: ${e.message}`);
+    logger.warn(`[EndpointDiscovery] Gemini enrichment failed: ${e.message}`);
   }
   return null;
+}
+
+/**
+ * @returns {Promise<{ recommendedUrl: string|null, reason: string }|null>}
+ */
+async function suggestEndpointWithGemini(probeResults, pageUrlHint = '') {
+  const e = await enrichDiscoveryWithGemini(probeResults, pageUrlHint);
+  if (!e) return null;
+  return { recommendedUrl: e.recommendedUrl, reason: e.reason };
 }
 
 /**
@@ -354,16 +395,28 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
 async function discoverBestFromPage(pageUrl, probeManifest, timeoutMs = 20000) {
   const candidates = await discoverCandidateUrlsFromPage(pageUrl, timeoutMs);
   if (!candidates.length) {
-    return { endpointUrl: null, rowCount: 0, candidates: [], probeResults: [], aiSuggestion: null };
+    return {
+      endpointUrl: null,
+      rowCount: 0,
+      candidates: [],
+      probeResults: [],
+      aiSuggestion: null,
+      apiGuides: []
+    };
   }
 
   const { url, rowCount, rankedCandidates, probeResults } = await pickBestEndpointByProbing(candidates, probeManifest);
   const listForUi = rankedCandidates && rankedCandidates.length ? rankedCandidates : candidates;
 
   let aiSuggestion = null;
+  let apiGuides = [];
   if (probeResults && probeResults.length > 0) {
     try {
-      aiSuggestion = await suggestEndpointWithGemini(probeResults, pageUrl);
+      const enriched = await enrichDiscoveryWithGemini(probeResults, pageUrl);
+      if (enriched) {
+        aiSuggestion = { recommendedUrl: enriched.recommendedUrl, reason: enriched.reason };
+        apiGuides = Array.isArray(enriched.apiGuides) ? enriched.apiGuides : [];
+      }
     } catch (e) {
       logger.warn(`[EndpointDiscovery] Gemini advisory: ${e.message}`);
     }
@@ -374,7 +427,8 @@ async function discoverBestFromPage(pageUrl, probeManifest, timeoutMs = 20000) {
     rowCount,
     candidates: listForUi,
     probeResults: probeResults || [],
-    aiSuggestion
+    aiSuggestion,
+    apiGuides
   };
 }
 
@@ -438,7 +492,7 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       ? probeManifest
       : defaultProbe;
 
-  const { endpointUrl, rowCount, candidates, probeResults, aiSuggestion } = await discoverBestFromPage(
+  const { endpointUrl, rowCount, candidates, probeResults, aiSuggestion, apiGuides } = await discoverBestFromPage(
     trimmed,
     effectiveProbe,
     20000
@@ -455,7 +509,8 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       rowCount,
       candidates,
       probeResults,
-      aiSuggestion
+      aiSuggestion,
+      apiGuides: apiGuides || []
     };
   }
   if (candidates && candidates.length) {
@@ -465,7 +520,8 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       hint: `Found ${candidates.length} API candidate(s); none returned rows on probe. Pick one below or paste .../FeatureServer/N/query from DevTools.${aiHint}`,
       candidates,
       probeResults,
-      aiSuggestion
+      aiSuggestion,
+      apiGuides: apiGuides || []
     };
   }
 
@@ -476,7 +532,8 @@ async function discoverEndpoint(url, logOrOpts = logger) {
       type: 'json',
       hint: 'Data API endpoint detected from page requests (heuristic only; no row probe). Prefer a full discover run with network capture.',
       candidates: [found],
-      probeResults: []
+      probeResults: [],
+      apiGuides: []
     };
   }
 
@@ -484,7 +541,8 @@ async function discoverEndpoint(url, logOrOpts = logger) {
     endpointUrl: null,
     type: 'page',
     hint: 'No data API endpoint detected. You can keep this URL to scrape as a webpage (AI or intercept).',
-    probeResults: []
+    probeResults: [],
+    apiGuides: []
   };
 }
 
@@ -493,6 +551,7 @@ module.exports = {
   discoverBestFromPage,
   discoverCandidateUrlsFromPage,
   pickBestEndpointByProbing,
+  enrichDiscoveryWithGemini,
   suggestEndpointWithGemini,
   isLikelyEndpoint,
   isArcGISHubUrl
