@@ -1765,7 +1765,11 @@ async function loadScreenshots(sources) {
         // API fields
         if (sourceType === 'json') {
           document.getElementById('apiMethod').value = source.data.method || 'GET';
-          document.getElementById('apiParams').value = source.data.params ? JSON.stringify(source.data.params, null, 2) : '';
+          const qpJson = source.data.params ?? source.data.query_params;
+          document.getElementById('apiParams').value =
+            qpJson && typeof qpJson === 'object' && !Array.isArray(qpJson)
+              ? JSON.stringify(qpJson, null, 2)
+              : '';
           const fmtEl = document.getElementById('apiPostBodyFormat');
           if (fmtEl) {
             fmtEl.value = source.data.post_body_format === 'form' ? 'form' : 'json';
@@ -2243,9 +2247,9 @@ async function loadScreenshots(sources) {
             return;
           }
         }
-        if (document.getElementById('useEngine').checked) {
-          sourceData.query_params = sourceData.params;
-        }
+        // Always persist query_params alongside params (engine + sample + legacy paths read query_params).
+        // "Use Universal Engine" only controls filters/mapping UI, not whether these are stored.
+        sourceData.query_params = sourceData.params;
       } else if (sourceType === 'arcgis') {
         // ArcGIS Hub mode (key grabber + JSON API)
         sourceData.method = 'arcgis';
@@ -2347,12 +2351,14 @@ async function loadScreenshots(sources) {
           response = await fetch(`/api/my-sources/${editingSourceId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify(sourceData)
           });
         } else {
           response = await fetch('/api/my-sources', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify(sourceData)
           });
         }

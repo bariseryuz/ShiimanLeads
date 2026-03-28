@@ -410,10 +410,11 @@ router.get('/:id/sample', async (req, res) => {
     if (sourceConfig.type === 'json') {
       let url = sourceConfig.url;
       let response;
-      
-      if (sourceConfig.method === 'POST' && sourceConfig.params) {
+      const sampleQuery = sourceConfig.params || sourceConfig.query_params;
+
+      if (sourceConfig.method === 'POST' && sampleQuery) {
         // For POST requests, send params in body
-        const sampleParams = { ...sourceConfig.params };
+        const sampleParams = { ...sampleQuery };
         // Try to limit records for sample
         if (sampleParams.pageSize) sampleParams.pageSize = '10';
         if (sampleParams.resultRecordCount) sampleParams.resultRecordCount = 10;
@@ -424,9 +425,9 @@ router.get('/:id/sample', async (req, res) => {
             ...(sourceConfig.headers || {})
           }
         });
-      } else if (sourceConfig.params) {
+      } else if (sampleQuery) {
         // For GET requests, add params to URL
-        const sampleParams = { ...sourceConfig.params };
+        const sampleParams = { ...sampleQuery };
         
         // Try to limit records for sample (different APIs use different params)
         if (sampleParams['$limit']) {
