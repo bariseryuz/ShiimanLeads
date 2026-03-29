@@ -76,6 +76,18 @@ async function runUniversalPipeline(source) {
 }
 
 /**
+ * POST body present (My Sources: form string or JSON object). Empty object/string = false.
+ * Ensures Phoenix-style `POST` + `body` + `post_body_format=form` always routes to REST adapter
+ * even when `query_params` was omitted in stored JSON.
+ */
+function hasNonEmptyBody(m) {
+  if (!m || m.body === undefined || m.body === null) return false;
+  if (typeof m.body === 'string') return m.body.trim().length > 0;
+  if (typeof m.body === 'object' && !Array.isArray(m.body)) return Object.keys(m.body).length > 0;
+  return true;
+}
+
+/**
  * Check if this source should use the new Engine (has manifest-style config).
  * @param {Object} source - Parsed source object
  * @returns {boolean}
@@ -87,6 +99,7 @@ function shouldUseEngine(source) {
   return !!(
     m.query_params ||
     m.params ||
+    hasNonEmptyBody(m) ||
     m.where_clause ||
     (Array.isArray(m.filters) && m.filters.length > 0)
   );

@@ -12,6 +12,7 @@
     "pm2-stop": "pm2 stop shiiman-leads",
     "build": "node build.js",
     "api": "node server.js",
+    "test:engine": "node --test engine/__tests__/*.test.js",
     "postinstall": "node -e \"try { require('better-sqlite3') } catch (e) { console.log('better-sqlite3 installed') }\" && npx playwright install chromium"
   },
   "dependencies": {
