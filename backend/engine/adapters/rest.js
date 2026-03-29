@@ -75,6 +75,15 @@ function isArcGISFeatureLayerQueryUrl(url) {
 function mergeArcGISQueryDefaults(params, manifest) {
   const p = { ...(params || {}) };
   if (p.f == null || p.f === '') p.f = 'json';
+  // PBF is for compact binary (often map/tile-style responses). This app only parses JSON feature payloads.
+  // DevTools often shows f=pbf from the map’s vector requests — not the best copy for tabular /query exports.
+  const fmt = String(p.f || '').toLowerCase();
+  if (fmt === 'pbf' || fmt === 'protobuf') {
+    logger.info(
+      `[Engine REST Adapter] Query had f=${fmt} — using f=json instead (we need JSON features/attributes, not protobuf bytes).`
+    );
+    p.f = 'json';
+  }
   if (p.outFields == null || p.outFields === '') p.outFields = '*';
   if (p.where == null || p.where === '') p.where = manifest.where_clause || '1=1';
   const rc = parseInt(p.resultRecordCount, 10);
