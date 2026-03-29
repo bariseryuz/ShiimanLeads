@@ -1817,7 +1817,7 @@ async function loadScreenshots(sources) {
           document.getElementById('jsonPath').value = source.data.jsonPath || '';
           document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
           document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
-          document.getElementById('useEngine').checked = !!(source.data.query_params || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
+          document.getElementById('useEngine').checked = resolveUseUniversalEngineCheckbox(source.data, 'json');
           updateApiPostBodyUi();
         } else if (sourceType === 'arcgis') {
           document.getElementById('arcgisNavigation').value = source.data.navigationInstructions ? JSON.stringify(source.data.navigationInstructions, null, 2) : '';
@@ -1825,7 +1825,7 @@ async function loadScreenshots(sources) {
           document.getElementById('engineFieldMapping').value = source.data.field_mapping ? JSON.stringify(source.data.field_mapping, null, 2) : '';
           document.getElementById('engineFilters').value = source.data.filters ? JSON.stringify(source.data.filters, null, 2) : '';
           document.getElementById('engineWhereClause').value = source.data.where_clause || '';
-          document.getElementById('useEngine').checked = !!(source.data.where_clause || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
+          document.getElementById('useEngine').checked = resolveUseUniversalEngineCheckbox(source.data, 'arcgis');
         } else {
           document.getElementById('apiMethod').value = 'GET';
           document.getElementById('apiParams').value = '';
@@ -1854,7 +1854,7 @@ async function loadScreenshots(sources) {
           if (source.data.where_clause) {
             document.getElementById('engineWhereClause').value = source.data.where_clause;
           }
-          document.getElementById('useEngine').checked = !!(source.data.where_clause || (source.data.field_mapping && Object.keys(source.data.field_mapping).length) || (source.data.filters && source.data.filters.length));
+          document.getElementById('useEngine').checked = resolveUseUniversalEngineCheckbox(source.data, 'html');
         }
         
         document.getElementById('includeKeywords').value = source.data.includeWords?.join(', ') || '';
@@ -2165,6 +2165,24 @@ async function loadScreenshots(sources) {
       return parsed;
     }
 
+    /**
+     * "Use Universal Engine" is persisted as useUniversalEngine. Legacy sources had no flag and
+     * JSON load wrongly treated query_params (always saved, even {}) as "engine on".
+     */
+    function resolveUseUniversalEngineCheckbox(data, sourceType) {
+      const d = data || {};
+      if (d.useUniversalEngine !== undefined && d.useUniversalEngine !== null) {
+        return !!d.useUniversalEngine;
+      }
+      const hasMap = d.field_mapping && typeof d.field_mapping === 'object' && Object.keys(d.field_mapping).length;
+      const hasFilters = Array.isArray(d.filters) && d.filters.length;
+      const hasWhere = typeof d.where_clause === 'string' && d.where_clause.trim();
+      if (sourceType === 'json') {
+        return !!(hasMap || hasFilters);
+      }
+      return !!(hasWhere || hasMap || hasFilters);
+    }
+
     document.getElementById('sourceForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       
@@ -2346,6 +2364,8 @@ async function loadScreenshots(sources) {
         }
       }
       
+      sourceData.useUniversalEngine = document.getElementById('useEngine').checked;
+
       // Add proxy configuration (for both modes)
       const useProxyCheckbox = document.getElementById('useProxy');
       sourceData.useProxy = useProxyCheckbox.checked;
