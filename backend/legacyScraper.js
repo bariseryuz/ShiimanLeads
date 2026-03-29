@@ -27,6 +27,7 @@ const { setupApiInterceptor, waitForApiResponse, extractRecordsFromApiResponse }
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
 const engine = require('./engine');
+const { METHODS_WITH_BODY } = require('./engine/adapters/rest');
 const { tryHealJsonEndpoint } = require('./services/endpointSelfHeal');
 
 /**
@@ -408,23 +409,26 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           } else {
             let response;
 
-            if (source.method === 'POST' && source.params) {
-              logger.info(`   Method: POST with params`);
-              
-              // Convert to form-urlencoded for compatibility
+            const jsonMethod = (source.method || 'GET').toUpperCase();
+            if (METHODS_WITH_BODY.includes(jsonMethod) && source.params) {
+              logger.info(`   Method: ${jsonMethod} with params (form body)`);
+
               const formData = new URLSearchParams();
               Object.entries(source.params).forEach(([key, value]) => {
                 formData.append(key, String(value));
               });
-              
+
               const postHeaders = {
                 ...headers,
                 'Content-Type': 'application/x-www-form-urlencoded'
               };
-              
-              response = await axios.post(source.url, formData.toString(), { 
-                headers: postHeaders, 
-                timeout: 120000 // 120s for slow government APIs
+
+              response = await axios.request({
+                method: jsonMethod.toLowerCase(),
+                url: source.url,
+                data: formData.toString(),
+                headers: postHeaders,
+                timeout: 120000
               });
             } else if (source.params) {
               const params = new URLSearchParams();

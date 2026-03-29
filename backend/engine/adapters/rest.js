@@ -20,6 +20,9 @@ const PROBE_TIMEOUT_MS = Math.min(
   120000
 );
 
+/** Methods that send a request body (form or JSON), not query-string GET. */
+const METHODS_WITH_BODY = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
 function warnIfLikelyCapped(rowCount, manifest) {
   const cap = Math.max(parseInt(manifest.limit, 10) || 1000, 1);
   if (rowCount > 0 && rowCount === cap) {
@@ -162,12 +165,12 @@ function objectToUrlEncodedString(obj) {
  * Low-level HTTP execution (used by fetch and endpoint probing). Does not parse rows or log per-request errors.
  * @param {string} url
  * @param {Object} manifest
- * @param {{ timeoutMs?: number }} [opts]
+ * @param {{ timeoutMs?: number, probe?: boolean }} [opts] — probe=true: discovery row-count probes; skip noisy INFO logs (reduces log flood / SRE alert noise on the target).
  * @returns {Promise<import('axios').AxiosResponse>}
  */
 async function executeRestRequest(url, manifest, opts = {}) {
   const resolvedUrl = ensureArcGISFeatureLayerQueryUrl(url);
-  if (resolvedUrl !== url) {
+  if (resolvedUrl !== url && !opts.probe) {
     logger.info(
       `[Engine REST Adapter] ArcGIS layer URL normalized to /query: ${resolvedUrl.slice(0, 180)}${resolvedUrl.length > 180 ? '…' : ''}`
     );
@@ -183,7 +186,7 @@ async function executeRestRequest(url, manifest, opts = {}) {
     params = mergeArcGISQueryDefaults(params, manifest);
   }
 
-  if (method === 'POST') {
+  if (METHODS_WITH_BODY.includes(method)) {
     const postFmt = String(manifest.post_body_format || manifest.postBodyFormat || 'json').toLowerCase();
     const ct = mergedHeaders['Content-Type'] || mergedHeaders['content-type'] || '';
     const isForm =
@@ -211,7 +214,13 @@ async function executeRestRequest(url, manifest, opts = {}) {
         bodyPayload = objectToUrlEncodedString(params);
       }
 
-      return axios.post(url, bodyPayload, { headers: mergedHeaders, timeout: timeoutMs });
+      return axios.request({
+        method: method.toLowerCase(),
+        url,
+        data: bodyPayload,
+        headers: mergedHeaders,
+        timeout: timeoutMs
+      });
     }
 
     const bodyRaw = manifest.body !== undefined ? manifest.body : params;
@@ -224,7 +233,13 @@ async function executeRestRequest(url, manifest, opts = {}) {
     if (!mergedHeaders['Content-Type'] && !mergedHeaders['content-type']) {
       mergedHeaders['Content-Type'] = 'application/json';
     }
-    return axios.post(url, body, { headers: mergedHeaders, timeout: timeoutMs });
+    return axios.request({
+      method: method.toLowerCase(),
+      url,
+      data: body,
+      headers: mergedHeaders,
+      timeout: timeoutMs
+    });
   }
 
   return axios.get(url, { params, headers: mergedHeaders, timeout: timeoutMs });
@@ -236,7 +251,7 @@ async function executeRestRequest(url, manifest, opts = {}) {
  */
 async function probeRowCount(url, manifest) {
   try {
-    const response = await executeRestRequest(url, manifest, { timeoutMs: PROBE_TIMEOUT_MS });
+    const response = await executeRestRequest(url, manifest, { timeoutMs: PROBE_TIMEOUT_MS, probe: true });
     const data = response.data;
     if (data && typeof data === 'object' && data.error) {
       return { rowCount: 0, data };
@@ -261,7 +276,7 @@ async function fetch(url, manifest) {
     const safeUrl = (requestUrl || '').slice(0, 160);
     logger.info(`[Engine REST Adapter] ${method} ${safeUrl}${(requestUrl || '').length > 160 ? '…' : ''} (timeout ${TIMEOUT_MS}ms)`);
 
-    if (method === 'POST') {
+    if (METHODS_WITH_BODY.includes(method)) {
       const postFmt = String(manifest.post_body_format || manifest.postBodyFormat || 'json').toLowerCase();
       const ct = mergedHeaders['Content-Type'] || mergedHeaders['content-type'] || '';
       const isForm =
@@ -271,7 +286,7 @@ async function fetch(url, manifest) {
         String(ct).toLowerCase().includes('x-www-form-urlencoded');
 
       logger.info(
-        `[Engine REST Adapter] POST encoding: ${isForm ? 'form-urlencoded' : 'json'} (source post_body_format=${manifest.post_body_format || 'json'})`
+        `[Engine REST Adapter] ${method} encoding: ${isForm ? 'form-urlencoded' : 'json'} (source post_body_format=${manifest.post_body_format || 'json'})`
       );
 
       if (isForm) {
@@ -377,4 +392,10 @@ async function fetch(url, manifest) {
   }
 }
 
-module.exports = { fetch, executeRestRequest, probeRowCount, ensureArcGISFeatureLayerQueryUrl };
+module.exports = {
+  fetch,
+  executeRestRequest,
+  probeRowCount,
+  ensureArcGISFeatureLayerQueryUrl,
+  METHODS_WITH_BODY
+};

@@ -12,6 +12,7 @@ const { createNotification } = require('../services/notifications');
 const { loadSources } = require('../services/scraper/helpers');
 const { scrapeForUser } = require('../legacyScraper');
 const { discoverEndpoint } = require('../services/endpointDiscovery');
+const { METHODS_WITH_BODY } = require('../engine/adapters/rest');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
 const { log: auditLog } = require('../services/auditLog');
 
@@ -412,14 +413,16 @@ router.get('/:id/sample', async (req, res) => {
       let response;
       const sampleQuery = sourceConfig.params || sourceConfig.query_params;
 
-      if (sourceConfig.method === 'POST' && sampleQuery) {
-        // For POST requests, send params in body
+      const httpMethod = (sourceConfig.method || 'GET').toUpperCase();
+      if (METHODS_WITH_BODY.includes(httpMethod) && sampleQuery) {
         const sampleParams = { ...sampleQuery };
-        // Try to limit records for sample
         if (sampleParams.pageSize) sampleParams.pageSize = '10';
         if (sampleParams.resultRecordCount) sampleParams.resultRecordCount = 10;
-        
-        response = await axios.post(url, sampleParams, {
+
+        response = await axios.request({
+          method: httpMethod.toLowerCase(),
+          url,
+          data: sampleParams,
           headers: {
             'Content-Type': 'application/json',
             ...(sourceConfig.headers || {})

@@ -13,6 +13,196 @@ const { getGeminiModel, isAIAvailable } = require('./ai/geminiClient');
 
 const MAX_CANDIDATES_TO_PROBE = parseInt(process.env.ENDPOINT_DISCOVERY_MAX_PROBE || '20', 10) || 20;
 
+/**
+ * Discovery probe rate strategy (Nginx limit_req, leaky buckets, API gateways, LBs, observability):
+ *
+ * 1) Group by hostname — Many ArcGIS candidates share one server; probing them all at once looks like a burst.
+ * 2) Same host: sequential — For each origin, /query probes run one after another, never parallel.
+ * 3) Spacing + jitter — Before each additional request to the same host: base interval + random 0…jitter ms
+ *    (avoids perfectly periodic traffic; slightly friendlier to token-bucket style limits).
+ * 4) Different hosts: limited parallelism — Up to N distinct hostnames probe at the same time (default 2);
+ *    unrelated servers are not serialized behind each other.
+ *
+ * Sticky sessions (ELB, F5, etc.): With cookie- or IP-based stickiness, parallel probes can still land on the same
+ * backend node while other nodes stay idle — risking one hot node. Same-host sequential pacing + low cross-host
+ * parallelism (or ENDPOINT_DISCOVERY_PROBE_STICKY_SAFE) reduces that. We cannot control their LB; we only lower RPS.
+ *
+ * Log / alert fatigue (Datadog, Splunk, ELK): Aggressive probing generates many access-log lines and can trip
+ * high-traffic or anomaly alerts for SREs — and looks like abuse. We throttle requests and suppress per-probe INFO
+ * logs in the REST adapter when probe=true (see executeRestRequest).
+ *
+ * Env (all optional):
+ * - ENDPOINT_DISCOVERY_PROBE_CONCURRENT_HOSTS — default 2 (max host groups in parallel; lower = gentler on sticky pools).
+ * - ENDPOINT_DISCOVERY_PROBE_HOST_INTERVAL_MS — default 180, base spacing between probes to the same host.
+ * - ENDPOINT_DISCOVERY_PROBE_HOST_JITTER_MS — default 220, random extra 0..N ms per gap.
+ * - ENDPOINT_DISCOVERY_PROBE_AGGRESSIVE=true — disables same-host spacing; raises concurrent hosts default to 8 (risky).
+ * - ENDPOINT_DISCOVERY_PROBE_SESSION_SAFE=true — force strictly sequential probes (no parallel hosts). Also auto-enabled
+ *   when probe manifest includes Cookie / Authorization / API-key headers (reduces WAF “session anomaly” burst patterns).
+ * - ENDPOINT_DISCOVERY_PROBE_STICKY_SAFE=true — force global sequential probing (one URL at a time) without requiring
+ *   session headers; use if you worry about sticky load balancers concentrating load on one backend node.
+ */
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function hostnameFromProbeUrl(url) {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '_';
+  }
+}
+
+/**
+ * True when the probe manifest carries headers that tie requests to one session (Cookie, Bearer, API keys).
+ * Security / WAF products may flag "many endpoints at once, same session" as compromised-account behavior.
+ */
+function manifestHasSessionCredentials(manifest) {
+  if (!manifest || typeof manifest !== 'object') return false;
+  const h = manifest.headers;
+  if (!h || typeof h !== 'object') return false;
+  for (const rawKey of Object.keys(h)) {
+    const k = String(rawKey).toLowerCase();
+    if (k === 'authorization' || k === 'cookie' || k === 'x-api-key' || k === 'x-auth-token') return true;
+    if (k === 'x-amz-security-token' || k === 'x-csrf-token') return true;
+    if ((k.includes('session') && k.includes('token')) || k.endsWith('-token')) return true;
+  }
+  return false;
+}
+
+/**
+ * @param {object} [manifest] - After buildProbeManifest; used to detect session headers.
+ */
+function readProbeRateLimitOptions(manifest) {
+  const aggressive = String(process.env.ENDPOINT_DISCOVERY_PROBE_AGGRESSIVE || '').toLowerCase() === 'true';
+  if (aggressive) {
+    return {
+      concurrentHosts: Math.max(1, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_CONCURRENT_HOSTS || '8', 10) || 8),
+      baseIntervalMs: 0,
+      jitterMs: 0,
+      sequentialGlobal: false,
+      sessionCredentials: false,
+      envSessionSafe: false,
+      stickySafe: false
+    };
+  }
+
+  const envSessionSafe = String(process.env.ENDPOINT_DISCOVERY_PROBE_SESSION_SAFE || '').toLowerCase() === 'true';
+  const sessionCredentials = manifestHasSessionCredentials(manifest);
+
+  if (envSessionSafe || sessionCredentials) {
+    return {
+      concurrentHosts: 1,
+      baseIntervalMs: Math.max(0, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_HOST_INTERVAL_MS || '250', 10) || 0),
+      jitterMs: Math.max(0, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_HOST_JITTER_MS || '300', 10) || 0),
+      sequentialGlobal: true,
+      sessionCredentials: !!sessionCredentials,
+      envSessionSafe: !!envSessionSafe,
+      stickySafe: false
+    };
+  }
+
+  const stickySafe = String(process.env.ENDPOINT_DISCOVERY_PROBE_STICKY_SAFE || '').toLowerCase() === 'true';
+  if (stickySafe) {
+    return {
+      concurrentHosts: 1,
+      baseIntervalMs: Math.max(0, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_HOST_INTERVAL_MS || '220', 10) || 0),
+      jitterMs: Math.max(0, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_HOST_JITTER_MS || '280', 10) || 0),
+      sequentialGlobal: true,
+      sessionCredentials: false,
+      envSessionSafe: false,
+      stickySafe: true
+    };
+  }
+
+  return {
+    concurrentHosts: Math.max(1, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_CONCURRENT_HOSTS || '2', 10) || 2),
+    baseIntervalMs: Math.max(0, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_HOST_INTERVAL_MS || '180', 10) || 0),
+    jitterMs: Math.max(0, parseInt(process.env.ENDPOINT_DISCOVERY_PROBE_HOST_JITTER_MS || '220', 10) || 0),
+    sequentialGlobal: false,
+    sessionCredentials: false,
+    envSessionSafe: false,
+    stickySafe: false
+  };
+}
+
+/**
+ * Probe URLs in order with spacing between every request (same gap formula as per-host pacing).
+ * @param {string[]} urls
+ * @param {object} manifest
+ */
+async function probeWithInterProbeGap(urls, manifest, baseIntervalMs, jitterMs) {
+  const out = [];
+  for (let i = 0; i < urls.length; i++) {
+    if (i > 0 && (baseIntervalMs > 0 || jitterMs > 0)) {
+      const gap = baseIntervalMs + (jitterMs > 0 ? Math.floor(Math.random() * (jitterMs + 1)) : 0);
+      await sleep(gap);
+    }
+    const url = urls[i];
+    const { rowCount } = await probeRowCount(url, manifest);
+    out.push({
+      url,
+      rowCount,
+      score: Math.round(scoreCandidateHeuristic(url))
+    });
+  }
+  return out;
+}
+
+/**
+ * Probe many candidate URLs without hammering one server (ArcGIS often exposes many layers on one host).
+ * If the manifest includes session credentials (or ENDPOINT_DISCOVERY_PROBE_SESSION_SAFE), probes run **globally**
+ * one-by-one in list order — never parallel across hosts — to reduce "session anomaly" / burst patterns on WAFs.
+ * @param {string[]} urls
+ * @param {object} manifest
+ * @returns {Promise<{ url: string, rowCount: number, score: number }[]>}
+ */
+async function probeDiscoveryUrlsSafely(urls, manifest) {
+  const opts = readProbeRateLimitOptions(manifest);
+
+  if (opts.sequentialGlobal) {
+    let why;
+    if (opts.sessionCredentials) {
+      why = 'probe manifest includes Cookie/Authorization (or similar)';
+    } else if (opts.envSessionSafe) {
+      why = 'ENDPOINT_DISCOVERY_PROBE_SESSION_SAFE';
+    } else if (opts.stickySafe) {
+      why = 'ENDPOINT_DISCOVERY_PROBE_STICKY_SAFE (one probe at a time — reduces single-node hotspot behind sticky LB)';
+    } else {
+      why = 'session-safe';
+    }
+    logger.info(
+      `[EndpointDiscovery] Strictly sequential probing (${why}): ${urls.length} endpoint(s), ` +
+        `${opts.baseIntervalMs}ms+${opts.jitterMs}ms jitter — no parallel in-flight requests`
+    );
+    return probeWithInterProbeGap(urls, manifest, opts.baseIntervalMs, opts.jitterMs);
+  }
+
+  const { concurrentHosts, baseIntervalMs, jitterMs } = opts;
+
+  const byHost = new Map();
+  for (const url of urls) {
+    const h = hostnameFromProbeUrl(url);
+    if (!byHost.has(h)) byHost.set(h, []);
+    byHost.get(h).push(url);
+  }
+
+  const hostEntries = [...byHost.entries()];
+
+  async function probeSequentialForHost([_host, list]) {
+    return probeWithInterProbeGap(list, manifest, baseIntervalMs, jitterMs);
+  }
+
+  const all = [];
+  for (let i = 0; i < hostEntries.length; i += concurrentHosts) {
+    const chunk = hostEntries.slice(i, i + concurrentHosts);
+    const chunkResults = await Promise.all(chunk.map(entry => probeSequentialForHost(entry)));
+    for (const part of chunkResults) all.push(...part);
+  }
+  return all;
+}
+
 /** Set ENDPOINT_DISCOVERY_USE_GEMINI=false to skip Gemini even when GEMINI_API_KEY is set. */
 function geminiDiscoveryEnabled() {
   return process.env.ENDPOINT_DISCOVERY_USE_GEMINI !== 'false';
@@ -397,16 +587,18 @@ async function pickBestEndpointByProbing(candidates, probeManifest = {}) {
 
   const manifest = buildProbeManifest(probeManifest);
 
-  /** @type {{ url: string, rowCount: number, score: number }[]} */
-  const probeResults = [];
-  for (const url of toProbe) {
-    const { rowCount } = await probeRowCount(url, manifest);
-    probeResults.push({
-      url,
-      rowCount,
-      score: Math.round(scoreCandidateHeuristic(url))
-    });
+  const rateOpts = readProbeRateLimitOptions(manifest);
+  const hostGroups = new Set(toProbe.map(hostnameFromProbeUrl)).size;
+  if (!rateOpts.sequentialGlobal) {
+    logger.info(
+      `[EndpointDiscovery] Probing ${toProbe.length} URL(s) across ${hostGroups} host(s) ` +
+        `(rate-safe: ≤${rateOpts.concurrentHosts} host(s) parallel, ` +
+        `${rateOpts.baseIntervalMs}ms+${rateOpts.jitterMs}ms jitter between calls to same host)`
+    );
   }
+
+  /** @type {{ url: string, rowCount: number, score: number }[]} */
+  const probeResults = await probeDiscoveryUrlsSafely(toProbe, manifest);
   probeResults.sort((a, b) => b.rowCount - a.rowCount || b.score - a.score);
 
   let bestUrl = null;

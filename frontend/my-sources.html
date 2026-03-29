@@ -843,6 +843,9 @@
             <select id="apiMethod" class="form-input">
               <option value="GET">GET</option>
               <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
             </select>
           </div>
           
@@ -1034,6 +1037,11 @@
     let currentMappingSourceId = null;
 
     // Check authentication on page load
+    /** JSON sources: methods that use a body (same options as backend METHODS_WITH_BODY). */
+    function isJsonBodyMethod(method) {
+      return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || '').toUpperCase());
+    }
+
     async function checkAuth() {
       try {
         const response = await fetch('/api/user');
@@ -1055,20 +1063,35 @@
         ? document.getElementById('apiParams').value.trim()
         : '';
       const fallback = { query_params: { f: 'json', where: '1=1', outFields: '*' } };
-      if (!raw) return fallback;
-      try {
-        const normalized =
-          typeof normalizeJsonQuotes === 'function'
-            ? normalizeJsonQuotes(raw)
-            : raw.replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"').replace(/[\u2018\u2019\u201A\u201B]/g, "'");
-        const o = JSON.parse(normalized);
-        if (o && typeof o === 'object' && !Array.isArray(o)) {
-          return { query_params: o };
+      let query_params = { f: 'json', where: '1=1', outFields: '*' };
+      if (raw) {
+        try {
+          const normalized =
+            typeof normalizeJsonQuotes === 'function'
+              ? normalizeJsonQuotes(raw)
+              : raw.replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"').replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+          const o = JSON.parse(normalized);
+          if (o && typeof o === 'object' && !Array.isArray(o)) query_params = o;
+        } catch (_) {
+          /* keep defaults */
         }
-      } catch (_) {
-        /* ignore */
       }
-      return fallback;
+      const manifest = { query_params };
+      const hdrEl = document.getElementById('apiRequestHeaders');
+      const hdrText = hdrEl && hdrEl.value.trim();
+      if (hdrText) {
+        try {
+          const normalized =
+            typeof normalizeJsonQuotes === 'function'
+              ? normalizeJsonQuotes(hdrText)
+              : hdrText.replace(/[\u201C\u201D\u201E\u00AB\u00BB]/g, '"').replace(/[\u2018\u2019\u201A\u201B]/g, "'");
+          const h = JSON.parse(normalized);
+          if (h && typeof h === 'object' && !Array.isArray(h)) manifest.headers = h;
+        } catch (_) {
+          /* omit invalid headers — discovery still runs without them */
+        }
+      }
+      return manifest;
     }
 
     function clearDiscoverCandidatesPanel() {
@@ -1362,8 +1385,8 @@
       const sourceType = document.getElementById('sourceType').value;
       const isJsonApi = sourceType === 'json';
       const apiMethodEl = document.getElementById('apiMethod');
-      const isPost = apiMethodEl && apiMethodEl.value === 'POST';
-      const showPostDetails = isJsonApi && isPost;
+      const isBodyMethod = apiMethodEl && isJsonBodyMethod(apiMethodEl.value);
+      const showPostDetails = isJsonApi && isBodyMethod;
       const postWrap = document.getElementById('apiPostBodyWrap');
       const postTextWrap = document.getElementById('apiPostBodyTextWrap');
       const hdrWrap = document.getElementById('apiRequestHeadersWrap');
@@ -2176,13 +2199,13 @@ async function loadScreenshots(sources) {
         const postFmtEl = document.getElementById('apiPostBodyFormat');
         const postBodyFormat = postFmtEl && postFmtEl.value === 'form' ? 'form' : 'json';
 
-        if (sourceData.method === 'POST') {
+        if (isJsonBodyMethod(sourceData.method)) {
           sourceData.post_body_format = postBodyFormat;
         } else {
           delete sourceData.post_body_format;
         }
 
-        if (sourceData.method === 'POST' && postBodyText) {
+        if (isJsonBodyMethod(sourceData.method) && postBodyText) {
           if (postBodyFormat === 'form') {
             sourceData.body = postBodyText;
           } else {
@@ -2210,15 +2233,15 @@ async function loadScreenshots(sources) {
           delete sourceData.headers;
         }
 
-        if (sourceData.method === 'POST') {
+        if (isJsonBodyMethod(sourceData.method)) {
           const paramsKeys = sourceData.params && typeof sourceData.params === 'object' ? Object.keys(sourceData.params).length : 0;
           const hasStrBody = typeof sourceData.body === 'string' && sourceData.body.length > 0;
           const hasObjBody =
             sourceData.body && typeof sourceData.body === 'object' && !Array.isArray(sourceData.body) && Object.keys(sourceData.body).length > 0;
           if (paramsKeys === 0 && !hasStrBody && !hasObjBody) {
             alert(
-              'JSON API + POST needs a non-empty body or Query Parameters.\n\n' +
-              'If DevTools shows content-type: application/x-www-form-urlencoded, set POST body format to Form URL-encoded and paste the Payload string.\n\n' +
+              'JSON API with POST/PUT/PATCH/DELETE needs a non-empty body or Query Parameters.\n\n' +
+              'If DevTools shows content-type: application/x-www-form-urlencoded, set body format to Form URL-encoded and paste the Payload string.\n\n' +
               'If both are empty, the server returns Data: [].'
             );
             return;
