@@ -460,6 +460,25 @@ async function fetch(url, manifest) {
         logger.error(`[Engine REST Adapter] Response: ${JSON.stringify(body).slice(0, 300)}`);
       }
     }
+    const hdrs = err.response?.headers;
+    if (hdrs && typeof hdrs === 'object') {
+      const pick = {};
+      for (const key of ['server', 'cf-ray', 'via', 'x-cache', 'x-amz-cf-id', 'x-sucuri-id']) {
+        const found = Object.keys(hdrs).find(k => k.toLowerCase() === key);
+        if (found && hdrs[found]) pick[key] = String(hdrs[found]).slice(0, 120);
+      }
+      if (Object.keys(pick).length) {
+        logger.error(`[Engine REST Adapter] Response headers (subset): ${JSON.stringify(pick)}`);
+      }
+    }
+    if (status === 403) {
+      const emptyBody = body == null || (typeof body === 'string' && !body.trim());
+      if (emptyBody) {
+        logger.error(
+          '[Engine REST Adapter] HTTP 403 with empty/minimal body usually means edge/WAF blocked the client (IP, proxy pool, or bot rules) — not a bad POST body. Try: scrape without proxy, IPRoyal sticky session, fresh cookies, or Playwright for this site.'
+        );
+      }
+    }
     return [];
   }
 }
