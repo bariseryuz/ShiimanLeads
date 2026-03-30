@@ -8,6 +8,7 @@ const hydrator = require('../hydrator');
 const hydrateString = typeof hydrator.hydrateString === 'function' ? hydrator.hydrateString : s => s;
 const { mergeRequestHeaders } = require('../requestDefaults');
 const { extractRowsFromApiJson } = require('../jsonResponseRows');
+const { axiosProxyFromManifest } = require('../axiosProxy');
 const logger = require('../../utils/logger');
 
 const TIMEOUT_MS = Math.min(
@@ -22,6 +23,21 @@ const PROBE_TIMEOUT_MS = Math.min(
 
 /** Methods that send a request body (form or JSON), not query-string GET. */
 const METHODS_WITH_BODY = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+/**
+ * Optional headers copied from DevTools often include Content-Length / Host / Connection.
+ * A stale Content-Length breaks the request; Host must not override the URL host.
+ * Axios sets Content-Length from `data` automatically.
+ */
+function stripHopByHopHeaders(headers) {
+  if (!headers || typeof headers !== 'object') return;
+  delete headers['Content-Length'];
+  delete headers['content-length'];
+  delete headers['Host'];
+  delete headers['host'];
+  delete headers['Connection'];
+  delete headers['connection'];
+}
 
 function warnIfLikelyCapped(rowCount, manifest) {
   const cap = Math.max(parseInt(manifest.limit, 10) || 1000, 1);
@@ -105,6 +121,7 @@ const ARCGIS_PAGE_SIZE_CAP = 1000;
  */
 async function fetchArcGISFeatureLayerQueryAll(requestUrl, manifest) {
   const mergedHeaders = mergeRequestHeaders(manifest, requestUrl);
+  stripHopByHopHeaders(mergedHeaders);
   let baseParams = hydrator(manifest.query_params || manifest.params || {});
   baseParams = mergeArcGISQueryDefaults(baseParams, manifest);
   const requested = Math.max(parseInt(baseParams.resultRecordCount, 10) || 1000, 1);
@@ -116,9 +133,15 @@ async function fetchArcGISFeatureLayerQueryAll(requestUrl, manifest) {
   const maxPages = Math.max(parseInt(process.env.REST_ARCGIS_MAX_PAGES || '500', 10) || 500, 1);
   let pageNum = 0;
 
+  const proxy = axiosProxyFromManifest(manifest);
   while (pageNum < maxPages) {
     const params = { ...baseParams, resultOffset: offset };
-    const response = await axios.get(requestUrl, { params, headers: mergedHeaders, timeout: TIMEOUT_MS });
+    const response = await axios.get(requestUrl, {
+      params,
+      headers: mergedHeaders,
+      timeout: TIMEOUT_MS,
+      ...(proxy ? { proxy } : {})
+    });
     const data = response.data;
 
     if (data?.error) {
@@ -189,6 +212,8 @@ async function executeRestRequest(url, manifest, opts = {}) {
   const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : TIMEOUT_MS;
   let params = hydrator(manifest.query_params || manifest.params || {});
   const mergedHeaders = mergeRequestHeaders(manifest, url);
+  stripHopByHopHeaders(mergedHeaders);
+  const proxy = axiosProxyFromManifest(manifest, opts);
   const method = (manifest.method || 'GET').toUpperCase();
 
   if (method === 'GET' && isArcGISFeatureLayerQueryUrl(url)) {
@@ -228,7 +253,8 @@ async function executeRestRequest(url, manifest, opts = {}) {
         url,
         data: bodyPayload,
         headers: mergedHeaders,
-        timeout: timeoutMs
+        timeout: timeoutMs,
+        ...(proxy ? { proxy } : {})
       });
     }
 
@@ -247,11 +273,17 @@ async function executeRestRequest(url, manifest, opts = {}) {
       url,
       data: body,
       headers: mergedHeaders,
-      timeout: timeoutMs
+      timeout: timeoutMs,
+      ...(proxy ? { proxy } : {})
     });
   }
 
-  return axios.get(url, { params, headers: mergedHeaders, timeout: timeoutMs });
+  return axios.get(url, {
+    params,
+    headers: mergedHeaders,
+    timeout: timeoutMs,
+    ...(proxy ? { proxy } : {})
+  });
 }
 
 /**

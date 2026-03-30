@@ -994,10 +994,10 @@
         
         <div class="form-group">
           <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem;">
-            <input type="checkbox" id="useProxy" checked style="width: auto; cursor: pointer;">
+            <input type="checkbox" id="useProxy" style="width: auto; cursor: pointer;">
             <span>Use Residential Proxy</span>
           </label>
-          <small style="color: var(--gray-600);">Enable proxy to avoid blocking. Disable if the website blocks residential IPs.</small>
+          <small style="color: var(--gray-600);">When checked, JSON API requests use the first <code>PROXY_URLS</code> entry in server <code>.env</code> (direct connection if unchecked or PROXY_URLS empty).</small>
         </div>
         
         <div class="form-group">
@@ -1472,7 +1472,7 @@
               ${source.data.type !== 'json' && source.data.selector ? `<div><strong>Selector:</strong> ${escapeHtml(source.data.selector)}</div>` : ''}
               ${source.data.type !== 'json' && !source.data.selector && source.data.useAI ? '<div><strong>Mode:</strong> Full-Page Screenshot</div>' : ''}
               ${source.data.usePlaywright ? '<div><strong>Browser:</strong> ✓ Playwright</div>' : ''}
-              <div><strong>Proxy:</strong> ${source.data.useProxy !== false ? '🌐 Enabled' : '⚠️ Disabled'}</div>
+              <div><strong>Proxy:</strong> ${source.data.useProxy === true ? '🌐 Enabled' : '⚠️ Disabled'}</div>
               ${source.data.fieldSchema ? `<div><strong>Fields to Extract:</strong> ${Array.isArray(source.data.fieldSchema) ? source.data.fieldSchema.map(f => f.name).join(', ') : Object.keys(source.data.fieldSchema).join(', ')}</div>` : ''}
               ${source.data.displayColumns ? `<div><strong>Display Columns:</strong> ${Array.isArray(source.data.displayColumns) ? source.data.displayColumns.join(', ') : source.data.displayColumns}</div>` : ''}
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
@@ -1714,9 +1714,8 @@ async function loadScreenshots(sources) {
       if (_hdr) _hdr.value = '';
       toggleSourceTypeFields(); // Initialize UI based on type
       
-      // Set proxy to enabled by default
-      document.getElementById('useProxy').checked = true;
-      console.log('🌐 Proxy checkbox initialized to: true (default)');
+      document.getElementById('useProxy').checked = false;
+      console.log('🌐 Proxy checkbox initialized to: false (direct connection unless you opt in + PROXY_URLS in .env)');
       
       // Set forcePlaywrightOnly to enabled by default
       document.getElementById('forcePlaywrightOnly').checked = true;
@@ -1735,7 +1734,7 @@ async function loadScreenshots(sources) {
       document.getElementById('arcgisDateField').value = '';
       toggleSourceTypeFields();
 
-      document.getElementById('useProxy').checked = true;
+      document.getElementById('useProxy').checked = false;
       document.getElementById('forcePlaywrightOnly').checked = false;
 
       document.getElementById('sourceModal').classList.add('show');
@@ -1864,8 +1863,7 @@ async function loadScreenshots(sources) {
         // Set AI prompt if exists
         document.getElementById('aiPrompt').value = source.data.aiPrompt || '';
         
-        // Set proxy checkbox (default to true if not specified)
-        const useProxyValue = source.data.useProxy !== false;
+        const useProxyValue = source.data.useProxy === true;
         document.getElementById('useProxy').checked = useProxyValue;
         console.log('📖 Loaded source proxy setting:', source.data.useProxy, 'setting checkbox to:', useProxyValue);
         
