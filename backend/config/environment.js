@@ -21,11 +21,14 @@ module.exports = {
     ? '/app/backend/data/screenshots'  // Railway: In volume
     : path.join(__dirname, '..', 'data', 'screenshots'),  // Local: backend/data/
   
-  // Proxy
+  // Proxy (REST adapter: first URL when source useProxy=true). Prefer PROXY_URLS; PROXY_URL is a single-URL alias.
   PROXY_ENABLED: process.env.PROXY_ENABLED === 'true',
-  PROXY_URLS: process.env.PROXY_URLS 
-    ? process.env.PROXY_URLS.split(',').map(p => p.trim()).filter(Boolean)
-    : [],
+  PROXY_URLS: (() => {
+    const list = process.env.PROXY_URLS;
+    if (list && list.trim()) return list.split(',').map(p => p.trim()).filter(Boolean);
+    const single = process.env.PROXY_URL && String(process.env.PROXY_URL).trim();
+    return single ? [single] : [];
+  })(),
   
   // Google Gemini AI
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
