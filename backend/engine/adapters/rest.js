@@ -39,6 +39,21 @@ function stripHopByHopHeaders(headers) {
   delete headers['connection'];
 }
 
+/**
+ * My Sources sometimes saves form POST body as a JSON-looking wrapper, e.g.
+ * {"sort=&page=1&pageSize=10&..."} — invalid for x-www-form-urlencoded; servers often return 403.
+ * Unwrap to the raw querystring inside the quotes.
+ */
+function unwrapMistakenJsonFormWrapper(s) {
+  const t = String(s).trim();
+  if (t.length < 6 || !t.startsWith('{"') || !t.endsWith('"}')) return s;
+  const inner = t.slice(2, -2);
+  if (inner.includes('=') && inner.includes('&') && !inner.includes('{') && !inner.includes('}')) {
+    return inner;
+  }
+  return s;
+}
+
 function warnIfLikelyCapped(rowCount, manifest) {
   const cap = Math.max(parseInt(manifest.limit, 10) || 1000, 1);
   if (rowCount > 0 && rowCount === cap) {
@@ -238,7 +253,7 @@ async function executeRestRequest(url, manifest, opts = {}) {
       let bodyPayload;
       if (manifest.body !== undefined && manifest.body !== null) {
         if (typeof manifest.body === 'string') {
-          bodyPayload = hydrateString(manifest.body);
+          bodyPayload = unwrapMistakenJsonFormWrapper(hydrateString(manifest.body));
         } else if (typeof manifest.body === 'object') {
           bodyPayload = objectToUrlEncodedString(manifest.body);
         } else {
@@ -334,7 +349,7 @@ async function fetch(url, manifest) {
         let bodyPayload;
         if (manifest.body !== undefined && manifest.body !== null) {
           if (typeof manifest.body === 'string') {
-            bodyPayload = hydrateString(manifest.body);
+            bodyPayload = unwrapMistakenJsonFormWrapper(hydrateString(manifest.body));
           } else if (typeof manifest.body === 'object') {
             bodyPayload = objectToUrlEncodedString(manifest.body);
           } else {
@@ -412,7 +427,17 @@ async function fetch(url, manifest) {
     if (data?.Errors && data.Errors.length) {
       logger.warn(`[Engine REST Adapter] API returned errors: ${JSON.stringify(data.Errors)}`);
     }
-    logger.warn(`[Engine REST Adapter] No array found in response (status ${response.status}). Keys: ${Object.keys(data || {}).join(', ')}`);
+    const keyList =
+      data && typeof data === 'object' && !Array.isArray(data)
+        ? Object.keys(data).join(', ')
+        : typeof data;
+    const preview =
+      typeof data === 'string'
+        ? data.slice(0, 400)
+        : JSON.stringify(data).slice(0, 800);
+    logger.warn(
+      `[Engine REST Adapter] No tabular rows extracted (status ${response.status}). Keys: ${keyList}. Preview: ${preview}${preview.length >= 800 ? '…' : ''}`
+    );
     return [];
   } catch (err) {
     const status = err.response?.status;
@@ -428,7 +453,13 @@ async function fetch(url, manifest) {
     } else {
       logger.error(`[Engine REST Adapter] ${err.message}${status ? ` (HTTP ${status})` : ''}${err.code ? ` [code=${err.code}]` : ''}`);
     }
-    if (body && typeof body === 'object') logger.error(`[Engine REST Adapter] Response: ${JSON.stringify(body).slice(0, 300)}`);
+    if (body != null) {
+      if (typeof body === 'string') {
+        logger.error(`[Engine REST Adapter] Response body (text): ${body.slice(0, 500)}${body.length > 500 ? '…' : ''}`);
+      } else if (typeof body === 'object') {
+        logger.error(`[Engine REST Adapter] Response: ${JSON.stringify(body).slice(0, 300)}`);
+      }
+    }
     return [];
   }
 }
@@ -438,5 +469,6 @@ module.exports = {
   executeRestRequest,
   probeRowCount,
   ensureArcGISFeatureLayerQueryUrl,
-  METHODS_WITH_BODY
+  METHODS_WITH_BODY,
+  unwrapMistakenJsonFormWrapper
 };

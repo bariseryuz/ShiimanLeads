@@ -38,8 +38,32 @@ function featureToRow(f) {
 function extractRowsFromApiJson(data) {
   if (data == null) return [];
 
+  if (typeof data === 'string') {
+    const t = data.trim();
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try {
+        return extractRowsFromApiJson(JSON.parse(t));
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
   if (Array.isArray(data)) {
     return filterLeadLikeRows(data);
+  }
+
+  // ASP.NET ScriptManager / some Phoenix handlers: payload under string or object "d"
+  if (data.d != null && typeof data.d === 'string') {
+    try {
+      return extractRowsFromApiJson(JSON.parse(data.d));
+    } catch {
+      return [];
+    }
+  }
+  if (data.d != null && typeof data.d === 'object' && !Array.isArray(data.d)) {
+    return extractRowsFromApiJson(data.d);
   }
 
   if (data.results && Array.isArray(data.results)) return filterLeadLikeRows(data.results);
