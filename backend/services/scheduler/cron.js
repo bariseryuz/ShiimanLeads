@@ -5,12 +5,18 @@ const { dbAll, dbRun } = require('../../db');
 const { runDigestForAllDue } = require('../alerts');
 const { runBackup } = require('../backup');
 
+function envBool(name) {
+  const v = process.env[name];
+  if (v == null || !String(v).trim()) return false;
+  return String(v).trim().toLowerCase() === 'true';
+}
+
 /**
  * Scrape all users' sources (cron job)
  */
 async function scrapeAllUsers() {
   try {
-    logger.info('=== Starting scrape cycle for all users ===');
+    logger.info(`=== Starting scrape cycle for all users (${new Date().toISOString()}) ===`);
     const users = await dbAll('SELECT id, username, role FROM users');
     
     // Scrape user-specific sources from database
@@ -81,15 +87,32 @@ async function runRetentionJob() {
  * Setup automatic scraping with cron
  */
 function setupAutoScraping() {
-  const AUTO_SCRAPE_ENABLED = process.env.AUTO_SCRAPE_ENABLED === 'true';
-  const AUTO_SCRAPE_ON_STARTUP = process.env.AUTO_SCRAPE_ON_STARTUP === 'true';
-  const AUTO_SCRAPE_INTERVAL = process.env.AUTO_SCRAPE_INTERVAL || '0 */8 * * *';
+  const AUTO_SCRAPE_ENABLED = envBool('AUTO_SCRAPE_ENABLED');
+  const AUTO_SCRAPE_ON_STARTUP = envBool('AUTO_SCRAPE_ON_STARTUP');
+  let interval = String(process.env.AUTO_SCRAPE_INTERVAL || '0 */8 * * *').trim();
+  const defaultInterval = '0 */8 * * *';
 
   if (AUTO_SCRAPE_ENABLED) {
-    cron.schedule(AUTO_SCRAPE_INTERVAL, scrapeAllUsers);
-    logger.info(`Auto-scraping ENABLED (${AUTO_SCRAPE_INTERVAL})`);
+    if (!cron.validate(interval)) {
+      logger.error(
+        `Invalid AUTO_SCRAPE_INTERVAL ${JSON.stringify(interval)} — falling back to ${defaultInterval}. Fix the cron expression in .env`
+      );
+      interval = defaultInterval;
+    }
+    const tz = String(process.env.AUTO_SCRAPE_TIMEZONE || '').trim();
+    const scheduleOpts = tz ? { timezone: tz } : {};
+    const tick = async () => {
+      logger.info(`[cron] Auto-scrape tick fired (${interval}${tz ? `, tz=${tz}` : ', server local time'})`);
+      try {
+        await scrapeAllUsers();
+      } catch (err) {
+        logger.error(`[cron] Auto-scrape failed: ${err && err.message ? err.message : err}`);
+      }
+    };
+    cron.schedule(interval, tick, scheduleOpts);
+    logger.info(`Auto-scraping ENABLED (${interval})${tz ? ` timezone=${tz}` : ' — times use server local clock unless AUTO_SCRAPE_TIMEZONE is set'}`);
   } else {
-    logger.info(`Auto-scraping DISABLED`);
+    logger.info(`Auto-scraping DISABLED (set AUTO_SCRAPE_ENABLED=true to enable)`);
   }
 
   if (AUTO_SCRAPE_ON_STARTUP) {

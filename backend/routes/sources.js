@@ -192,7 +192,7 @@ router.post('/add', requirePaid, enforceSourceLimit, express.json(), async (req,
     logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
     await createNotification(userId, 'source_added', `✅ Added new source: ${sourceData.name} with table ${tableName}`);
     await auditLog({ userId, actorUserId: userId, action: 'source.created', entityType: 'source', entityId: newSourceId, after: sourceData, req });
-    const AUTO_SCRAPE_ON_ADD = process.env.AUTO_SCRAPE_ON_ADD === 'true';
+    const AUTO_SCRAPE_ON_ADD = String(process.env.AUTO_SCRAPE_ON_ADD || '').trim().toLowerCase() === 'true';
     if (AUTO_SCRAPE_ON_ADD) {
       logger.info(`New source added by user ${userId}, triggering immediate scrape`);
       scrapeForUser(userId, [sourceData]).then((newLeads) => {
@@ -358,7 +358,7 @@ router.post('/', requirePaid, enforceSourceLimit, express.json(), async (req, re
     logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
     await createNotification(userId, 'source_added', `✅ Added new source: ${sourceData.name} with table ${tableName}`);
     await auditLog({ userId, actorUserId: userId, action: 'source.created', entityType: 'source', entityId: newSourceId, after: sourceData, req });
-    const AUTO_SCRAPE_ON_ADD = process.env.AUTO_SCRAPE_ON_ADD === 'true';
+    const AUTO_SCRAPE_ON_ADD = String(process.env.AUTO_SCRAPE_ON_ADD || '').trim().toLowerCase() === 'true';
     if (AUTO_SCRAPE_ON_ADD) {
       logger.info(`New source added by user ${userId}, triggering immediate scrape`);
       scrapeForUser(userId, [sourceData]).then((newLeads) => {

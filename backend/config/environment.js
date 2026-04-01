@@ -3,19 +3,35 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const isProduction = process.env.NODE_ENV === 'production';
 
+const backendRoot = path.join(__dirname, '..');
+
+/**
+ * Relative paths in SQLITE_* must not depend on process.cwd() (npm/node may start
+ * from repo root or backend/). Anchor to backend/ so cron + API always use one DB.
+ */
+function resolveSqlitePath(envKey, fallbackAbsolute) {
+  const raw = process.env[envKey];
+  if (raw && String(raw).trim()) {
+    const p = String(raw).trim();
+    if (path.isAbsolute(p)) return path.normalize(p);
+    return path.normalize(path.join(backendRoot, p));
+  }
+  return fallbackAbsolute;
+}
+
 module.exports = {
   // Server
   PORT: process.env.PORT || 3000,
   NODE_ENV: process.env.NODE_ENV || 'development',
   
   // Database (MUST be in /data/ for Railway volume persistence!)
-  DB_PATH: process.env.SQLITE_DB_PATH || (isProduction 
+  DB_PATH: resolveSqlitePath('SQLITE_DB_PATH', isProduction 
     ? '/app/backend/data/shiiman-leads.db'  // Railway: In volume
-    : path.join(__dirname, '..', 'data', 'shiiman-leads.db')),  // Local: backend/data/
+    : path.join(backendRoot, 'data', 'shiiman-leads.db')),  // Local: backend/data/
   
-  SESSIONS_DB_PATH: process.env.SQLITE_SESSIONS_DB_PATH || (isProduction
+  SESSIONS_DB_PATH: resolveSqlitePath('SQLITE_SESSIONS_DB_PATH', isProduction
     ? '/app/backend/data/sessions.db'  // Railway: In volume
-    : path.join(__dirname, '..', 'data', 'sessions.db')),  // Local: backend/data/
+    : path.join(backendRoot, 'data', 'sessions.db')),  // Local: backend/data/
   
   SCREENSHOTS_DIR: isProduction
     ? '/app/backend/data/screenshots'  // Railway: In volume
