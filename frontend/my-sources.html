@@ -226,6 +226,113 @@
       font-size: 0.875rem;
     }
 
+    .source-activity {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: rgba(255, 255, 255, 0.75);
+      border-radius: 8px;
+      border: 1px solid rgba(0, 0, 0, 0.08);
+      font-size: 0.813rem;
+      color: var(--gray-900);
+    }
+
+    .activity-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .activity-title {
+      font-weight: 700;
+      font-size: 0.875rem;
+    }
+
+    .activity-badges {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .activity-badges .badge {
+      padding: 0.12rem 0.45rem;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+
+    .badge-ok { background: #d1fae5; color: #065f46; }
+    .badge-warn { background: #fef3c7; color: #92400e; }
+    .badge-bad { background: #fee2e2; color: #991b1b; }
+    .badge-muted { background: #f3f4f6; color: #4b5563; }
+
+    .activity-schedule {
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-bottom: 0.35rem;
+    }
+
+    .activity-schedule code {
+      font-size: 0.68rem;
+      background: #f3f4f6;
+      padding: 0.1rem 0.3rem;
+      border-radius: 4px;
+    }
+
+    .activity-summary {
+      font-size: 0.75rem;
+      color: #4b5563;
+      margin-bottom: 0.5rem;
+      line-height: 1.4;
+    }
+
+    .activity-details summary {
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.8rem;
+      color: var(--primary);
+      list-style: none;
+    }
+
+    .activity-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .activity-table-wrap {
+      overflow-x: auto;
+      margin-top: 0.5rem;
+    }
+
+    .run-history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.72rem;
+    }
+
+    .run-history-table th,
+    .run-history-table td {
+      padding: 0.35rem 0.45rem;
+      text-align: left;
+      border-bottom: 1px solid #e5e7eb;
+      vertical-align: top;
+    }
+
+    .run-history-table th {
+      color: #6b7280;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .run-history-table .run-err {
+      color: #991b1b;
+      max-width: 180px;
+      word-break: break-word;
+    }
+
     @media (max-width: 900px) {
       .source-grid {
         grid-template-columns: 1fr;
@@ -1423,9 +1530,125 @@
       // Field schema is always visible in simplified mode
     }
 
+    function formatRunWhen(iso) {
+      if (!iso) return '—';
+      try {
+        return new Date(iso).toLocaleString();
+      } catch {
+        return iso;
+      }
+    }
+
+    function formatDurationMs(ms) {
+      if (ms == null || ms === '') return '—';
+      const n = Number(ms);
+      if (!Number.isFinite(n)) return '—';
+      if (n < 1000) return n + ' ms';
+      if (n < 60000) return (n / 1000).toFixed(1) + ' s';
+      const m = Math.floor(n / 60000);
+      const s = Math.round((n % 60000) / 1000);
+      return m + 'm ' + s + 's';
+    }
+
+    function runStatusBadgeClass(status) {
+      if (status === 'success') return 'badge-ok';
+      if (status === 'failure') return 'badge-bad';
+      if (status === 'running') return 'badge-warn';
+      if (status === 'stopped') return 'badge-muted';
+      return 'badge-muted';
+    }
+
+    /**
+     * Per-source run history + health (from GET /mine?includeActivity=1).
+     * Uses escapeHtml (defined below); both are function declarations and hoist.
+     */
+    function buildActivitySection(source) {
+      const act = source.activity;
+      if (!act) return '';
+
+      const h = act.health;
+      const runs = act.runs || [];
+      const sch = act.schedule || {};
+
+      let healthBadge = '<span class="badge badge-muted">No runs yet</span>';
+      if (h && h.isBroken) {
+        healthBadge = '<span class="badge badge-bad">Broken</span>';
+      } else if (h && h.lastStatus === 'success') {
+        healthBadge = '<span class="badge badge-ok">Healthy</span>';
+      } else if (h && h.lastStatus === 'failure') {
+        healthBadge = '<span class="badge badge-warn">Last run failed</span>';
+      }
+
+      const cronEsc = escapeHtml(sch.cronExpression || '');
+      const tzEsc = sch.timezone ? escapeHtml(sch.timezone) : '';
+      const scheduleLine = sch.enabled
+        ? `Auto-scrape <strong>on</strong> · <code>${cronEsc}</code>${tzEsc ? ` · ${tzEsc}` : ''}`
+        : 'Auto-scrape <strong>off</strong> (manual Scrape Now / your deployment schedule)';
+
+      const summaryBits = [];
+      if (h && h.lastSuccessAt) summaryBits.push(`Last success: ${formatRunWhen(h.lastSuccessAt)}`);
+      if (h && h.lastFailureAt) summaryBits.push(`Last failure: ${formatRunWhen(h.lastFailureAt)}`);
+      if (h && h.lastErrorMessage && (h.isBroken || h.lastStatus === 'failure')) {
+        const msg = String(h.lastErrorMessage);
+        summaryBits.push(
+          `<span style="color:#b91c1c;">${escapeHtml(msg.slice(0, 220))}${msg.length > 220 ? '…' : ''}</span>`
+        );
+      }
+
+      const rowsHtml = runs.length
+        ? runs
+            .map(r => {
+              const err = r.errorMessage ? String(r.errorMessage) : '';
+              const errShow = err
+                ? escapeHtml(err.slice(0, 140)) + (err.length > 140 ? '…' : '')
+                : '—';
+              return `
+            <tr>
+              <td>${formatRunWhen(r.startedAt)}</td>
+              <td>${formatDurationMs(r.durationMs)}</td>
+              <td><span class="badge ${runStatusBadgeClass(r.status)}">${escapeHtml(r.status || '')}</span></td>
+              <td>${r.recordsFound != null ? r.recordsFound : '—'}</td>
+              <td>${r.recordsInserted != null ? r.recordsInserted : '—'}</td>
+              <td class="run-err">${errShow}</td>
+            </tr>`;
+            })
+            .join('')
+        : '<tr><td colspan="6" style="color:#9ca3af;">No runs recorded yet.</td></tr>';
+
+      return `
+                <div class="source-activity">
+                  <div class="activity-head">
+                    <span class="activity-title">Run history</span>
+                    <div class="activity-badges">${healthBadge}</div>
+                  </div>
+                  <div class="activity-schedule">${scheduleLine}</div>
+                  ${summaryBits.length ? `<div class="activity-summary">${summaryBits.join('<br>')}</div>` : ''}
+                  <details class="activity-details">
+                    <summary>Recent runs (${runs.length})</summary>
+                    <div class="activity-table-wrap">
+                      <table class="run-history-table">
+                        <thead>
+                          <tr>
+                            <th>Started</th>
+                            <th>Duration</th>
+                            <th>Status</th>
+                            <th>Found</th>
+                            <th>New</th>
+                            <th>Error</th>
+                          </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                      </table>
+                    </div>
+                  </details>
+                </div>`;
+    }
+
     async function loadSources() {
       try {
-        const response = await fetch('/api/my-sources/mine');
+        const response = await fetch('/api/my-sources/mine?includeActivity=1', {
+          credentials: 'include'
+        });
         const data = await response.json();
         
         const sourcesList = document.getElementById('sourcesList');
@@ -1478,6 +1701,7 @@
               ${source.data.includeWords?.length ? `<div><strong>Include:</strong> ${source.data.includeWords.join(', ')}</div>` : ''}
               ${source.data.excludeWords?.length ? `<div><strong>Exclude:</strong> ${source.data.excludeWords.join(', ')}</div>` : ''}
                 </div>
+                ${buildActivitySection(source)}
                 <div class="source-actions" style="display: flex; gap: 0.5rem; margin-top: 1rem; justify-content: flex-end;">
               <button type="button" class="btn-small source-card-action" data-action="edit" data-source-id="${source.id}" data-source-name="${escapeHtmlAttr(source.data.name || '')}"><img src="icons/edit.svg" alt="" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Edit</button>
               <button type="button" class="btn-small source-card-action" data-action="scrape" data-source-id="${source.id}" data-source-name="${escapeHtmlAttr(source.data.name || '')}"><img src="icons/pull.svg" alt="" style="width:12px;height:12px;vertical-align:middle;margin-right:4px;pointer-events:none;"> Scrape</button>

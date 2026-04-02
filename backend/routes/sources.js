@@ -16,6 +16,47 @@ const { METHODS_WITH_BODY } = require('../engine/adapters/rest');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
 const { log: auditLog } = require('../services/auditLog');
 
+function envBool(name) {
+  const v = process.env[name];
+  if (v == null || !String(v).trim()) return false;
+  return String(v).trim().toLowerCase() === 'true';
+}
+
+function getAutoScrapeScheduleHint() {
+  return {
+    enabled: envBool('AUTO_SCRAPE_ENABLED'),
+    cronExpression: String(process.env.AUTO_SCRAPE_INTERVAL || '0 */8 * * *').trim(),
+    timezone: String(process.env.AUTO_SCRAPE_TIMEZONE || '').trim() || null
+  };
+}
+
+function formatRunRow(row) {
+  return {
+    id: row.id,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    status: row.status,
+    recordsFound: row.records_found,
+    recordsInserted: row.records_inserted,
+    errorMessage: row.error_message,
+    errorType: row.error_type,
+    durationMs: row.duration_ms
+  };
+}
+
+function formatHealthRow(row) {
+  return {
+    sourceId: row.source_id,
+    consecutiveFailures: row.consecutive_failures,
+    lastStatus: row.last_status,
+    lastSuccessAt: row.last_success_at,
+    lastFailureAt: row.last_failure_at,
+    lastErrorMessage: row.last_error_message,
+    isBroken: !!row.is_broken,
+    brokenSince: row.broken_since
+  };
+}
+
 /**
  * GET /api/sources
  * Get all unique source names for the current user
@@ -62,6 +103,10 @@ router.get('/mine', async (req, res) => {
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
+    const includeActivity =
+      req.query.includeActivity === '1' ||
+      req.query.includeActivity === 'true' ||
+      req.query.includeActivity === 'yes';
     const rows = await dbAll('SELECT id, source_data, created_at FROM user_sources WHERE user_id = ? ORDER BY id DESC', [userId]);
     const sources = rows.map(row => {
       try {
@@ -76,6 +121,43 @@ router.get('/mine', async (req, res) => {
         return null;
       }
     }).filter(Boolean);
+
+    if (includeActivity && sources.length) {
+      const ids = sources.map(s => s.id);
+      const placeholders = ids.map(() => '?').join(',');
+      const schedule = getAutoScrapeScheduleHint();
+
+      const healthRows = await dbAll(
+        `SELECT * FROM source_health WHERE user_id = ? AND source_id IN (${placeholders})`,
+        [userId, ...ids]
+      );
+      const healthById = {};
+      for (const h of healthRows) {
+        healthById[h.source_id] = formatHealthRow(h);
+      }
+
+      const runLists = await Promise.all(
+        ids.map(id =>
+          dbAll(
+            `SELECT * FROM source_runs WHERE user_id = ? AND source_id = ? ORDER BY started_at DESC LIMIT 25`,
+            [userId, id]
+          )
+        )
+      );
+      const runsById = {};
+      ids.forEach((id, i) => {
+        runsById[id] = (runLists[i] || []).map(formatRunRow);
+      });
+
+      for (const s of sources) {
+        s.activity = {
+          health: healthById[s.id] || null,
+          runs: runsById[s.id] || [],
+          schedule
+        };
+      }
+    }
+
     res.json({ data: sources });
   } catch (e) {
     res.status(500).json({ error: e.message });
