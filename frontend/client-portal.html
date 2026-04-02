@@ -669,7 +669,7 @@
         
         <div class="filter-group">
           <label class="form-label" for="daysFilter">Time Range</label>
-          <select id="daysFilter" class="form-select">
+          <select id="daysFilter" class="form-select" title="Filters this list only — leads older than the range are hidden but still stored until you use Clear All Leads.">
             <option value="">All Time</option>
             <option value="1">Last 24 Hours</option>
             <option value="7" selected>Last 7 Days</option>
@@ -1212,7 +1212,9 @@
       leadsDisplayDiv.innerHTML = '<div style="text-align: center; padding: 3rem;"><div class="loading" style="margin: 0 auto;"></div> Loading...</div>';
       
       try {
-        const response = await fetch('/api/leads?' + params.toString());
+        const response = await fetch('/api/leads?' + params.toString(), {
+          credentials: 'include'
+        });
         const result = await response.json();
         const leads = result.data || [];
         
@@ -1574,10 +1576,24 @@
       closeDeleteModal();
       
       try {
-        const res = await fetch('/api/leads/clear', { method: 'DELETE' });
-        const data = await res.json();
+        const res = await fetch('/api/leads/clear', {
+          method: 'DELETE',
+          credentials: 'include'
+        });
+        const data = await res.json().catch(() => ({}));
+        
+        if (!res.ok) {
+          alert(
+            '❌ Could not clear leads (' + res.status + '). ' +
+              (data.error || 'Not signed in or session expired — sign in again, then use Clear All Leads.')
+          );
+          return;
+        }
         
         if (data.success) {
+          // Default "Last 7 days" hides older rows — after a real DB clear, show All Time so an empty table is truthful.
+          const daysEl = document.getElementById('daysFilter');
+          if (daysEl) daysEl.value = '';
           alert(`✅ Successfully cleared ${data.deleted || 0} records!\n\n${data.message || 'All leads have been deleted.'}\n\nGo to Sources page and click "Scrape Now" to get fresh data.`);
           loadLeads(); // Refresh table
           loadStats(); // Refresh stats
