@@ -33,6 +33,7 @@ module.exports = {
   buildSignalAnalystPrompt: signalBrain.buildSignalAnalystPrompt,
   userProfileHasSignalInputs: signalBrain.userProfileHasSignalInputs,
   scoreLeadWithSignalBrain: signalBrain.scoreLeadWithSignalBrain,
+  enrichLeadSignals: signalBrain.enrichLeadSignals,
   getSignalScoreThreshold: signalBrain.getSignalScoreThreshold,
 
   // Agent 2: Data Extraction from Screenshots

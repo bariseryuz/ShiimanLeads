@@ -94,6 +94,7 @@ router.get('/', async (req, res) => {
         is_new: row.is_new,
         priority_score: row.priority_score,
         ai_summary: row.ai_summary,
+        signal_line: row.signal_line,
         contact_name: row.contact_name,
         enriched_email: row.enriched_email,
         linkedin_url: row.linkedin_url,

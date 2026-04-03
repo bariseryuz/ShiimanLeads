@@ -5,7 +5,7 @@ const {
 } = require('./deduplication');
 const { dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
-const { scoreLeadWithSignalBrain, getSignalScoreThreshold } = require('./ai');
+const { enrichLeadSignals, getSignalScoreThreshold } = require('./ai');
 const { onNewLead, onHighPrioritySignal } = require('./alerts');
 const { enqueueEnrichmentForHotLead, pickCompanyName } = require('./enrichment');
 
@@ -137,38 +137,62 @@ async function insertLeadIfNew({
             : '';
         let leadPreview = preview || undefined;
         try {
-          const scored = await scoreLeadWithSignalBrain(userId, data);
+          const scored = await enrichLeadSignals(userId, data);
           if (scored) {
+            const sl = scored.signal_line ? String(scored.signal_line).trim().slice(0, 400) : null;
+            const summaryText = scored.reason || sl || null;
             try {
               await dbRun(
-                `UPDATE leads SET priority_score = ?, ai_summary = ?, contact_name = ? WHERE id = ? AND user_id = ?`,
-                [scored.score, scored.reason, scored.contact_name || null, leadId, userId]
+                `UPDATE leads SET priority_score = ?, ai_summary = ?, contact_name = ?, signal_line = ? WHERE id = ? AND user_id = ?`,
+                [
+                  scored.score != null ? scored.score : null,
+                  summaryText,
+                  scored.contact_name || null,
+                  sl,
+                  leadId,
+                  userId
+                ]
               );
             } catch (upErr) {
               if (upErr.message && upErr.message.includes('no such column')) {
-                await dbRun(
-                  `UPDATE leads SET priority_score = ?, ai_summary = ? WHERE id = ? AND user_id = ?`,
-                  [scored.score, scored.reason, leadId, userId]
-                );
+                try {
+                  await dbRun(
+                    `UPDATE leads SET priority_score = ?, ai_summary = ?, contact_name = ? WHERE id = ? AND user_id = ?`,
+                    [
+                      scored.score != null ? scored.score : null,
+                      summaryText,
+                      scored.contact_name || null,
+                      leadId,
+                      userId
+                    ]
+                  );
+                } catch (e2) {
+                  logger.debug(`SignalBrain update: ${e2.message}`);
+                }
               } else {
                 logger.debug(`SignalBrain update: ${upErr.message}`);
               }
             }
-            if (scored.score > getSignalScoreThreshold()) {
+            if (scored.score != null && scored.score > getSignalScoreThreshold()) {
               onHighPrioritySignal({
                 userId,
                 leadId,
                 sourceName: sourceName || 'unknown',
                 score: scored.score,
-                reason: scored.reason,
+                reason: scored.reason || sl || '',
                 contactName: scored.contact_name,
                 companyName: pickCompanyName(data),
-                leadPreview: preview || undefined
+                leadPreview: sl || preview || undefined,
+                signalLine: sl || undefined
               }).catch(() => {});
               enqueueEnrichmentForHotLead({ userId, leadId, data });
             }
-            leadPreview =
-              (`${preview} [Signal: ${scored.score}/10]`.trim() || `[Signal: ${scored.score}/10]`) || undefined;
+            if (scored.score != null) {
+              leadPreview =
+                (`${preview} [Signal: ${scored.score}/10]`.trim() || `[Signal: ${scored.score}/10]`) || undefined;
+            } else if (sl) {
+              leadPreview = sl.slice(0, 120);
+            }
           }
         } catch (sigErr) {
           logger.debug(`SignalBrain: ${sigErr.message}`);

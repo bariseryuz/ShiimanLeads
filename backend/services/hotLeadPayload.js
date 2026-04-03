@@ -10,6 +10,7 @@ function buildHotLeadCard({
   reason,
   leadId,
   leadPreview,
+  signalLine,
   enrichedEmail,
   linkedinUrl
 }) {
@@ -26,6 +27,7 @@ function buildHotLeadCard({
       aiScore: score,
       aiScoreLabel,
       reason: reason || '—',
+      signalLine: signalLine || null,
       leadId,
       leadPreview: leadPreview || null,
       enrichedEmail: enrichedEmail || null,
@@ -37,7 +39,8 @@ function buildHotLeadCard({
 /** Slack incoming webhook: blocks + fallback text */
 function slackHotLeadMessage(cardPayload) {
   const c = cardPayload.card;
-  const text = `*Hot lead* (${c.aiScoreLabel}) — ${c.source}\n*${c.name}* · ${c.company}\n${c.reason}`;
+  const line = c.signalLine || c.reason;
+  const text = `*Hot lead* (${c.aiScoreLabel}) — ${c.source}\n*${c.name}* · ${c.company}\n${line}`;
   const blocks = [
     {
       type: 'header',
@@ -54,7 +57,10 @@ function slackHotLeadMessage(cardPayload) {
     },
     {
       type: 'section',
-      text: { type: 'mrkdwn', text: `*Reason*\n${String(c.reason).slice(0, 2000)}` }
+      text: {
+        type: 'mrkdwn',
+        text: `*Signal*\n${String(c.signalLine || c.reason).slice(0, 2000)}`
+      }
     }
   ];
   if (c.enrichedEmail || c.linkedinUrl) {
@@ -86,7 +92,11 @@ function discordHotLeadEmbed(cardPayload) {
           { name: 'Company', value: String(c.company).slice(0, 1024), inline: true },
           { name: 'AI score', value: c.aiScoreLabel, inline: true },
           { name: 'Source', value: String(c.source).slice(0, 1024), inline: false },
-          { name: 'Reason', value: String(c.reason).slice(0, 1024), inline: false }
+          {
+            name: 'Signal',
+            value: String(c.signalLine || c.reason).slice(0, 1024),
+            inline: false
+          }
         ],
         footer: { text: `Lead ID ${c.leadId}` }
       }

@@ -114,6 +114,7 @@ async function onHighPrioritySignal({
   contactName,
   companyName,
   leadPreview,
+  signalLine,
   enrichedEmail,
   linkedinUrl
 }) {
@@ -133,6 +134,7 @@ async function onHighPrioritySignal({
       reason,
       leadId,
       leadPreview,
+      signalLine,
       enrichedEmail,
       linkedinUrl
     });
@@ -144,6 +146,7 @@ async function onHighPrioritySignal({
       sourceName,
       score,
       reason,
+      signal_line: signalLine || null,
       contactName: contactName || null,
       companyName: companyName || null,
       leadPreview: leadPreview || null,

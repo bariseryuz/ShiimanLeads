@@ -237,6 +237,7 @@ function migratePhase1Columns(db) {
   add('leads', 'linkedin_url', 'TEXT');
   add('leads', 'enrichment_status', 'TEXT'); // ok|skipped|error|null
   add('leads', 'enrichment_provider', 'TEXT');
+  add('leads', 'signal_line', 'TEXT');
 }
 
 /**

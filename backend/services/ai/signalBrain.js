@@ -53,7 +53,8 @@ function buildSignalAnalystPrompt(userProfile) {
     '\nReturn ONLY valid JSON (no markdown fences) with this exact shape:\n' +
     '{"score": <integer 1-10>, "reason": "<one or two sentences: why this score for this client>", "contact_name": "<best contact or company name if inferable; else empty string>", ' +
     '"trigger_type": "<one of: construction_permit | hiring | funding | expansion | new_business | unknown>", ' +
-    '"trigger_event": "<short label of the detected event>"}\n\n' +
+    '"trigger_event": "<short label of the detected event>", ' +
+    '"signal_line": "<REQUIRED: one line for the seller dashboard. Format EXACTLY: [Best address or city or property name] - Short factual event (e.g. new lease, permit issued, opening soon). Use only facts from the data; max 220 chars.>"}\n\n' +
     'Lead data to evaluate:\n';
   return text;
 }
@@ -79,13 +80,18 @@ function parseSignalJson(text) {
       o.trigger_type == null ? '' : String(o.trigger_type).trim().slice(0, 80);
     const trigger_event =
       o.trigger_event == null ? '' : String(o.trigger_event).trim().slice(0, 300);
+    let signal_line =
+      o.signal_line == null ? '' : String(o.signal_line).trim().slice(0, 300);
+    if (!signal_line && (trigger_event || trigger_type)) {
+      signal_line = `[${trigger_type || 'Event'}] - ${trigger_event}`.slice(0, 300);
+    }
     if (trigger_event || trigger_type) {
       const prefix = [trigger_type, trigger_event].filter(Boolean).join(' · ');
       reason = prefix ? `${prefix} — ${reason || ''}`.replace(/\s+—\s*$/, '').trim() || '—' : reason || '—';
     } else {
       reason = reason || '—';
     }
-    return { score, reason, contact_name, trigger_type, trigger_event };
+    return { score, reason, contact_name, trigger_type, trigger_event, signal_line: signal_line || '' };
   } catch {
     return null;
   }
@@ -125,10 +131,93 @@ async function scoreLeadWithSignalBrain(userId, leadData) {
   }
 }
 
+function envSignalLineWithoutProfile() {
+  const v = process.env.SIGNAL_LINE_WITHOUT_ICP_PROFILE;
+  if (v == null || !String(v).trim()) return true;
+  return String(v).trim().toLowerCase() === 'true';
+}
+
+/**
+ * When the user has not filled ICP fields, still produce a one-line "[Location] - event" if enabled.
+ * @returns {Promise<{ signal_line: string } | null>}
+ */
+async function generateSignalLineOnly(userId, leadData) {
+  if (!isAIAvailable() || !envSignalLineWithoutProfile()) return null;
+
+  const user = await dbGet(
+    'SELECT id, company_name, industry, target_audience FROM users WHERE id = ?',
+    [userId]
+  );
+  const sellerHint = [user?.company_name, user?.industry || user?.target_audience]
+    .filter(Boolean)
+    .join(' · ')
+    .trim()
+    || 'B2B commercial services';
+
+  const leadText = typeof leadData === 'string' ? leadData : JSON.stringify(leadData, null, 2);
+
+  const prompt =
+    `You format leads for a seller: ${sellerHint}.\n` +
+    `Use ONLY facts from the JSON below. Do not invent addresses, permits, or openings.\n\n` +
+    `Return ONLY valid JSON (no markdown):\n` +
+    `{"signal_line":"[Location] - Short factual event."}\n\n` +
+    `Rules for signal_line:\n` +
+    `- Put the best location in square brackets: street + city if present, else city/state, else business/property name, else "Unknown location".\n` +
+    `- After "] - " write ONE short event: permit type, lease, hiring, opening soon, renovation, etc.\n` +
+    `- Max 220 characters. English.\n` +
+    `- Examples (structure only; use real fields from data):\n` +
+    `"[4521 Maple Ave, Dallas, TX] - Interior permit issued for condo renovation."\n` +
+    `"[West End] - New office lease signed."\n` +
+    `"[Uptown] - Restaurant opening soon; storefront under construction."\n\n` +
+    `Lead JSON:\n${leadText}`;
+
+  try {
+    const model = getGeminiModel('signal');
+    const result = await model.generateContent(prompt);
+    const raw = (await result.response).text();
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    const o = JSON.parse(raw.slice(start, end + 1));
+    const sl = o.signal_line != null ? String(o.signal_line).trim().slice(0, 300) : '';
+    return sl ? { signal_line: sl } : null;
+  } catch (e) {
+    logger.warn(`[SignalBrain] generateSignalLineOnly: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Full ICP scoring when profile fields exist; otherwise optional one-line signal.
+ * @returns {Promise<{ score: number|null, reason: string|null, contact_name: string|null, signal_line: string|null, trigger_type?: string, trigger_event?: string } | null>}
+ */
+async function enrichLeadSignals(userId, leadData) {
+  const user = await dbGet(
+    'SELECT industry, target_audience, positive_signals, negative_signals FROM users WHERE id = ?',
+    [userId]
+  );
+  if (userProfileHasSignalInputs(user)) {
+    const scored = await scoreLeadWithSignalBrain(userId, leadData);
+    return scored;
+  }
+  const minimal = await generateSignalLineOnly(userId, leadData);
+  if (!minimal?.signal_line) return null;
+  return {
+    score: null,
+    reason: null,
+    contact_name: null,
+    signal_line: minimal.signal_line,
+    trigger_type: null,
+    trigger_event: null
+  };
+}
+
 module.exports = {
   buildSignalAnalystPrompt,
   userProfileHasSignalInputs,
   scoreLeadWithSignalBrain,
+  enrichLeadSignals,
+  generateSignalLineOnly,
   getSignalScoreThreshold,
   parseSignalJson
 };
