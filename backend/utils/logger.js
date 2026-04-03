@@ -8,12 +8,19 @@ if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
 
+const useJson = String(process.env.LOG_FORMAT || '').trim().toLowerCase() === 'json';
+
+const lineFormat = winston.format.combine(
+  winston.format.timestamp(),
+  winston.format.printf(i => `${i.timestamp} [${i.level.toUpperCase()}] ${i.message}`)
+);
+
+const jsonFormat = winston.format.combine(winston.format.timestamp(), winston.format.json());
+
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
-  format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.printf(i => `${i.timestamp} [${i.level.toUpperCase()}] ${i.message}`)
-  ),
+  format: useJson ? jsonFormat : lineFormat,
+  defaultMeta: useJson ? { service: 'shiiman-leads' } : undefined,
   transports: [
     new winston.transports.Console(),
     new winston.transports.File({ filename: path.join(logsDir, 'error.log'), level: 'error' }),

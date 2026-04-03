@@ -5,14 +5,19 @@
 
 const axios = require('axios');
 const logger = require('../utils/logger');
+const scaleLimits = require('../config/scaleLimits');
 
 function hasSerper() {
   return !!(process.env.SERPER_API_KEY && String(process.env.SERPER_API_KEY).trim());
 }
 
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
 /**
  * @param {string} query
- * @param {{ num?: number }} [opts]
+ * @param {{ num?: number, timeoutMs?: number }} [opts]
  * @returns {Promise<Array<{ title: string, link: string, snippet: string }>>}
  */
 async function googleSearchOrganic(query, opts = {}) {
@@ -24,33 +29,48 @@ async function googleSearchOrganic(query, opts = {}) {
   if (!q) return [];
 
   const num = Math.min(Math.max(parseInt(opts.num || 10, 10) || 10, 1), 20);
+  const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : scaleLimits.serper.timeoutMs;
+  const maxRetries = scaleLimits.serper.maxRetries;
 
-  const { data } = await axios.post(
-    'https://google.serper.dev/search',
-    { q, num },
-    {
-      headers: {
-        'X-API-KEY': key.trim(),
-        'Content-Type': 'application/json'
-      },
-      timeout: 20000,
-      validateStatus: s => s < 500
+  let lastErr;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const { data } = await axios.post(
+        'https://google.serper.dev/search',
+        { q, num },
+        {
+          headers: {
+            'X-API-KEY': key.trim(),
+            'Content-Type': 'application/json'
+          },
+          timeout: timeoutMs,
+          validateStatus: s => s < 500
+        }
+      );
+
+      if (data?.message && typeof data.message === 'string' && data.organic == null) {
+        logger.warn(`[Serper] ${data.message}`);
+        throw new Error(data.message);
+      }
+
+      const organic = Array.isArray(data?.organic) ? data.organic : [];
+      return organic
+        .map(o => ({
+          title: String(o.title || '').trim(),
+          link: String(o.link || o.url || '').trim(),
+          snippet: String(o.snippet || '').trim()
+        }))
+        .filter(r => r.link && /^https?:\/\//i.test(r.link));
+    } catch (e) {
+      lastErr = e;
+      const status = e.response && e.response.status;
+      const retry = status === 429 || status === 503 || status >= 502;
+      if (!retry || attempt === maxRetries) throw e;
+      logger.warn(`[Serper] retry ${attempt + 1}/${maxRetries}: ${e.message}`);
+      await sleep(400 * Math.pow(2, attempt));
     }
-  );
-
-  if (data?.message && typeof data.message === 'string' && data.organic == null) {
-    logger.warn(`[Serper] ${data.message}`);
-    throw new Error(data.message);
   }
-
-  const organic = Array.isArray(data?.organic) ? data.organic : [];
-  return organic
-    .map(o => ({
-      title: String(o.title || '').trim(),
-      link: String(o.link || o.url || '').trim(),
-      snippet: String(o.snippet || '').trim()
-    }))
-    .filter(r => r.link && /^https?:\/\//i.test(r.link));
+  throw lastErr;
 }
 
 function normalizeUrlKey(url) {

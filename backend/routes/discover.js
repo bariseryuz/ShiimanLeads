@@ -12,6 +12,17 @@ const {
 const { createUserSourceCore } = require('../services/createUserSourceCore');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
+const { createRateLimiter } = require('../middleware/rateLimitMemory');
+const scaleLimits = require('../config/scaleLimits');
+
+const discoverLimiter = createRateLimiter({
+  windowMs: scaleLimits.discoverRate.windowMs,
+  max: scaleLimits.discoverRate.max,
+  name: 'discover',
+  keyFn: req => `discover:u:${req.session && req.session.user ? req.session.user.id : 'anon'}:${req.ip || 'na'}`
+});
+
+router.use(discoverLimiter);
 
 /**
  * POST /api/discover
@@ -97,10 +108,27 @@ router.post('/google', requirePaid, express.json(), async (req, res) => {
 router.post('/monitor', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id;
-    const { name, url, keyword, triggerLogic, suggestedFrequency, signalCategory } = req.body || {};
+    const {
+      name,
+      url,
+      keyword,
+      triggerLogic,
+      suggestedFrequency,
+      signalCategory,
+      monitoringHints,
+      description,
+      sourceType
+    } = req.body || {};
     if (!name || !url) {
       return res.status(400).json({ error: 'name and url are required' });
     }
+    const hints =
+      (monitoringHints != null && String(monitoringHints).trim()
+        ? String(monitoringHints).trim().slice(0, 1200)
+        : null) ||
+      (description != null && String(description).trim()
+        ? String(description).trim().slice(0, 1200)
+        : null);
     const sourceData = {
       name: String(name).slice(0, 200),
       url: String(url).trim(),
@@ -111,11 +139,15 @@ router.post('/monitor', requirePaid, enforceSourceLimit, express.json(), async (
       ...(triggerLogic != null && String(triggerLogic).trim()
         ? { triggerLogic: String(triggerLogic).trim().slice(0, 800) }
         : {}),
+      ...(hints ? { monitoringHints: hints } : {}),
       ...(suggestedFrequency != null && String(suggestedFrequency).trim()
         ? { suggestedMonitorFrequency: String(suggestedFrequency).trim().slice(0, 32) }
         : {}),
       ...(signalCategory != null && String(signalCategory).trim()
         ? { signalCategory: String(signalCategory).trim().slice(0, 80) }
+        : {}),
+      ...(sourceType != null && String(sourceType).trim()
+        ? { discoverySourceType: String(sourceType).trim().slice(0, 40) }
         : {})
     };
     const result = await createUserSourceCore({ userId, sourceData, req });

@@ -4,6 +4,8 @@
 
 const { getGeminiModel, isAIAvailable } = require('./geminiClient');
 const logger = require('../../utils/logger');
+const { retryWithBackoff } = require('../../utils/aiRetry');
+const scaleLimits = require('../../config/scaleLimits');
 const {
   hasSerper,
   googleSearchOrganic,
@@ -65,9 +67,143 @@ function parseSuggestionsJson(text) {
   }
 }
 
+/** Parse Gemini response: either { suggestions: [...] } or a raw JSON array */
+function parseEventDrivenSuggestions(text) {
+  if (!text || typeof text !== 'string') return [];
+  let t = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
+  try {
+    let parsed;
+    if (t.startsWith('[')) {
+      parsed = JSON.parse(t);
+    } else {
+      const start = t.indexOf('{');
+      const end = t.lastIndexOf('}');
+      if (start === -1 || end <= start) return [];
+      parsed = JSON.parse(t.slice(start, end + 1));
+    }
+    const raw = Array.isArray(parsed) ? parsed : parsed.suggestions || parsed.results || parsed.sources;
+    return Array.isArray(raw) ? raw.slice(0, 8) : [];
+  } catch {
+    return [];
+  }
+}
+
+function mapDiscoveryTypeToSignalCategory(typeRaw) {
+  const t = String(typeRaw || '').toLowerCase();
+  if (t === 'job_board') return 'hiring';
+  if (t === 'news_feed') return 'general';
+  if (t === 'search_query') return 'general';
+  if (t === 'direct_url') return 'general';
+  return 'general';
+}
+
+function normalizeEventItem(item) {
+  const title = String(item.title || '').trim().slice(0, 200);
+  const description = String(item.description || item.notes || '').trim().slice(0, 800);
+  const typeRaw = String(item.type || 'direct_url').toLowerCase();
+  const allowed = ['direct_url', 'search_query', 'job_board', 'news_feed'];
+  const sourceType = allowed.includes(typeRaw) ? typeRaw : 'direct_url';
+  const url = String(item.url || item.monitorUrl || '').trim();
+  return {
+    title: title || 'Suggested source',
+    rawUrl: url,
+    notes: description.slice(0, 500),
+    triggerLogic: description,
+    sourceType,
+    suggestedFrequency: 'daily',
+    signalCategory: mapDiscoveryTypeToSignalCategory(typeRaw),
+    kind: sourceType === 'search_query' ? 'search_query' : 'url'
+  };
+}
+
+function finalizeDirectMonitorUrl(norm, nicheKeyword) {
+  const url = norm.rawUrl;
+  if (!url) {
+    return `https://www.google.com/search?q=${encodeURIComponent(nicheKeyword)}`;
+  }
+  if (/^https?:\/\//i.test(url)) return url.slice(0, 2000);
+  return `https://www.google.com/search?q=${encodeURIComponent(url)}`;
+}
+
+function extractSerperQueryString(norm, nicheKeyword) {
+  const raw = norm.rawUrl || '';
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      if (/google\./i.test(u.hostname) && u.pathname.includes('search')) {
+        const q = u.searchParams.get('q');
+        if (q) return q.trim();
+      }
+    } catch {
+      /* fallthrough */
+    }
+    return raw;
+  }
+  return raw.trim() || nicheKeyword;
+}
+
 /**
- * @param {string} keyword - e.g. "Real Estate Dallas"
- * @returns {Promise<{ suggestions: Array<{ title, kind, monitorUrl, notes }> } | null>}
+ * Expand `search_query` rows into up to 5 real URLs via Serper (when configured).
+ * Respects DISCOVER_MAX_SERPER_CALLS — when exhausted, falls back to Google search URLs only.
+ */
+async function expandSearchQueryItemsWithSerper(normalized, nicheKeyword) {
+  const budget = { remaining: scaleLimits.serper.maxCallsPerDiscoveryRequest };
+  const out = [];
+  for (const norm of normalized) {
+    if (norm.sourceType !== 'search_query') {
+      out.push({
+        ...norm,
+        monitorUrl: finalizeDirectMonitorUrl(norm, nicheKeyword)
+      });
+      continue;
+    }
+    const q = extractSerperQueryString(norm, nicheKeyword);
+    if (!hasSerper() || budget.remaining <= 0) {
+      out.push({
+        ...norm,
+        monitorUrl: `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+        ...(budget.remaining <= 0 && hasSerper() ? { serperSkipped: true } : {})
+      });
+      continue;
+    }
+    try {
+      budget.remaining -= 1;
+      const organic = await googleSearchOrganic(q, { num: 5 });
+      await sleep(400);
+      if (!organic.length) {
+        out.push({
+          ...norm,
+          monitorUrl: `https://www.google.com/search?q=${encodeURIComponent(q)}`
+        });
+        continue;
+      }
+      organic.forEach((row, idx) => {
+        out.push({
+          title: (row.title || norm.title).slice(0, 200) || `Result ${idx + 1}`,
+          monitorUrl: row.link,
+          notes: String(row.snippet || '').slice(0, 400),
+          triggerLogic: `${norm.triggerLogic} (Google top result for: ${q})`.slice(0, 800),
+          sourceType: 'direct_url',
+          suggestedFrequency: norm.suggestedFrequency,
+          signalCategory: norm.signalCategory,
+          kind: 'url',
+          expandedFromSearchQuery: true,
+          serperQuery: q
+        });
+      });
+    } catch (e) {
+      logger.warn(`[Discovery] Serper expand failed: ${e.message}`);
+      out.push({
+        ...norm,
+        monitorUrl: `https://www.google.com/search?q=${encodeURIComponent(q)}`
+      });
+    }
+  }
+  return out.slice(0, 20);
+}
+
+/**
+ * Keyword discovery: event-driven sources; search_query types expanded via Serper when SERPER_API_KEY is set.
  */
 async function fetchDiscoverySuggestions(keyword) {
   const k = String(keyword || '').trim();
@@ -79,30 +215,37 @@ async function fetchDiscoverySuggestions(keyword) {
   }
 
   const prompt =
-    'You are a SIGNAL AGGREGATOR strategist. Prefer pages where TRIGGER EVENTS are already collected (faster than scraping whole corporate sites).\n' +
-    'Include a diverse mix when relevant to the niche:\n' +
-    '- HIRING: LinkedIn Jobs search URLs (e.g. linkedin.com/jobs/search/?keywords=...&location=...), public Greenhouse/Lever board search, niche job boards.\n' +
-    '- EXPANSION / REAL ESTATE: local Business Journal real estate or commercial news sections (e.g. bizjournals.com city news), regional business news.\n' +
-    '- FUNDING / STARTUPS: Crunchbase explore/search, TechCrunch tag pages (only if the niche fits B2B to startups).\n' +
-    '- PERMITS / CONSTRUCTION: ArcGIS hubs, city permit portals, county open data already in the conversation.\n\n' +
-    `Niche / keyword: ${k}\n\n` +
-    'Return ONLY valid JSON. Each of the 5 suggestions must be an ACTIONABLE MONITORING BLUEPRINT:\n' +
-    '{"suggestions":[{"title":"short label","kind":"url"|"search_query","monitorUrl":"https://...","notes":"one line what this page aggregates",' +
-    '"suggestedFrequency":"daily"|"weekly"|"hourly"|"monthly",' +
-    '"signalCategory":"hiring"|"real_estate"|"funding"|"permits"|"general",' +
-    '"triggerLogic":"1-2 sentences: what trigger to watch for and why it matters for sellers in this niche (e.g. hiring interior designer => finishing phase => blinds/shades)."}]}\n' +
-    'Provide exactly 5 suggestions. Every monitorUrl must start with http:// or https://. ' +
-    'At least 2 suggestions should be explicit HIRING or JOB-BOARD style entry points when the keyword allows it.';
+    `The user is looking for lead generation sources for the niche: "${k}".\n` +
+    `As an expert growth hacker, suggest exactly 5 specific types of sources to monitor.\n\n` +
+    `For each source, provide:\n` +
+    `1. "title": A clear name (e.g., "LinkedIn Jobs — web developer Dallas")\n` +
+    `2. "url": A direct https URL when possible OR for "search_query" type a plain search query string (e.g. site:linkedin.com/jobs "office manager" Dallas) OR a Google Maps search URL\n` +
+    `3. "description": Why this source surfaces high-intent leads and what TRIGGER EVENTS to watch for (new hires, permits, openings, funding, moves).\n` +
+    `4. "type": one of: "direct_url", "search_query", "job_board", "news_feed"\n\n` +
+    `Return ONLY valid JSON in this exact shape:\n` +
+    `{"suggestions":[{"title":"...","url":"...","description":"...","type":"direct_url"}]}\n` +
+    `You may also return a raw JSON array of 5 objects with the same fields.\n\n` +
+    `Focus on TRIGGER EVENTS (new projects, new hires, new sales, openings, funding) — not generic static directories.`;
 
   try {
     const model = getGeminiModel('discovery');
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const raw = response.text();
-    const suggestions = parseSuggestionsJson(raw);
-    if (!suggestions || !suggestions.length) {
-      logger.warn(`[Discovery] Unparseable or empty response: ${String(raw).slice(0, 300)}`);
+    const result = await retryWithBackoff(
+      () => model.generateContent(prompt),
+      {
+        maxRetries: scaleLimits.gemini.maxRetries,
+        baseMs: scaleLimits.gemini.retryBaseMs
+      }
+    );
+    const raw = (await result.response).text();
+    const rawItems = parseEventDrivenSuggestions(raw);
+    if (!rawItems.length) {
+      logger.warn(`[Discovery] Unparseable response: ${String(raw).slice(0, 400)}`);
       throw new Error('Could not parse discovery suggestions from AI');
+    }
+    const normalized = rawItems.map(it => normalizeEventItem(it));
+    const suggestions = await expandSearchQueryItemsWithSerper(normalized, k);
+    if (!suggestions.length) {
+      throw new Error('No suggestions after processing');
     }
     return { suggestions };
   } catch (e) {
@@ -154,7 +297,13 @@ async function generateDiscoveryStrategy(profile) {
 
   try {
     const model = getGeminiModel('discovery');
-    const result = await model.generateContent(prompt);
+    const result = await retryWithBackoff(
+      () => model.generateContent(prompt),
+      {
+        maxRetries: scaleLimits.gemini.maxRetries,
+        baseMs: scaleLimits.gemini.retryBaseMs
+      }
+    );
     const response = await result.response;
     const raw = response.text();
     const suggestions = parseSuggestionsJson(raw);
@@ -229,14 +378,26 @@ async function generateDiscoveryFromGoogleSearch(profile) {
     'Return ONLY valid JSON: {"queries":["query 1","query 2",...]}';
 
   const model = getGeminiModel('discovery');
-  const qRes = await model.generateContent(queryGenPrompt);
+  const qRes = await retryWithBackoff(
+    () => model.generateContent(queryGenPrompt),
+    {
+      maxRetries: scaleLimits.gemini.maxRetries,
+      baseMs: scaleLimits.gemini.retryBaseMs
+    }
+  );
   const queries = parseQueriesJson((await qRes.response).text());
   if (!queries.length) {
     throw new Error('Could not generate search queries from AI');
   }
 
+  let serperBudget = scaleLimits.serper.maxCallsGoogleDiscovery;
   const collected = [];
   for (const q of queries) {
+    if (serperBudget <= 0) {
+      logger.warn('[Discovery/Google] Serper budget exhausted; skipping remaining queries');
+      break;
+    }
+    serperBudget -= 1;
     try {
       const rows = await googleSearchOrganic(q, { num: 10 });
       rows.forEach(r => collected.push({ ...r, sourceQuery: q }));
@@ -266,7 +427,13 @@ async function generateDiscoveryFromGoogleSearch(profile) {
     '"triggerLogic":"why monitoring this URL fits the seller"}]}\n' +
     'Exactly 5 suggestions. Every monitorUrl must match a link from the results exactly.';
 
-  const packRes = await model.generateContent(packPrompt);
+  const packRes = await retryWithBackoff(
+    () => model.generateContent(packPrompt),
+    {
+      maxRetries: scaleLimits.gemini.maxRetries,
+      baseMs: scaleLimits.gemini.retryBaseMs
+    }
+  );
   const rawPack = (await packRes.response).text();
   let suggestions = parseSuggestionsJson(rawPack);
   if (!suggestions || !suggestions.length) {

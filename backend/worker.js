@@ -15,9 +15,19 @@ require('./db');
 
 const cron = require('node-cron');
 const logger = require('./utils/logger');
+const scaleLimits = require('./config/scaleLimits');
 const { scrapeAllUsers } = require('./services/scheduler/cron');
 
 let running = false;
+let shuttingDown = false;
+/** @type {import('node-cron').ScheduledTask | null} */
+let cronTask = null;
+/** @type {Promise<void> | null} */
+let currentWork = null;
+
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
 
 async function runMasterScrape() {
   logger.info(`[worker] runMasterScrape start ${new Date().toISOString()}`);
@@ -32,14 +42,17 @@ async function runMasterScrape() {
 }
 
 async function tick() {
+  if (shuttingDown) return;
   if (running) {
     logger.warn('[worker] Previous scrape still running; skipping this tick');
     return;
   }
   running = true;
+  currentWork = runMasterScrape();
   try {
-    await runMasterScrape();
+    await currentWork;
   } finally {
+    currentWork = null;
     running = false;
   }
 }
@@ -50,11 +63,37 @@ if (!cron.validate(expr)) {
   process.exit(1);
 }
 
-cron.schedule(expr, tick);
+cronTask = cron.schedule(expr, tick);
 logger.info(`[worker] Scheduled: ${JSON.stringify(expr)} → runMasterScrape (is_active sources only)`);
 
 if (String(process.env.WORKER_RUN_ON_START || '').trim().toLowerCase() === 'true') {
   tick().catch(err => logger.error(`[worker] Startup run failed: ${err.message}`));
 }
+
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const grace = scaleLimits.worker.shutdownGraceMs;
+  logger.info(`[worker] ${signal} — stopping schedule, draining in-flight scrape (max ${grace}ms)`);
+  try {
+    if (cronTask && typeof cronTask.stop === 'function') cronTask.stop();
+  } catch (e) {
+    logger.warn(`[worker] cron stop: ${e.message}`);
+  }
+  if (currentWork) {
+    try {
+      await Promise.race([currentWork, sleep(grace)]);
+    } catch (e) {
+      logger.warn(`[worker] drain: ${e.message}`);
+    }
+  }
+  if (running) {
+    logger.warn('[worker] Exiting while scrape may still be running (grace elapsed)');
+  }
+  process.exit(0);
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = { runMasterScrape };

@@ -27,6 +27,8 @@ const { SESSIONS_DB_PATH } = require('./config/paths');
 const { db, sessionDb } = require('./db'); // Auto-initializes database
 const { attachUser } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
+const { requestIdMiddleware } = require('./middleware/requestId');
+const healthRoutes = require('./routes/health');
 const { setupAutoScraping } = require('./services/scheduler/cron');
 
 // === ROUTE IMPORTS ===
@@ -83,6 +85,16 @@ function startServer() {
   // Trust proxy for secure cookies behind Railway/NGINX
   app.set('trust proxy', 1);
 
+  app.use(requestIdMiddleware);
+
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    next();
+  });
+
   // Paddle webhook must receive raw body for signature verification (before any body parser)
   const { handlePaddleWebhook } = require('./routes/billing');
   app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), (req, res) => {
@@ -129,6 +141,8 @@ function startServer() {
   
   logger.info('✅ Session store: SQLite (persistent)');
   
+  app.use(healthRoutes);
+
   // Attach user to res.locals for templates
   app.use(attachUser);
   
@@ -200,9 +214,6 @@ function startServer() {
     
     res.json(result);
   });
-  
-  // === HEALTH CHECK ===
-  app.get('/health', (req, res) => res.json({ ok: true, timestamp: new Date().toISOString() }));
   
   // === 404 HANDLER FOR API ROUTES (before static files) ===
   app.use('/api/*', (req, res) => {
