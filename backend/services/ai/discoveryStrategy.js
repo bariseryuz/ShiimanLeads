@@ -4,6 +4,12 @@
 
 const { getGeminiModel, isAIAvailable } = require('./geminiClient');
 const logger = require('../../utils/logger');
+const {
+  hasSerper,
+  googleSearchOrganic,
+  dedupeSearchResults,
+  sleep
+} = require('../serperSearch');
 
 function parseSuggestionsJson(text) {
   if (!text || typeof text !== 'string') return null;
@@ -166,8 +172,140 @@ async function generateDiscoveryStrategy(profile) {
   }
 }
 
+function parseQueriesJson(text) {
+  if (!text || typeof text !== 'string') return [];
+  let t = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end <= start) return [];
+  t = t.slice(start, end + 1);
+  try {
+    const o = JSON.parse(t);
+    const raw = o.queries || o.search_queries || o.q;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(q => String(q || '').trim())
+      .filter(Boolean)
+      .slice(0, 6);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Google-backed discovery: Gemini proposes search queries → Serper returns real URLs → Gemini picks 5 monitorable sources.
+ * Requires SERPER_API_KEY (https://serper.dev) — does not scrape google.com with Playwright.
+ */
+async function generateDiscoveryFromGoogleSearch(profile) {
+  const p = profile && typeof profile === 'object' ? profile : {};
+  const product = String(p.product || p.whatYouSell || '').trim();
+  const customer = String(p.customer || p.perfectCustomer || '').trim();
+  const triggerEvents = String(p.triggerEvents || p.events || '').trim();
+  const keyword = String(p.keyword || '').trim();
+
+  if (!isAIAvailable()) {
+    throw new Error('AI not configured (GEMINI_API_KEY)');
+  }
+  if (!hasSerper()) {
+    throw new Error(
+      'SERPER_API_KEY is not set. Add it to .env for Google search-backed discovery (https://serper.dev). ' +
+        'Alternatively use POST /api/discover/strategy without live Google results.'
+    );
+  }
+
+  const contextBits = [product && `Product/service: ${product}`, customer && `Ideal customer: ${customer}`, triggerEvents && `Trigger events: ${triggerEvents}`, keyword && `Focus keyword: ${keyword}`]
+    .filter(Boolean)
+    .join('\n');
+
+  if (!contextBits.trim()) {
+    throw new Error('Provide at least one of: product, customer, triggerEvents, keyword');
+  }
+
+  const queryGenPrompt =
+    'You help B2B sellers find MONITORABLE web pages (aggregators, portals, job search URLs, news sections, open data).\n' +
+    'Generate 4-5 concise Google search queries (English) that are likely to return such pages — not generic blog spam.\n' +
+    'Include diverse intent: hiring/job boards, permits/construction, local business news, funding/startup where relevant.\n\n' +
+    `${contextBits}\n\n` +
+    'Return ONLY valid JSON: {"queries":["query 1","query 2",...]}';
+
+  const model = getGeminiModel('discovery');
+  const qRes = await model.generateContent(queryGenPrompt);
+  const queries = parseQueriesJson((await qRes.response).text());
+  if (!queries.length) {
+    throw new Error('Could not generate search queries from AI');
+  }
+
+  const collected = [];
+  for (const q of queries) {
+    try {
+      const rows = await googleSearchOrganic(q, { num: 10 });
+      rows.forEach(r => collected.push({ ...r, sourceQuery: q }));
+    } catch (e) {
+      logger.warn(`[Discovery/Google] query failed "${q.slice(0, 60)}": ${e.message}`);
+    }
+    await sleep(450);
+  }
+
+  const deduped = dedupeSearchResults(collected);
+  const pool = deduped.slice(0, 20);
+  if (!pool.length) {
+    throw new Error('No search results returned — try different keywords or check Serper quota');
+  }
+
+  const allowedLinks = new Set(pool.map(r => r.link));
+
+  const packPrompt =
+    'You are a lead-gen strategist. Below are REAL Google organic results (title, link, snippet). ' +
+    'Choose exactly 5 as the best monitorable sources for this seller. Prefer list pages, search result pages on LinkedIn jobs, government portals, news sections, job boards — not generic homepages when a deeper URL is better.\n\n' +
+    `${contextBits}\n\n` +
+    'Results JSON array:\n' +
+    JSON.stringify(pool.map((r, i) => ({ i, title: r.title, link: r.link, snippet: r.snippet })), null, 2) +
+    '\n\nReturn ONLY valid JSON with this shape (use ONLY links from the results above for monitorUrl):\n' +
+    '{"suggestions":[{"title":"short label","kind":"url","monitorUrl":"<must be exactly one of link values>","notes":"why this page","suggestedFrequency":"daily"|"weekly",' +
+    '"signalCategory":"hiring"|"real_estate"|"funding"|"permits"|"general",' +
+    '"triggerLogic":"why monitoring this URL fits the seller"}]}\n' +
+    'Exactly 5 suggestions. Every monitorUrl must match a link from the results exactly.';
+
+  const packRes = await model.generateContent(packPrompt);
+  const rawPack = (await packRes.response).text();
+  let suggestions = parseSuggestionsJson(rawPack);
+  if (!suggestions || !suggestions.length) {
+    logger.warn(`[Discovery/Google] package parse failed: ${String(rawPack).slice(0, 400)}`);
+    throw new Error('Could not build suggestions from search results');
+  }
+
+  suggestions = suggestions.filter(s => allowedLinks.has(s.monitorUrl));
+  while (suggestions.length < 5 && pool.length > suggestions.length) {
+    const used = new Set(suggestions.map(s => s.monitorUrl));
+    const next = pool.find(r => !used.has(r.link));
+    if (!next) break;
+    suggestions.push({
+      title: next.title.slice(0, 200) || 'Search result',
+      kind: 'url',
+      monitorUrl: next.link,
+      notes: (next.snippet || '').slice(0, 500),
+      suggestedFrequency: 'daily',
+      triggerLogic: 'Added from Google search results (fallback).',
+      signalCategory: 'general'
+    });
+  }
+
+  suggestions = suggestions.slice(0, 5);
+  if (!suggestions.length) {
+    throw new Error('No valid suggestions after Google search');
+  }
+
+  return {
+    suggestions,
+    context: { product, customer, triggerEvents, keyword },
+    queriesUsed: queries,
+    resultsPooled: pool.length
+  };
+}
+
 module.exports = {
   fetchDiscoverySuggestions,
   generateDiscoveryStrategy,
+  generateDiscoveryFromGoogleSearch,
   parseSuggestionsJson
 };

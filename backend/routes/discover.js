@@ -4,7 +4,11 @@
 
 const express = require('express');
 const router = express.Router();
-const { fetchDiscoverySuggestions, generateDiscoveryStrategy } = require('../services/ai/discoveryStrategy');
+const {
+  fetchDiscoverySuggestions,
+  generateDiscoveryStrategy,
+  generateDiscoveryFromGoogleSearch
+} = require('../services/ai/discoveryStrategy');
 const { createUserSourceCore } = require('../services/createUserSourceCore');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
@@ -52,6 +56,36 @@ router.post('/strategy', requirePaid, express.json(), async (req, res) => {
     const code =
       msg.includes('Provide at least') || msg.includes('required') || msg.includes('configured') ? 400 : 500;
     logger.error(`POST /api/discover/strategy: ${msg}`);
+    res.status(code).json({ error: msg });
+  }
+});
+
+/**
+ * POST /api/discover/google
+ * Same body as /strategy — uses Serper to run real Google searches, then Gemini picks monitorable URLs.
+ * Requires SERPER_API_KEY in .env (https://serper.dev).
+ */
+router.post('/google', requirePaid, express.json(), async (req, res) => {
+  try {
+    const out = await generateDiscoveryFromGoogleSearch(req.body || {});
+    res.json({
+      success: true,
+      mode: 'google_search',
+      product: out.context.product,
+      customer: out.context.customer,
+      triggerEvents: out.context.triggerEvents,
+      keyword: out.context.keyword,
+      queriesUsed: out.queriesUsed,
+      resultsPooled: out.resultsPooled,
+      suggestions: out.suggestions
+    });
+  } catch (e) {
+    const msg = e.message || String(e);
+    const code =
+      msg.includes('SERPER') || msg.includes('Provide at least') || msg.includes('not set') || msg.includes('configured')
+        ? 400
+        : 500;
+    logger.error(`POST /api/discover/google: ${msg}`);
     res.status(code).json({ error: msg });
   }
 });
