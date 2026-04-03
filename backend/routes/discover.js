@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { fetchDiscoverySuggestions } = require('../services/ai/discoveryStrategy');
+const { fetchDiscoverySuggestions, generateDiscoveryStrategy } = require('../services/ai/discoveryStrategy');
 const { createUserSourceCore } = require('../services/createUserSourceCore');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
@@ -26,6 +26,32 @@ router.post('/', requirePaid, express.json(), async (req, res) => {
     const msg = e.message || String(e);
     const code = msg.includes('required') || msg.includes('keyword') ? 400 : 500;
     logger.error(`POST /api/discover: ${msg}`);
+    res.status(code).json({ error: msg });
+  }
+});
+
+/**
+ * POST /api/discover/strategy
+ * Body: { product, customer, triggerEvents } — "Growth consultant" mode (no URL required upfront).
+ * Aliases: whatYouSell, perfectCustomer, events
+ */
+router.post('/strategy', requirePaid, express.json(), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const out = await generateDiscoveryStrategy(body);
+    res.json({
+      success: true,
+      mode: 'strategy',
+      product: out.context.product,
+      customer: out.context.customer,
+      triggerEvents: out.context.triggerEvents,
+      suggestions: out.suggestions
+    });
+  } catch (e) {
+    const msg = e.message || String(e);
+    const code =
+      msg.includes('Provide at least') || msg.includes('required') || msg.includes('configured') ? 400 : 500;
+    logger.error(`POST /api/discover/strategy: ${msg}`);
     res.status(code).json({ error: msg });
   }
 });

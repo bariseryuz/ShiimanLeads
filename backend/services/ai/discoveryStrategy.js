@@ -14,7 +14,7 @@ function parseSuggestionsJson(text) {
   t = t.slice(start, end + 1);
   try {
     const o = JSON.parse(t);
-    const raw = o.suggestions || o.items || o.results;
+    const raw = o.suggestions || o.items || o.results || o.sources || o.lead_sources;
     if (!Array.isArray(raw)) return null;
     const out = [];
     for (const item of raw.slice(0, 8)) {
@@ -105,7 +105,69 @@ async function fetchDiscoverySuggestions(keyword) {
   }
 }
 
+/**
+ * "Growth consultant" mode: map product + ICP + trigger events → monitorable sources (no URL required from user).
+ * @param {{ product?: string, customer?: string, triggerEvents?: string }} profile
+ * @param {{ product?: string, customer?: string, triggerEvents?: string }} [aliases] - alternate keys from forms: whatYouSell, perfectCustomer, events
+ */
+async function generateDiscoveryStrategy(profile) {
+  const p = profile && typeof profile === 'object' ? profile : {};
+  const product = String(
+    p.product || p.whatYouSell || p.what_you_sell || ''
+  ).trim();
+  const customer = String(
+    p.customer || p.perfectCustomer || p.ideal_customer || p.who || ''
+  ).trim();
+  const triggerEvents = String(
+    p.triggerEvents || p.events || p.triggers || p.when || ''
+  ).trim();
+
+  if (!product && !customer && !triggerEvents) {
+    throw new Error('Provide at least one of: product, customer, triggerEvents');
+  }
+  if (!isAIAvailable()) {
+    throw new Error('AI not configured (GEMINI_API_KEY)');
+  }
+
+  const prompt =
+    'You are a world-class B2B lead generation strategist (not a web browser — you only suggest URLs).\n' +
+    'Map the client offer to TRIGGER EVENTS, then to AGGREGATOR SOURCES where those events are already collected.\n\n' +
+    `What they sell: ${product || '(not specified)'}\n` +
+    `Ideal customer: ${customer || '(not specified)'}\n` +
+    `Trigger events they care about (e.g. new lease, hiring, permit filed, funding): ${triggerEvents || '(infer from product + customer)'}\n\n` +
+    'Return ONLY valid JSON with exactly 5 suggestions. Each must be a scrapable monitoring blueprint:\n' +
+    '{"suggestions":[{"title":"short name e.g. LinkedIn Jobs — Office Manager Dallas","kind":"url"|"search_query",' +
+    '"monitorUrl":"https://... full URL (use LinkedIn Jobs search, BizJournal real estate, city permit/ArcGIS portals, Crunchbase search, etc.)",' +
+    '"notes":"one line what signal this aggregates",' +
+    '"suggestedFrequency":"daily"|"weekly"|"hourly"|"monthly",' +
+    '"signalCategory":"hiring"|"real_estate"|"funding"|"permits"|"general",' +
+    '"triggerLogic":"Why this source fits THIS seller and what trigger to watch for."}]}\n' +
+    'Every monitorUrl must start with http:// or https://. ' +
+    'Prefer aggregator/list pages over scraping entire corporate homepages. ' +
+    'Diversify: include hiring + news/permits + at least one local or niche source when relevant.';
+
+  try {
+    const model = getGeminiModel('discovery');
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const raw = response.text();
+    const suggestions = parseSuggestionsJson(raw);
+    if (!suggestions || !suggestions.length) {
+      logger.warn(`[Discovery] strategy unparseable: ${String(raw).slice(0, 300)}`);
+      throw new Error('Could not parse strategy from AI');
+    }
+    return {
+      suggestions,
+      context: { product, customer, triggerEvents }
+    };
+  } catch (e) {
+    logger.error(`[Discovery] generateDiscoveryStrategy: ${e.message}`);
+    throw e;
+  }
+}
+
 module.exports = {
   fetchDiscoverySuggestions,
+  generateDiscoveryStrategy,
   parseSuggestionsJson
 };

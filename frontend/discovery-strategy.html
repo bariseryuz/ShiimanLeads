@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lead strategy — Shiiman Leads</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .strategy-wrap { max-width: 720px; margin: 100px auto 48px; padding: 0 16px; }
+    .strategy-card { background: rgba(255,255,255,0.95); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #e5e7eb; }
+    .strategy-card h1 { font-size: 1.35rem; margin: 0 0 0.5rem 0; color: #111; }
+    .strategy-card p.hint { color: #64748b; font-size: 0.9rem; margin: 0 0 1rem 0; }
+    label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 0.35rem; color: #334155; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 0.6rem 0.75rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.95rem; }
+    textarea { min-height: 72px; resize: vertical; }
+    .field { margin-bottom: 1rem; }
+    #results { margin-top: 1.25rem; }
+    .sug { padding: 0.85rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 0.75rem; }
+    .sug h3 { margin: 0 0 0.35rem 0; font-size: 1rem; color: #0f172a; }
+    .sug .meta { font-size: 0.75rem; color: #64748b; margin-bottom: 0.35rem; }
+    .sug .logic { font-size: 0.82rem; color: #334155; padding: 0.5rem; background: #f8fafc; border-radius: 6px; border-left: 3px solid #0066cc; margin: 0.5rem 0; }
+    .sug a { font-size: 0.8rem; word-break: break-all; color: #0066cc; }
+    .err { color: #b91c1c; font-size: 0.9rem; margin-top: 0.75rem; }
+  </style>
+</head>
+<body>
+  <div class="strategy-wrap">
+    <div class="strategy-card">
+      <h1>Find sources to monitor</h1>
+      <p class="hint">Describe what you sell and who buys it — we suggest <strong>aggregator pages</strong> (jobs, news, permits) to monitor. You don’t need a URL to start.</p>
+
+      <div class="field">
+        <label for="product">What do you sell?</label>
+        <input id="product" type="text" placeholder="e.g. Commercial blinds &amp; shades" maxlength="300" autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="customer">Who is your perfect customer?</label>
+        <textarea id="customer" placeholder="e.g. GCs and facility managers opening new office floors in Dallas"></textarea>
+      </div>
+      <div class="field">
+        <label for="events">What should happen for them to need you right now?</label>
+        <textarea id="events" placeholder="e.g. New lease signed, office renovation, hiring interior designer, permit for tenant build-out"></textarea>
+      </div>
+      <button type="button" class="btn-primary" id="btnGen">Suggest sources</button>
+      <div id="err" class="err" style="display:none;"></div>
+    </div>
+
+    <div id="results" style="display:none;"></div>
+    <p style="text-align:center;margin-top:1.5rem;"><a href="/profile.html">← Profile</a> · <a href="/my-sources.html">My sources</a></p>
+  </div>
+
+  <script>
+    function escapeHtml(t) {
+      if (t == null) return '';
+      const d = document.createElement('div');
+      d.textContent = t;
+      return d.innerHTML;
+    }
+    function escapeAttr(t) {
+      return escapeHtml(t).replace(/"/g, '&quot;');
+    }
+
+    let lastContext = { product: '', customer: '', events: '' };
+
+    document.getElementById('btnGen').onclick = async function () {
+      const product = (document.getElementById('product').value || '').trim();
+      const customer = (document.getElementById('customer').value || '').trim();
+      const events = (document.getElementById('events').value || '').trim();
+      const err = document.getElementById('err');
+      const out = document.getElementById('results');
+      err.style.display = 'none';
+      out.style.display = 'none';
+      if (!product && !customer && !events) {
+        err.textContent = 'Fill in at least one field.';
+        err.style.display = 'block';
+        return;
+      }
+      lastContext = { product, customer, events };
+      const btn = document.getElementById('btnGen');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/discover/strategy', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product, customer, triggerEvents: events })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          err.textContent = data.error || res.statusText || 'Request failed';
+          err.style.display = 'block';
+          return;
+        }
+        const items = data.suggestions || [];
+        if (!items.length) {
+          err.textContent = 'No suggestions returned.';
+          err.style.display = 'block';
+          return;
+        }
+        window._strategySuggestions = items;
+        out.innerHTML = '<h2 style="font-size:1.1rem;color:#0f172a;margin:0 0 0.75rem 0;">Recommended for you</h2>' +
+          items.map(function (s, i) {
+            return '<div class="sug">' +
+              '<h3>' + escapeHtml(s.title) + '</h3>' +
+              '<div class="meta">' + escapeHtml([s.signalCategory, s.suggestedFrequency].filter(Boolean).join(' · ')) + '</div>' +
+              '<p style="margin:0.35rem 0;font-size:0.88rem;color:#475569;">' + escapeHtml(s.notes || '') + '</p>' +
+              (s.triggerLogic ? '<div class="logic"><strong>Trigger logic:</strong> ' + escapeHtml(s.triggerLogic) + '</div>' : '') +
+              '<a href="' + escapeAttr(s.monitorUrl) + '" target="_blank" rel="noopener">' + escapeHtml(s.monitorUrl) + '</a>' +
+              '<div style="margin-top:0.6rem;"><button type="button" class="btn-primary" style="font-size:0.8rem;padding:0.35rem 0.75rem;" data-idx="' + i + '">Start monitoring</button></div>' +
+              '</div>';
+          }).join('');
+        out.style.display = 'block';
+        out.querySelectorAll('button[data-idx]').forEach(function (b) {
+          b.onclick = function () { startMonitor(parseInt(b.getAttribute('data-idx'), 10)); };
+        });
+      } catch (e) {
+        err.textContent = e.message || 'Network error';
+        err.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    async function startMonitor(index) {
+      const items = window._strategySuggestions || [];
+      const s = items[index];
+      if (!s) return;
+      const kw = [lastContext.product, lastContext.customer].filter(Boolean).join(' | ').slice(0, 200);
+      try {
+        const res = await fetch('/api/discover/monitor', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: String(s.title).slice(0, 200),
+            url: s.monitorUrl,
+            keyword: kw || undefined,
+            triggerLogic: s.triggerLogic || undefined,
+            suggestedFrequency: s.suggestedFrequency || undefined,
+            signalCategory: s.signalCategory || undefined
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(data.error || 'Could not save source');
+          return;
+        }
+        alert(data.message || 'Source added. Open My sources to scrape.');
+        window.location.href = '/my-sources.html';
+      } catch (e) {
+        alert(e.message || 'Network error');
+      }
+    }
+
+    fetch('/api/me', { credentials: 'include' }).then(function (r) {
+      if (r.status === 401) window.location.href = '/login.html';
+    });
+  </script>
+</body>
+</html>
