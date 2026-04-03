@@ -15,11 +15,13 @@ const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
 const { assertMonthlyAllowance, incrementUsage } = require('../services/usageMeter');
 const { createRateLimiter } = require('../middleware/rateLimitMemory');
 const scaleLimits = require('../config/scaleLimits');
+const { getRedis } = require('../services/redisClient');
 
 const discoverLimiter = createRateLimiter({
   windowMs: scaleLimits.discoverRate.windowMs,
   max: scaleLimits.discoverRate.max,
   name: 'discover',
+  redis: getRedis(),
   keyFn: req => `discover:u:${req.session && req.session.user ? req.session.user.id : 'anon'}:${req.ip || 'na'}`
 });
 

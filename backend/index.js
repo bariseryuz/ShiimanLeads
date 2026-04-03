@@ -28,7 +28,13 @@ const { db, sessionDb } = require('./db'); // Auto-initializes database
 const { attachUser } = require('./middleware/auth');
 const { errorHandler } = require('./middleware/errorHandler');
 const { requestIdMiddleware } = require('./middleware/requestId');
+const { helmetMiddleware, corsMiddleware } = require('./middleware/corsHelmet');
+const { accessLogMiddleware } = require('./middleware/accessLog');
+const { apiOriginEnforce } = require('./middleware/apiOriginEnforce');
 const healthRoutes = require('./routes/health');
+const { router: metricsRouter } = require('./routes/metrics');
+const wellKnownRoutes = require('./routes/wellKnown');
+const enterpriseRoutes = require('./routes/enterprise');
 const { setupAutoScraping } = require('./services/scheduler/cron');
 
 // === ROUTE IMPORTS ===
@@ -88,14 +94,9 @@ function startServer() {
   app.set('trust proxy', 1);
 
   app.use(requestIdMiddleware);
-
-  app.use((req, res, next) => {
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-    next();
-  });
+  app.use(helmetMiddleware());
+  app.use(accessLogMiddleware);
+  app.use(corsMiddleware());
 
   // Paddle webhook must receive raw body for signature verification (before any body parser)
   const { handlePaddleWebhook } = require('./routes/billing');
@@ -144,20 +145,13 @@ function startServer() {
   logger.info('✅ Session store: SQLite (persistent)');
   
   app.use(healthRoutes);
+  app.use(metricsRouter);
+  app.use('/.well-known', wellKnownRoutes);
+
+  app.use(apiOriginEnforce);
 
   // Attach user to res.locals for templates
   app.use(attachUser);
-  
-  // CORS headers (minimal for future frontend separation)
-  app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    if (req.method === 'OPTIONS') {
-      return res.sendStatus(200);
-    }
-    next();
-  });
   
   // === MOUNT ROUTES ===
   app.use(authRoutes);                    // /login, /signup, /logout (no prefix - serves HTML pages)
@@ -174,6 +168,7 @@ function startServer() {
   app.use('/api/discover', discoverRoutes); // Phase 4: niche URL discovery
   app.use('/api/ingest', ingestRoutes); // Inbound leads + API tokens
   app.use('/api/usage', usageRoutes); // Monthly usage vs plan limits
+  app.use('/api/enterprise', enterpriseRoutes); // SSO / compliance capability flags
 
   // === DEBUG ENDPOINT (Volume Verification) ===
   app.get('/api/debug/volume-check', (req, res) => {
@@ -284,17 +279,20 @@ function startServer() {
 startServer();
 
 // === GRACEFUL SHUTDOWN ===
-process.on('SIGINT', () => {
-  logger.info('Received SIGINT, shutting down gracefully...');
-  db.close();
+async function shutdownDb(signal) {
+  logger.info(`Received ${signal}, shutting down gracefully...`);
+  try {
+    const { closeRedis } = require('./services/redisClient');
+    await closeRedis();
+  } catch (_) {}
+  try {
+    db.close();
+  } catch (_) {}
   process.exit(0);
-});
+}
 
-process.on('SIGTERM', () => {
-  logger.info('Received SIGTERM, shutting down gracefully...');
-  db.close();
-  process.exit(0);
-});
+process.on('SIGINT', () => shutdownDb('SIGINT'));
+process.on('SIGTERM', () => shutdownDb('SIGTERM'));
 
 module.exports = { sendNotificationEmail }; // Export for routes/services
 
