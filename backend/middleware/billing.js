@@ -39,6 +39,9 @@ async function requirePaid(req, res, next) {
   if (!isPaidActive(acct)) {
     return res.status(402).json({
       error: 'Subscription required',
+      code: 'SUBSCRIPTION_REQUIRED',
+      detail:
+        'Website sources, JSON API connectors, scraping, AI discovery, and inbound API tokens require an active paid plan (Starter or higher). Upgrade via billing checkout or ask an admin to activate your account. For local development only, set ALLOW_UNPAID_SCRAPE=true in the server .env.',
       billing: { status: acct.status, plan_key: acct.plan_key, grace_period_ends_at: acct.grace_period_ends_at }
     });
   }
