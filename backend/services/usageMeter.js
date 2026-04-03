@@ -4,6 +4,7 @@
 
 const { dbGet, dbRun } = require('../db');
 const { getPlanConfig } = require('../config/plans');
+const { allowUnpaidScrape } = require('../middleware/billing');
 
 function currentPeriod() {
   const d = new Date();
@@ -54,6 +55,7 @@ const METRIC_LIMIT = {
  */
 async function assertMonthlyAllowance(userId, metric, req) {
   if (req?.session?.user?.role === 'admin') return;
+  if (allowUnpaidScrape()) return;
 
   const planKey = await getBillingPlanKey(userId);
   const plan = getPlanConfig(planKey);
@@ -137,6 +139,7 @@ async function getUsageSnapshot(userId) {
  */
 async function assertIngestBatchAllowance(userId, leadCount, req) {
   if (req?.session?.user?.role === 'admin') return;
+  if (allowUnpaidScrape()) return;
   const n = Math.max(0, Math.floor(Number(leadCount) || 0));
   if (n <= 0) return;
 

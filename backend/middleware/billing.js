@@ -1,6 +1,11 @@
 const { dbGet } = require('../db');
 const { getPlanConfig } = require('../config/plans');
 
+/** Dev / trusted host only — must match usageMeter + routes that gate on plan features */
+function allowUnpaidScrape() {
+  return String(process.env.ALLOW_UNPAID_SCRAPE || '').trim().toLowerCase() === 'true';
+}
+
 async function getBillingAccountForUser(userId) {
   const acct = await dbGet('SELECT * FROM billing_accounts WHERE user_id = ?', [userId]);
   return acct || { plan_key: 'free', status: 'inactive', grace_period_ends_at: null };
@@ -31,7 +36,7 @@ async function requirePaid(req, res, next) {
   if (role === 'admin') return next();
 
   // Temporary ops/testing only — set in server env, never in public client
-  if (process.env.ALLOW_UNPAID_SCRAPE === 'true') {
+  if (allowUnpaidScrape()) {
     return next();
   }
 
@@ -58,7 +63,7 @@ async function enforceSourceLimit(req, res, next) {
   if (!userId) return res.status(401).json({ error: 'Not authenticated' });
   if (role === 'admin') return next();
 
-  if (process.env.ALLOW_UNPAID_SCRAPE === 'true') {
+  if (allowUnpaidScrape()) {
     return next();
   }
 
@@ -84,6 +89,7 @@ async function enforceSourceLimit(req, res, next) {
 
 module.exports = {
   getBillingAccountForUser,
+  allowUnpaidScrape,
   requirePaid,
   enforceSourceLimit
 };

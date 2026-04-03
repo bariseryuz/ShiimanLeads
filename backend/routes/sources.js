@@ -12,7 +12,7 @@ const { createUserSourceCore } = require('../services/createUserSourceCore');
 const { loadSources } = require('../services/scraper/helpers');
 const { discoverEndpoint } = require('../services/endpointDiscovery');
 const { METHODS_WITH_BODY } = require('../engine/adapters/rest');
-const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
+const { requirePaid, enforceSourceLimit, allowUnpaidScrape } = require('../middleware/billing');
 const { log: auditLog } = require('../services/auditLog');
 
 function envBool(name) {
@@ -110,7 +110,7 @@ router.post('/connectors', requirePaid, enforceSourceLimit, express.json(), asyn
     const { getBillingPlanKey } = require('../services/usageMeter');
     const planKey = await getBillingPlanKey(userId);
     const plan = getPlanConfig(planKey);
-    if (!plan.apiConnector) {
+    if (!allowUnpaidScrape() && !plan.apiConnector) {
       return res.status(402).json({
         error: 'API connectors are not included in your plan. Upgrade to Starter or higher.',
         code: 'PLAN_FEATURE'
