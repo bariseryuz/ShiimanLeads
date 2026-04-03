@@ -8,11 +8,14 @@ const { dbGet } = require('../db');
 const { paddleRequest } = require('../services/billing/paddleClient');
 const { verifyPaddleWebhook } = require('../services/billing/paddleWebhook');
 const { ensureBillingAccount, updateBillingAccount } = require('../services/billing/billingAccount');
+const { getUsageSnapshot } = require('../services/usageMeter');
 const { createNotification } = require('../services/notifications');
 
 function getPriceIdForPlan(planKey) {
   const key = String(planKey || '').toLowerCase();
   if (key === 'starter') return process.env.PADDLE_PRICE_STARTER;
+  if (key === 'growth') return process.env.PADDLE_PRICE_GROWTH;
+  if (key === 'scale') return process.env.PADDLE_PRICE_SCALE;
   return null;
 }
 
@@ -24,6 +27,7 @@ router.get('/status', requireAuth, async (req, res) => {
   try {
     const userId = req.session.user.id;
     const acct = await ensureBillingAccount(userId);
+    const usage = await getUsageSnapshot(userId);
     res.json({
       success: true,
       billing: {
@@ -32,6 +36,11 @@ router.get('/status', requireAuth, async (req, res) => {
         status: acct.status,
         current_period_end: acct.current_period_end,
         grace_period_ends_at: acct.grace_period_ends_at
+      },
+      usage: {
+        period: usage.period,
+        used: usage.used,
+        limits: usage.limits
       }
     });
   } catch (e) {

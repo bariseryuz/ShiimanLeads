@@ -12,6 +12,7 @@ const {
 const { createUserSourceCore } = require('../services/createUserSourceCore');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
+const { assertMonthlyAllowance, incrementUsage } = require('../services/usageMeter');
 const { createRateLimiter } = require('../middleware/rateLimitMemory');
 const scaleLimits = require('../config/scaleLimits');
 
@@ -24,14 +25,25 @@ const discoverLimiter = createRateLimiter({
 
 router.use(discoverLimiter);
 
+async function withDiscoveryMonthlyLimit(req, res, next) {
+  try {
+    await assertMonthlyAllowance(req.session.user.id, 'discovery', req);
+    next();
+  } catch (e) {
+    const code = e.status && typeof e.status === 'number' ? e.status : 500;
+    res.status(code).json({ error: e.message, code: e.code, details: e.details });
+  }
+}
+
 /**
  * POST /api/discover
  * Body: { keyword: "Real Estate Dallas" }
  */
-router.post('/', requirePaid, express.json(), async (req, res) => {
+router.post('/', requirePaid, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
   try {
     const keyword = req.body && req.body.keyword;
     const out = await fetchDiscoverySuggestions(keyword);
+    await incrementUsage(req.session.user.id, 'discovery', 1);
     res.json({
       success: true,
       keyword: String(keyword || '').trim(),
@@ -50,10 +62,11 @@ router.post('/', requirePaid, express.json(), async (req, res) => {
  * Body: { product, customer, triggerEvents } — "Growth consultant" mode (no URL required upfront).
  * Aliases: whatYouSell, perfectCustomer, events
  */
-router.post('/strategy', requirePaid, express.json(), async (req, res) => {
+router.post('/strategy', requirePaid, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
   try {
     const body = req.body || {};
     const out = await generateDiscoveryStrategy(body);
+    await incrementUsage(req.session.user.id, 'discovery', 1);
     res.json({
       success: true,
       mode: 'strategy',
@@ -76,9 +89,10 @@ router.post('/strategy', requirePaid, express.json(), async (req, res) => {
  * Same body as /strategy — uses Serper to run real Google searches, then Gemini picks monitorable URLs.
  * Requires SERPER_API_KEY in .env (https://serper.dev).
  */
-router.post('/google', requirePaid, express.json(), async (req, res) => {
+router.post('/google', requirePaid, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
   try {
     const out = await generateDiscoveryFromGoogleSearch(req.body || {});
+    await incrementUsage(req.session.user.id, 'discovery', 1);
     res.json({
       success: true,
       mode: 'google_search',

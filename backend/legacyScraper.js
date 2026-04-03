@@ -116,6 +116,14 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           logger.info(`   ✅ Engine complete: ${sourceNewLeads} new leads`);
           await trackSourceReliability(source.id, source.name, true, sourceNewLeads);
           await recordRunEnd(runId, { success: true, recordsFound: (leads || []).length, recordsInserted: sourceNewLeads });
+          if (String(source.type || '').toLowerCase() === 'json') {
+            try {
+              const { incrementUsage } = require('./services/usageMeter');
+              await incrementUsage(userId, 'api_pull', 1);
+            } catch (um) {
+              logger.warn(`[usage] api_pull increment: ${um.message}`);
+            }
+          }
           rateLimiter.onSuccess();
           continue;
         } catch (engineErr) {

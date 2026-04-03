@@ -95,6 +95,37 @@ router.get('/', async (req, res) => {
  * GET /api/sources/mine
  * Get current user's configured sources (MUST come before /:id route)
  */
+/**
+ * POST /api/sources/connectors
+ * Simplified JSON API source (Zillow-style feeds, partner APIs). Requires plan with apiConnector.
+ * Body: { name, apiUrl, httpMethod?, authType?, apiToken?, headers?, query_params?, field_mapping?, primary_id_field? }
+ */
+router.post('/connectors', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+    const { getPlanConfig } = require('../config/plans');
+    const { getBillingPlanKey } = require('../services/usageMeter');
+    const planKey = await getBillingPlanKey(userId);
+    const plan = getPlanConfig(planKey);
+    if (!plan.apiConnector) {
+      return res.status(402).json({
+        error: 'API connectors are not included in your plan. Upgrade to Starter or higher.',
+        code: 'PLAN_FEATURE'
+      });
+    }
+    const { normalizeConnectorSource } = require('../services/apiConnectorSource');
+    const sourceData = normalizeConnectorSource(req.body);
+    const result = await createUserSourceCore({ userId, sourceData, req });
+    res.json(result);
+  } catch (e) {
+    logger.error(`POST /connectors: ${e.message}`);
+    res.status(e.status || 500).json({ error: e.message });
+  }
+});
+
 router.get('/mine', async (req, res) => {
   try {
     // Use user ID from session, or default to 1 if not logged in

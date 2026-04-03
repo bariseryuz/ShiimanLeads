@@ -43,6 +43,8 @@ const statsRoutes = require('./routes/stats');
 const summarizeRoutes = require('./routes/summarize');
 const billingRoutes = require('./routes/billing');
 const discoverRoutes = require('./routes/discover');
+const ingestRoutes = require('./routes/ingest');
+const usageRoutes = require('./routes/usage');
 
 // === EMAIL CONFIGURATION ===
 let mailTransport = null;
@@ -170,6 +172,8 @@ function startServer() {
   app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
   app.use('/api/billing', billingRoutes); // /api/billing/*
   app.use('/api/discover', discoverRoutes); // Phase 4: niche URL discovery
+  app.use('/api/ingest', ingestRoutes); // Inbound leads + API tokens
+  app.use('/api/usage', usageRoutes); // Monthly usage vs plan limits
 
   // === DEBUG ENDPOINT (Volume Verification) ===
   app.get('/api/debug/volume-check', (req, res) => {

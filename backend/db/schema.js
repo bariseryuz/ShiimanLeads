@@ -154,6 +154,27 @@ function createTables(db) {
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`);
 
+  // Monthly usage per subscription metric (YYYY-MM period)
+  db.exec(`CREATE TABLE IF NOT EXISTS usage_counters (
+    user_id INTEGER NOT NULL,
+    period TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, period, metric),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
+  // Inbound API keys (hashed) for POST /api/ingest/leads
+  db.exec(`CREATE TABLE IF NOT EXISTS ingest_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    label TEXT,
+    created_at TEXT,
+    last_used_at TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`);
+
   // Source reliability tracking
   db.exec(`CREATE TABLE IF NOT EXISTS source_reliability (
     source_id INTEGER PRIMARY KEY,
@@ -223,7 +244,9 @@ function migratePhase1Columns(db) {
  */
 function createPhase1Indexes(db) {
   const stmts = [
-    'CREATE INDEX IF NOT EXISTS idx_leads_user_fingerprint ON leads(user_id, fingerprint)'
+    'CREATE INDEX IF NOT EXISTS idx_leads_user_fingerprint ON leads(user_id, fingerprint)',
+    'CREATE INDEX IF NOT EXISTS idx_usage_counters_user_period ON usage_counters(user_id, period)',
+    'CREATE INDEX IF NOT EXISTS idx_ingest_tokens_user ON ingest_tokens(user_id)'
   ];
   stmts.forEach(sql => {
     try {
