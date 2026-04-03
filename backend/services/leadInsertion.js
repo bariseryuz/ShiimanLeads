@@ -7,6 +7,7 @@ const { dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
 const { scoreLeadWithSignalBrain, getSignalScoreThreshold } = require('./ai');
 const { onNewLead, onHighPrioritySignal } = require('./alerts');
+const { enqueueEnrichmentForHotLead, pickCompanyName } = require('./enrichment');
 
 /**
  * Insert lead if new (universal schema support)
@@ -161,8 +162,10 @@ async function insertLeadIfNew({
                 score: scored.score,
                 reason: scored.reason,
                 contactName: scored.contact_name,
+                companyName: pickCompanyName(data),
                 leadPreview: preview || undefined
               }).catch(() => {});
+              enqueueEnrichmentForHotLead({ userId, leadId, data });
             }
             leadPreview =
               (`${preview} [Signal: ${scored.score}/10]`.trim() || `[Signal: ${scored.score}/10]`) || undefined;

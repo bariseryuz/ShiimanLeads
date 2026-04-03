@@ -210,6 +210,12 @@ function migratePhase1Columns(db) {
 
   // Phase 3: Signal Brain (Gemini scoring output)
   add('leads', 'contact_name', 'TEXT');
+
+  // Phase 5: enrichment (Hunter / future Apollo)
+  add('leads', 'enriched_email', 'TEXT');
+  add('leads', 'linkedin_url', 'TEXT');
+  add('leads', 'enrichment_status', 'TEXT'); // ok|skipped|error|null
+  add('leads', 'enrichment_provider', 'TEXT');
 }
 
 /**

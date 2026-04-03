@@ -18,6 +18,7 @@ router.get('/', async (req, res) => {
     const sourceId = req.query.source_id ? parseInt(req.query.source_id, 10) : null;
     const q = req.query.q ? String(req.query.q) : null;
     const days = req.query.days ? parseInt(req.query.days, 10) : null;
+    const sortMode = req.query.sort ? String(req.query.sort).toLowerCase() : '';
 
     const userSources = db.prepare('SELECT id, source_data FROM user_sources WHERE user_id = ?').all(userId);
     const sourceMap = new Map();
@@ -56,7 +57,11 @@ router.get('/', async (req, res) => {
       params.push(cutoff);
     }
 
-    const leadsSQL = `SELECT * FROM leads WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ? OFFSET ?`;
+    const orderBy =
+      sortMode === 'priority'
+        ? 'ORDER BY CASE WHEN priority_score IS NULL THEN 1 ELSE 0 END ASC, priority_score DESC, id DESC'
+        : 'ORDER BY id DESC';
+    const leadsSQL = `SELECT * FROM leads WHERE ${where.join(' AND ')} ${orderBy} LIMIT ? OFFSET ?`;
     params.push(limit);
     params.push(offset);
 
@@ -85,8 +90,14 @@ router.get('/', async (req, res) => {
         user_id: row.user_id,
         source_id: row.source_id,
         created_at: row.created_at || null,
-        status: 'new',
+        status: row.status || 'new',
         is_new: row.is_new,
+        priority_score: row.priority_score,
+        ai_summary: row.ai_summary,
+        contact_name: row.contact_name,
+        enriched_email: row.enriched_email,
+        linkedin_url: row.linkedin_url,
+        enrichment_status: row.enrichment_status,
         _source_id: row.source_id,
         _source_name: sourceInfo?.name || row.source_name || 'Unknown Source',
         _source_table: 'leads'
@@ -145,8 +156,16 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Sort by ID desc
-    allResults.sort((a, b) => b.id - a.id);
+    if (sortMode === 'priority') {
+      allResults.sort((a, b) => {
+        const pa = a.priority_score != null ? Number(a.priority_score) : -1;
+        const pb = b.priority_score != null ? Number(b.priority_score) : -1;
+        if (pb !== pa) return pb - pa;
+        return (b.id || 0) - (a.id || 0);
+      });
+    } else {
+      allResults.sort((a, b) => (b.id || 0) - (a.id || 0));
+    }
     
     // Apply limit
     const finalResults = allResults.slice(0, limit);

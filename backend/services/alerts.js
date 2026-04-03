@@ -2,6 +2,11 @@ const { dbGet, dbRun, dbAll } = require('../db');
 const logger = require('../utils/logger');
 const { sendMail } = require('./mailer');
 const axios = require('axios');
+const {
+  buildHotLeadCard,
+  slackHotLeadMessage,
+  discordHotLeadEmbed
+} = require('./hotLeadPayload');
 
 async function ensureNotificationSettings(userId) {
   await dbRun(
@@ -107,7 +112,10 @@ async function onHighPrioritySignal({
   score,
   reason,
   contactName,
-  leadPreview
+  companyName,
+  leadPreview,
+  enrichedEmail,
+  linkedinUrl
 }) {
   try {
     const settings = await getNotificationSettings(userId);
@@ -117,7 +125,19 @@ async function onHighPrioritySignal({
     const toEmail = user?.email;
     const appName = process.env.APP_NAME || 'Shiiman Leads';
 
-    const payload = {
+    const cardPayload = buildHotLeadCard({
+      contactName,
+      companyName,
+      sourceName,
+      score,
+      reason,
+      leadId,
+      leadPreview,
+      enrichedEmail,
+      linkedinUrl
+    });
+
+    const legacyPayload = {
       event: 'high_priority_lead',
       userId,
       leadId,
@@ -125,29 +145,39 @@ async function onHighPrioritySignal({
       score,
       reason,
       contactName: contactName || null,
-      leadPreview: leadPreview || null
+      companyName: companyName || null,
+      leadPreview: leadPreview || null,
+      card: cardPayload.card
     };
 
-    const webhookUrl = settings.webhook_url || settings.slack_webhook_url;
-    if ((settings.webhook_enabled || settings.slack_webhook_url) && webhookUrl) {
+    const postHotLead = async (url, body) => {
+      await axios.post(url, body, {
+        timeout: 8000,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    };
+
+    const slackUrl = String(settings.slack_webhook_url || '').trim();
+    const genericUrl = String(settings.webhook_url || '').trim();
+
+    if (slackUrl) {
       try {
-        if (settings.slack_webhook_url) {
-          await axios.post(
-            webhookUrl,
-            {
-              text:
-                `*High-priority lead* (${score}/10) — *${sourceName}*\n` +
-                `${reason || '—'}\n` +
-                (contactName ? `Contact: ${contactName}\n` : '') +
-                (leadPreview ? String(leadPreview).slice(0, 400) : '')
-            },
-            { timeout: 5000 }
-          );
+        await postHotLead(slackUrl, slackHotLeadMessage(cardPayload));
+      } catch (e) {
+        logger.warn(`Slack hot-lead webhook failed: ${e.message}`);
+      }
+    }
+
+    if (genericUrl && settings.webhook_enabled && genericUrl !== slackUrl) {
+      try {
+        const u = genericUrl;
+        if (u.includes('discord.com/api/webhooks') || u.includes('discordapp.com/api/webhooks')) {
+          await postHotLead(genericUrl, discordHotLeadEmbed(cardPayload));
         } else {
-          await axios.post(webhookUrl, payload, { timeout: 5000 });
+          await postHotLead(genericUrl, legacyPayload);
         }
       } catch (e) {
-        logger.warn(`High-priority webhook failed: ${e.message}`);
+        logger.warn(`Hot-lead webhook (generic) failed: ${e.message}`);
       }
     }
 
