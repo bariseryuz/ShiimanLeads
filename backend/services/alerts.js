@@ -96,10 +96,79 @@ async function runDigestForAllDue() {
   }
 }
 
+/**
+ * Phase 3 / 5–6 hook: lead scored above threshold (Signal Brain).
+ * Sends structured webhook payload for automation; optional extra email via HIGH_PRIORITY_INSTANT_EMAIL=true.
+ */
+async function onHighPrioritySignal({
+  userId,
+  leadId,
+  sourceName,
+  score,
+  reason,
+  contactName,
+  leadPreview
+}) {
+  try {
+    const settings = await getNotificationSettings(userId);
+    if (!settings) return;
+
+    const user = await dbGet('SELECT email, username FROM users WHERE id = ?', [userId]);
+    const toEmail = user?.email;
+    const appName = process.env.APP_NAME || 'Shiiman Leads';
+
+    const payload = {
+      event: 'high_priority_lead',
+      userId,
+      leadId,
+      sourceName,
+      score,
+      reason,
+      contactName: contactName || null,
+      leadPreview: leadPreview || null
+    };
+
+    const webhookUrl = settings.webhook_url || settings.slack_webhook_url;
+    if ((settings.webhook_enabled || settings.slack_webhook_url) && webhookUrl) {
+      try {
+        if (settings.slack_webhook_url) {
+          await axios.post(
+            webhookUrl,
+            {
+              text:
+                `*High-priority lead* (${score}/10) — *${sourceName}*\n` +
+                `${reason || '—'}\n` +
+                (contactName ? `Contact: ${contactName}\n` : '') +
+                (leadPreview ? String(leadPreview).slice(0, 400) : '')
+            },
+            { timeout: 5000 }
+          );
+        } else {
+          await axios.post(webhookUrl, payload, { timeout: 5000 });
+        }
+      } catch (e) {
+        logger.warn(`High-priority webhook failed: ${e.message}`);
+      }
+    }
+
+    if (String(process.env.HIGH_PRIORITY_INSTANT_EMAIL || '').toLowerCase() === 'true' && settings.instant_email_enabled && toEmail) {
+      const subject = `[${appName}] High-priority lead (${score}/10) — ${sourceName}`;
+      const text =
+        `Score: ${score}/10\n\nReason: ${reason || '—'}\nContact: ${contactName || '—'}\n\n${leadPreview || ''}\n\n— ${appName}`;
+      await sendMail(toEmail, subject, text);
+    }
+
+    logger.info(`[SignalBrain] High-priority lead ${leadId} (score ${score}) user ${userId}`);
+  } catch (e) {
+    logger.error(`onHighPrioritySignal error: ${e.message}`);
+  }
+}
+
 module.exports = {
   ensureNotificationSettings,
   getNotificationSettings,
   onNewLead,
+  onHighPrioritySignal,
   runDigestForUser,
   runDigestForAllDue
 };

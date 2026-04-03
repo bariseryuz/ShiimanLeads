@@ -22,7 +22,13 @@ router.get('/', requireAuth, (req, res) => {
       return res.status(500).json({ error: 'Database not initialized' });
     }
     
-    const user = db.prepare('SELECT id, username, email, company_name, phone, website, created_at FROM users WHERE id = ?').get(req.session.user.id);
+    const user = db
+      .prepare(
+        `SELECT id, username, email, company_name, phone, website,
+         industry, target_audience, positive_signals, negative_signals,
+         created_at FROM users WHERE id = ?`
+      )
+      .get(req.session.user.id);
     
     if (!user) {
       logger.error(`❌ User not found in database: ${req.session.user.id}`);
@@ -49,10 +55,20 @@ router.put('/', requireAuth, express.json(), async (req, res) => {
   }
   
   const userId = req.session.user.id;
-  const { company_name, phone, website } = req.body;
-  
+  const {
+    company_name,
+    phone,
+    website,
+    industry,
+    target_audience,
+    positive_signals,
+    negative_signals
+  } = req.body;
+
   logger.info(`📝 Updating profile for user ID: ${userId}`);
-  logger.info(`📝 Data: company_name="${company_name}", phone="${phone}", website="${website}"`);
+  logger.info(
+    `📝 Data: company_name="${company_name}", phone="${phone}", website="${website}", industry set=${!!industry}`
+  );
   
   try {
     if (!db) {
@@ -60,20 +76,56 @@ router.put('/', requireAuth, express.json(), async (req, res) => {
       return res.status(500).json({ error: 'Database not initialized' });
     }
     
+    const existing = db
+      .prepare(
+        `SELECT company_name, phone, website, industry, target_audience, positive_signals, negative_signals
+         FROM users WHERE id = ?`
+      )
+      .get(userId);
+    if (!existing) {
+      logger.error(`❌ User not found for update: ${userId}`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const strOrNull = (v) => {
+      if (v == null || v === '') return null;
+      const s = String(v).trim();
+      return s === '' ? null : s;
+    };
+    const merge = (incoming, current) =>
+      incoming !== undefined ? strOrNull(incoming) : current;
+
     // Update profile fields (username and email cannot be changed via profile update)
     await dbRun(
-      'UPDATE users SET company_name = ?, phone = ?, website = ? WHERE id = ?',
-      [company_name || null, phone || null, website || null, userId]
+      `UPDATE users SET company_name = ?, phone = ?, website = ?,
+       industry = ?, target_audience = ?, positive_signals = ?, negative_signals = ?
+       WHERE id = ?`,
+      [
+        merge(company_name, existing.company_name),
+        merge(phone, existing.phone),
+        merge(website, existing.website),
+        merge(industry, existing.industry),
+        merge(target_audience, existing.target_audience),
+        merge(positive_signals, existing.positive_signals),
+        merge(negative_signals, existing.negative_signals),
+        userId
+      ]
     );
-    
+
     // Fetch updated user data
-    const user = db.prepare('SELECT id, username, email, company_name, phone, website, created_at FROM users WHERE id = ?').get(userId);
+    const user = db
+      .prepare(
+        `SELECT id, username, email, company_name, phone, website,
+         industry, target_audience, positive_signals, negative_signals,
+         created_at FROM users WHERE id = ?`
+      )
+      .get(userId);
     
     if (!user) {
       logger.error(`❌ User not found after update: ${userId}`);
       return res.status(404).json({ error: 'User not found' });
     }
-    
+
     logger.info(`✅ Profile updated successfully for: ${user.username}`);
     res.json({ success: true, user });
   } catch (error) {

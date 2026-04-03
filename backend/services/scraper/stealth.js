@@ -3,12 +3,45 @@
  * Makes browser automation undetectable by government sites
  */
 
+const logger = require('../../utils/logger');
+
+/** Round-robin index for PLAYWRIGHT_PROXY_LIST */
+let proxyRoundRobin = 0;
+
+/**
+ * Parse proxy URLs from env (comma, newline, semicolon, or pipe separated).
+ * Example: http://user:pass@host:8080,http://host2:8080
+ * @returns {string[]}
+ */
+function parseProxyListFromEnv() {
+  const raw = process.env.PLAYWRIGHT_PROXY_LIST || process.env.PROXY_ROTATION_URLS || '';
+  if (!String(raw).trim()) return [];
+  return String(raw)
+    .split(/[\n,;|]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Next proxy for this browser launch (rotation across list).
+ * Playwright: https://playwright.dev/docs/network#http-proxy
+ * @returns {{ server: string } | null}
+ */
+function getNextProxyForLaunch() {
+  const list = parseProxyListFromEnv();
+  if (!list.length) return null;
+  const idx = proxyRoundRobin % list.length;
+  proxyRoundRobin += 1;
+  logger.debug(`Playwright proxy rotation: ${idx + 1}/${list.length}`);
+  return { server: list[idx] };
+}
+
 /**
  * Get stealth launch options for Playwright
  * @returns {Object} Chromium launch options
  */
 function getStealthLaunchOptions() {
-  return {
+  const opts = {
     headless: true,
     args: [
       '--disable-blink-features=AutomationControlled',
@@ -19,6 +52,11 @@ function getStealthLaunchOptions() {
       '--disable-features=IsolateOrigins,site-per-process'
     ]
   };
+  const proxy = getNextProxyForLaunch();
+  if (proxy) {
+    opts.proxy = proxy;
+  }
+  return opts;
 }
 
 /**
@@ -130,5 +168,7 @@ module.exports = {
   getStealthLaunchOptions,
   getStealthContextOptions,
   injectStealthScripts,
-  createStealthBrowser
+  createStealthBrowser,
+  getNextProxyForLaunch,
+  parseProxyListFromEnv
 };

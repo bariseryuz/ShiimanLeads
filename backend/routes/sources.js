@@ -8,9 +8,8 @@ const logger = require('../utils/logger');
 
 // Import required services
 const { createSourceTable } = require('../services/sourceTable');
-const { createNotification } = require('../services/notifications');
+const { createUserSourceCore } = require('../services/createUserSourceCore');
 const { loadSources } = require('../services/scraper/helpers');
-const { scrapeForUser } = require('../legacyScraper');
 const { discoverEndpoint } = require('../services/endpointDiscovery');
 const { METHODS_WITH_BODY } = require('../engine/adapters/rest');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
@@ -250,46 +249,11 @@ router.get('/:id', async (req, res) => {
 router.post('/add', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id;
-    const sourceData = req.body;
-    
-    // Validate required fields
-    if (!sourceData.name || !sourceData.url) {
-      return res.status(400).json({ error: 'Source name and URL are required' });
-    }
-    
-    // Store as JSON string
-    const sourceJson = JSON.stringify(sourceData);
-    const result = await dbRun(
-      'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
-      [userId, sourceJson, new Date().toISOString()]
-    );
-    
-    const newSourceId = result.lastID;
-    
-    // CREATE SOURCE-SPECIFIC TABLE (support engine field_mapping → column names)
-    const schemaForTable = sourceData.fieldSchema || (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length
-      ? Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]))
-      : undefined);
-    const tableName = createSourceTable(newSourceId, schemaForTable);
-    logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
-    await createNotification(userId, 'source_added', `✅ Added new source: ${sourceData.name} with table ${tableName}`);
-    await auditLog({ userId, actorUserId: userId, action: 'source.created', entityType: 'source', entityId: newSourceId, after: sourceData, req });
-    const AUTO_SCRAPE_ON_ADD = String(process.env.AUTO_SCRAPE_ON_ADD || '').trim().toLowerCase() === 'true';
-    if (AUTO_SCRAPE_ON_ADD) {
-      logger.info(`New source added by user ${userId}, triggering immediate scrape`);
-      scrapeForUser(userId, [sourceData]).then((newLeads) => {
-        logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
-      }).catch((err) => {
-        logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
-      });
-      res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
-    } else {
-      logger.info(`New source added by user ${userId}. Auto-scrape disabled - use "Scrape Now" to start.`);
-      res.json({ success: true, id: result.lastID, message: 'Source added. Click "Scrape Now" to extract leads.' });
-    }
+    const result = await createUserSourceCore({ userId, sourceData: req.body, req });
+    res.json(result);
   } catch (e) {
     logger.error(`Add source error: ${e.message}`);
-    res.status(500).json({ error: e.message });
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 
@@ -402,60 +366,17 @@ router.get('/my-sources', async (req, res) => {
 router.post('/', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id;
-    
-    // Require authentication
     if (!userId) {
       return res.status(401).json({ error: 'Not authenticated' });
     }
-
-    const sourceData = req.body;
-    
-    // Validate required fields
-    if (!sourceData.name || !sourceData.url) {
-      return res.status(400).json({ error: 'Source name and URL are required' });
-    }
-    
-    // Verify user exists in database (foreign key constraint)
-    const userExists = await dbGet('SELECT id FROM users WHERE id = ?', [userId]);
-    if (!userExists) {
-      logger.error(`User ${userId} does not exist - cannot create source`);
-      req.session.destroy(() => {});
-      return res.status(401).json({ error: 'Session expired - please log in again' });
-    }
-    
-    // Store as JSON string
-    const sourceJson = JSON.stringify(sourceData);
-    const result = await dbRun(
-      'INSERT INTO user_sources (user_id, source_data, created_at) VALUES (?, ?, ?)',
-      [userId, sourceJson, new Date().toISOString()]
-    );
-    
-    const newSourceId = result.lastID;
-    
-    // ✨ CREATE SOURCE-SPECIFIC TABLE (support engine field_mapping → column names)
-    const schemaForTable = sourceData.fieldSchema || (sourceData.field_mapping && Object.keys(sourceData.field_mapping).length
-      ? Object.fromEntries(Object.values(sourceData.field_mapping).map(k => [k, k]))
-      : undefined);
-    const tableName = createSourceTable(newSourceId, schemaForTable);
-    logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
-    await createNotification(userId, 'source_added', `✅ Added new source: ${sourceData.name} with table ${tableName}`);
-    await auditLog({ userId, actorUserId: userId, action: 'source.created', entityType: 'source', entityId: newSourceId, after: sourceData, req });
-    const AUTO_SCRAPE_ON_ADD = String(process.env.AUTO_SCRAPE_ON_ADD || '').trim().toLowerCase() === 'true';
-    if (AUTO_SCRAPE_ON_ADD) {
-      logger.info(`New source added by user ${userId}, triggering immediate scrape`);
-      scrapeForUser(userId, [sourceData]).then((newLeads) => {
-        logger.info(`Immediate scrape completed for user ${userId}: ${newLeads} new leads from new source`);
-      }).catch((err) => {
-        logger.error(`Immediate scrape error for user ${userId}: ${err.message}`);
-      });
-      res.json({ success: true, id: result.lastID, message: 'Source added and scraping started' });
-    } else {
-      logger.info(`New source added by user ${userId}. Auto-scrape disabled - use "Scrape Now" to start.`);
-      res.json({ success: true, id: result.lastID, message: 'Source added. Click "Scrape Now" to extract leads.' });
-    }
+    const result = await createUserSourceCore({ userId, sourceData: req.body, req });
+    res.json(result);
   } catch (e) {
     logger.error(`Add source error: ${e.message}`);
-    res.status(500).json({ error: e.message });
+    if (e.status === 401 && req.session) {
+      req.session.destroy(() => {});
+    }
+    res.status(e.status || 500).json({ error: e.message });
   }
 });
 

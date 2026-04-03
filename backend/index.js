@@ -40,6 +40,7 @@ const adminRoutes = require('./routes/admin');
 const statsRoutes = require('./routes/stats');
 const summarizeRoutes = require('./routes/summarize');
 const billingRoutes = require('./routes/billing');
+const discoverRoutes = require('./routes/discover');
 
 // === EMAIL CONFIGURATION ===
 let mailTransport = null;
@@ -154,7 +155,8 @@ function startServer() {
   app.use('/api/admin', adminRoutes);     // /api/admin/*
   app.use('/api/stats', statsRoutes);     // /api/stats, /api/notifications
   app.use('/api/billing', billingRoutes); // /api/billing/*
-  
+  app.use('/api/discover', discoverRoutes); // Phase 4: niche URL discovery
+
   // === DEBUG ENDPOINT (Volume Verification) ===
   app.get('/api/debug/volume-check', (req, res) => {
     const fs = require('fs');

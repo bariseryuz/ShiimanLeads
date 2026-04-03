@@ -6,6 +6,7 @@
 const geminiClient = require('./geminiClient');
 const extractor = require('./extractor');
 const navigator = require('./navigator');
+const signalBrain = require('./signalBrain');
 const logger = require('../../utils/logger');
 
 /**
@@ -27,10 +28,16 @@ const isAIAvailable = () => {
 module.exports = {
   // Status check
   isAIAvailable,
-  
+
+  // Phase 3: Signal Brain (industry-aware scoring)
+  buildSignalAnalystPrompt: signalBrain.buildSignalAnalystPrompt,
+  userProfileHasSignalInputs: signalBrain.userProfileHasSignalInputs,
+  scoreLeadWithSignalBrain: signalBrain.scoreLeadWithSignalBrain,
+  getSignalScoreThreshold: signalBrain.getSignalScoreThreshold,
+
   // Agent 2: Data Extraction from Screenshots
   extractFromScreenshot: extractor.extractFromScreenshot,
-  
+
   // Agent 1: Autonomous Navigation & Actions
   navigateAutonomously: navigator.navigateAutonomously,
   executeAction: navigator.executeAction,

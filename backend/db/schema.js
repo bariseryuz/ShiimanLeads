@@ -173,6 +173,63 @@ function createTables(db) {
 }
 
 /**
+ * Phase 1: add columns to existing DBs without breaking current installs (IF NOT EXISTS column).
+ */
+function migratePhase1Columns(db) {
+  const hasColumn = (table, col) => {
+    try {
+      const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+      return rows.some(r => r.name === col);
+    } catch {
+      return false;
+    }
+  };
+  const add = (table, col, ddl) => {
+    if (hasColumn(table, col)) return;
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+      logger.info(`Migration: ${table}.${col} added`);
+    } catch (e) {
+      logger.warn(`Migration: ${table}.${col} failed: ${e.message}`);
+    }
+  };
+
+  add('users', 'industry', 'TEXT');
+  add('users', 'target_audience', 'TEXT');
+  add('users', 'positive_signals', 'TEXT');
+  add('users', 'negative_signals', 'TEXT');
+
+  add('user_sources', 'frequency', 'TEXT');
+  add('user_sources', 'is_active', 'INTEGER DEFAULT 1');
+  add('user_sources', 'last_run_at', 'TEXT');
+
+  add('leads', 'fingerprint', 'TEXT');
+  add('leads', 'priority_score', 'INTEGER');
+  add('leads', 'ai_summary', 'TEXT');
+  add('leads', 'status', "TEXT DEFAULT 'New'");
+
+  // Phase 3: Signal Brain (Gemini scoring output)
+  add('leads', 'contact_name', 'TEXT');
+}
+
+/**
+ * Indexes for Phase 1 (safe to run repeatedly).
+ */
+function createPhase1Indexes(db) {
+  const stmts = [
+    'CREATE INDEX IF NOT EXISTS idx_leads_user_fingerprint ON leads(user_id, fingerprint)'
+  ];
+  stmts.forEach(sql => {
+    try {
+      db.exec(sql);
+      logger.info(`✅ Created index: ${sql.split('IF NOT EXISTS ')[1]?.split(' ON ')[0] || 'phase1'}`);
+    } catch (err) {
+      logger.warn(`⚠️  Phase1 index: ${err.message}`);
+    }
+  });
+}
+
+/**
  * Create database indexes for performance
  */
 function createIndexes(db) {
@@ -205,5 +262,7 @@ function createIndexes(db) {
 
 module.exports = {
   createTables,
-  createIndexes
+  createIndexes,
+  migratePhase1Columns,
+  createPhase1Indexes
 };

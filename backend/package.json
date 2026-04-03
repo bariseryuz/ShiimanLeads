@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "worker": "node worker.js",
     "dev": "nodemon index.js",
     "pm2-start": "pm2 start index.js --name shiiman-leads",
     "pm2-save": "pm2 save",

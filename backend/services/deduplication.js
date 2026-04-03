@@ -483,6 +483,34 @@ function deduplicateBatch(leads) {
  * @param {Object} lead - Lead object
  * @returns {Object} Info about detected fields
  */
+/**
+ * Phase-1 optional fingerprint: MD5(lower(url) | lower(title)) for cross-source dedup per user.
+ * Does not replace unique_id; used as an extra skip rule when both url and title-like fields exist.
+ * @param {Object} lead
+ * @param {string} [sourceUrl] - fallback URL from source config
+ * @returns {string|null} 32-char hex or null if insufficient data
+ */
+function generateLeadFingerprint(lead, sourceUrl) {
+  try {
+    if (!lead || typeof lead !== 'object' || Array.isArray(lead)) return null;
+    const url = String(lead.url || lead.sourceUrl || lead.source_url || sourceUrl || '').trim();
+    const title = String(
+      lead.title ||
+        lead.name ||
+        lead.Permit__ ||
+        lead.Permit_ ||
+        lead.permit_number ||
+        lead.address ||
+        ''
+    ).trim();
+    if (!url && !title) return null;
+    const payload = `${url.toLowerCase()}|${title.toLowerCase()}`;
+    return crypto.createHash('md5').update(payload).digest('hex');
+  } catch {
+    return null;
+  }
+}
+
 function getDeduplicationInfo(lead, options = {}) {
   try {
     const fields = extractImportantFields(lead);
@@ -515,5 +543,6 @@ module.exports = {
   resolvePrimaryIdValue,
   safeString,
   safeHash,
-  normalizeString
+  normalizeString,
+  generateLeadFingerprint
 };

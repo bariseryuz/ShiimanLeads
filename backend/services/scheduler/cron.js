@@ -23,7 +23,11 @@ async function scrapeAllUsers() {
     for (const user of users) {
       try {
         // Get user's sources WITH their IDs
-        const sourceRows = await dbAll('SELECT id, source_data FROM user_sources WHERE user_id = ?', [user.id]);
+        const sourceRows = await dbAll(
+          `SELECT id, source_data FROM user_sources
+           WHERE user_id = ? AND COALESCE(is_active, 1) = 1`,
+          [user.id]
+        );
         if (!sourceRows.length) {
           logger.info(`User ${user.username} (${user.id}) has no custom sources configured`);
           continue;
@@ -133,5 +137,6 @@ function setupAutoScraping() {
 module.exports = {
   setupAutoScraping,
   runDigestJob,
-  runRetentionJob
+  runRetentionJob,
+  scrapeAllUsers
 };
