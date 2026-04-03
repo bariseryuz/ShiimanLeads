@@ -877,9 +877,16 @@
       <h2 style="margin:0 0 0.75rem 0;font-size:1.125rem;color:var(--gray-900);">Discovery — find URLs to monitor</h2>
       <p style="color:#4b5563;font-size:0.875rem;margin:0 0 1rem;">Describe your niche. AI suggests URLs or search entry points (directories, maps, LinkedIn). Use <strong>Start monitoring</strong> to save a source.</p>
       <div style="display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;">
-        <input type="text" id="discoveryKeyword" placeholder="e.g. Real Estate Dallas" style="flex:1;min-width:200px;padding:0.5rem 0.75rem;border:1px solid #d1d5db;border-radius:8px;" maxlength="200" autocomplete="off">
+        <input type="text" id="discoveryKeyword" placeholder="e.g. Blinds in Dallas" style="flex:1;min-width:200px;padding:0.5rem 0.75rem;border:1px solid #d1d5db;border-radius:8px;" maxlength="200" autocomplete="off">
         <button type="button" class="btn btn-primary" id="discoveryBtn" onclick="runDiscovery()">Suggest URLs</button>
       </div>
+      <div style="display:flex;flex-wrap:wrap;gap:0.4rem;align-items:center;margin-top:0.5rem;">
+        <span style="font-size:0.78rem;color:#64748b;">Popular blueprints:</span>
+        <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.55rem;" onclick="applyDiscoveryBlueprint('High-intent construction projects and permits for interior contractors')">Construction 🏗️</button>
+        <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.55rem;" onclick="applyDiscoveryBlueprint('B2B SaaS companies hiring sales and customer success in my metro')">SaaS 💻</button>
+        <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.55rem;" onclick="applyDiscoveryBlueprint('Commercial real estate leases and new retail openings')">Real Estate 🏡</button>
+      </div>
+      <p style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;"><a href="/profile.html#usageSection" style="color:var(--primary);">Plan usage &amp; inbound API tokens</a></p>
       <div id="discoveryError" style="display:none;color:#b91c1c;font-size:0.875rem;margin-top:0.75rem;"></div>
       <div id="discoveryResults" style="display:none;margin-top:1rem;"></div>
     </div>
@@ -955,6 +962,7 @@
         <!-- JSON API FIELDS (hidden by default) -->
         <div id="jsonApiFields" style="display: none; border: 2px solid #10b981; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.05));">
           <h3 style="margin: 0 0 1rem 0; color: #10b981; font-size: 1rem; font-weight: 700;">📡 JSON API Configuration</h3>
+          <p style="margin: -0.25rem 0 1rem 0; font-size: 0.8125rem; color: var(--gray-600); line-height: 1.45;">Saving any source (including JSON API) requires an <strong>active paid plan</strong>—same as website scrapers. Your <a href="/profile.html" style="color: #10b981;">profile</a> (ICP fields) is separate and does not need a subscription.</p>
           
           <div class="form-group">
             <label class="form-label" for="apiMethod">HTTP Method</label>
@@ -1657,6 +1665,11 @@
 
     let lastDiscoveryKeyword = '';
 
+    function applyDiscoveryBlueprint(text) {
+      const input = document.getElementById('discoveryKeyword');
+      if (input) input.value = String(text || '');
+    }
+
     async function runDiscovery() {
       const input = document.getElementById('discoveryKeyword');
       const errEl = document.getElementById('discoveryError');
@@ -1699,7 +1712,7 @@
           items.map((s, i) => `
         <li style="padding:0.75rem;background:#fff;border-radius:8px;border:1px solid #e5e7eb;">
           <div style="font-weight:600;color:var(--gray-900);">${escapeHtml(s.title)}</div>
-          <div style="font-size:0.72rem;color:#64748b;margin:0.2rem 0;">${escapeHtml([s.signalCategory, s.suggestedFrequency].filter(Boolean).join(' · ') || '')}</div>
+          <div style="font-size:0.72rem;color:#64748b;margin:0.2rem 0;">${escapeHtml([s.sourceType, s.signalCategory, s.suggestedFrequency].filter(Boolean).join(' · ') || '')}</div>
           <div style="font-size:0.8rem;color:#6b7280;margin:0.25rem 0;">${escapeHtml(s.notes || '')}</div>
           ${s.triggerLogic ? `<div style="font-size:0.78rem;color:#334155;margin:0.35rem 0;padding:0.5rem;background:#f8fafc;border-radius:6px;border-left:3px solid #0066cc;"><strong>Trigger logic:</strong> ${escapeHtml(s.triggerLogic)}</div>` : ''}
           <a href="${escapeHtmlAttr(s.monitorUrl)}" target="_blank" rel="noopener" style="font-size:0.8rem;word-break:break-all;color:var(--primary);">${escapeHtml(s.monitorUrl)}</a>
@@ -1731,8 +1744,10 @@
             url: s.monitorUrl,
             keyword: lastDiscoveryKeyword,
             triggerLogic: s.triggerLogic || undefined,
+            monitoringHints: [s.notes, s.triggerLogic].filter(Boolean).join(' — ').slice(0, 1200) || undefined,
             suggestedFrequency: s.suggestedFrequency || undefined,
-            signalCategory: s.signalCategory || undefined
+            signalCategory: s.signalCategory || undefined,
+            sourceType: s.sourceType || undefined
           })
         });
         const data = await res.json().catch(() => ({}));
@@ -2736,8 +2751,16 @@ async function loadScreenshots(sources) {
           closeModal();
           loadSources();
         } else {
-          const data = await response.json();
-          alert('Failed to save source: ' + (data.error || 'Unknown error'));
+          const data = await response.json().catch(() => ({}));
+          if (response.status === 402) {
+            const msg = data.detail || data.error || 'Subscription required';
+            const hint = data.billing
+              ? '\n\nCurrent billing: status=' + (data.billing.status || '?') + ', plan=' + (data.billing.plan_key || '?')
+              : '';
+            alert('❌ ' + msg + hint);
+          } else {
+            alert('Failed to save source: ' + (data.error || 'Unknown error'));
+          }
         }
       } catch (error) {
         console.error('Error saving source:', error);

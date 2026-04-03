@@ -182,6 +182,7 @@
     <!-- Profile Information Section -->
     <div class="section-card">
       <h2 class="section-title">Profile Information</h2>
+      <p style="color:#555;font-size:0.9rem;margin:-8px 0 16px;">Fill <strong>Industry</strong> and <strong>ICP / signals</strong> below so each new lead gets a scored summary plus a one-line <strong>signal</strong> like <code style="background:#f3f4f6;padding:2px 6px;">[Address] - Event</code> (permits, leases, openings). If those fields are empty, the app still tries to format a signal line from the lead data when Gemini is enabled.</p>
       <form id="profileForm">
         <div class="form-group">
           <label for="username">Username</label>
@@ -219,6 +220,20 @@
       <a href="/my-sources.html" class="btn-primary">Go to My Sources →</a>
       <p style="margin-top: 1rem;"><a href="/discovery-strategy.html" class="btn-primary" style="display:inline-block;text-decoration:none;">Lead strategy wizard →</a></p>
       <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Don’t know which URLs to monitor? Answer three questions and get AI-suggested sources.</p>
+    </div>
+
+    <div class="section-card" id="usageSection">
+      <h2 class="section-title">Plan &amp; usage</h2>
+      <p style="color:#666;margin-bottom:12px;">Monthly counters reset each calendar month. Admins are not metered.</p>
+      <div id="usageMeters" style="font-size:14px;color:#333;line-height:1.6;">Loading…</div>
+    </div>
+
+    <div class="section-card">
+      <h2 class="section-title">Inbound API (Zapier / Make / scripts)</h2>
+      <p style="color:#666;margin-bottom:12px;">Push leads into a source you already created. Use <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;">POST /api/ingest/leads</code> with <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;">Authorization: Bearer &lt;token&gt;</code> and JSON body <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;">{ "source_id": &lt;number&gt;, "leads": [ {...}, ... ] }</code>.</p>
+      <p style="margin-bottom:8px;"><button type="button" class="btn-primary" id="createIngestTokenBtn" onclick="createIngestToken()">Create new API token</button></p>
+      <div id="ingestTokenMessage" style="display:none;padding:10px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:6px;margin-bottom:10px;font-size:13px;word-break:break-all;"></div>
+      <div id="ingestTokenList" style="font-size:13px;color:#555;">—</div>
     </div>
   </div>
 
@@ -326,8 +341,95 @@
       successEl.style.display = 'none';
     }
 
+    async function loadUsageAndTokens() {
+      const box = document.getElementById('usageMeters');
+      const list = document.getElementById('ingestTokenList');
+      try {
+        const r = await fetch('/api/usage', { credentials: 'include' });
+        if (!r.ok) {
+          if (r.status === 401) {
+            window.location.href = '/login.html';
+            return;
+          }
+          if (box) box.textContent = 'Could not load usage (HTTP ' + r.status + '). Try refreshing; if it persists, check server logs.';
+          return;
+        }
+        const d = await r.json();
+        const u = d.used || {};
+        const L = d.limits || {};
+        const fmt = (a, b) => `${a} / ${b === 0 ? '0' : b}`;
+        if (box) {
+          box.innerHTML =
+            '<div><strong>Period:</strong> ' + escapeHtml(d.period || '') + '</div>' +
+            '<div style="margin-top:8px;"><strong>AI discovery runs:</strong> ' + fmt(u.discovery ?? 0, L.maxDiscoveryPerMonth ?? 0) + '</div>' +
+            '<div><strong>API pulls (JSON sources per run):</strong> ' + fmt(u.api_pull ?? 0, L.maxApiPullsPerMonth ?? 0) + '</div>' +
+            '<div><strong>Inbound lead rows:</strong> ' + fmt(u.ingest ?? 0, L.maxIngestPerMonth ?? 0) + '</div>' +
+            '<div style="margin-top:8px;font-size:12px;color:#666;">Features: API connector ' + (L.apiConnector ? '✓' : '—') +
+            ' · Inbound ingest ' + (L.inboundIngest ? '✓' : '—') +
+            ' · AI discovery ' + (L.aiDiscovery ? '✓' : '—') + '</div>';
+        }
+      } catch (e) {
+        if (box) box.textContent = 'Could not load usage.';
+      }
+      try {
+        const tr = await fetch('/api/ingest/tokens', { credentials: 'include' });
+        if (!tr.ok) {
+          if (tr.status === 401) {
+            if (list) list.textContent = 'Sign in to manage inbound API tokens.';
+            return;
+          }
+          if (tr.status === 402) {
+            if (list) list.textContent = 'Inbound API tokens require an active paid plan (Starter+). This is separate from editing your profile above.';
+            return;
+          }
+          if (list) list.textContent = 'Could not load tokens (HTTP ' + tr.status + ').';
+          return;
+        }
+        const td = await tr.json();
+        const tokens = td.tokens || [];
+        if (list) {
+          list.innerHTML = tokens.length
+            ? '<ul style="margin:0;padding-left:18px;">' + tokens.map(t => '<li>#' + t.id + ' — ' + escapeHtml(t.label || '') + ' (created ' + escapeHtml(t.created_at || '') + ')</li>').join('') + '</ul>';
+        }
+      } catch (e) {
+        if (list) list.textContent = 'Could not load tokens.';
+      }
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    async function createIngestToken() {
+      const msg = document.getElementById('ingestTokenMessage');
+      try {
+        const r = await fetch('/api/ingest/tokens', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: 'profile-' + new Date().toISOString().slice(0, 10) })
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          alert(d.detail || d.error || 'Could not create token');
+          return;
+        }
+        if (msg) {
+          msg.style.display = 'block';
+          msg.innerHTML = '<strong>Copy this token now:</strong><br><code style="word-break:break-all;">' + escapeHtml(d.token) + '</code>';
+        }
+        loadUsageAndTokens();
+      } catch (e) {
+        alert(e.message || 'Error');
+      }
+    }
+
     // Load profile on page load
     loadProfile();
+    loadUsageAndTokens();
 
     // Mobile menu toggle
     function toggleMobileMenu() {

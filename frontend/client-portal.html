@@ -1351,6 +1351,9 @@
             fieldNames = fieldNames.filter(f => f !== linkField);
             fieldNames.unshift(linkField);
           }
+          if (fieldNames.includes('signal_line')) {
+            fieldNames = ['signal_line', ...fieldNames.filter(f => f !== 'signal_line')];
+          }
           
           // Build header
           const headerRow = document.createElement('tr');
