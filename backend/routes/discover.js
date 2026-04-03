@@ -37,7 +37,7 @@ router.post('/', requirePaid, express.json(), async (req, res) => {
 router.post('/monitor', requirePaid, enforceSourceLimit, express.json(), async (req, res) => {
   try {
     const userId = req.session?.user?.id;
-    const { name, url, keyword } = req.body || {};
+    const { name, url, keyword, triggerLogic, suggestedFrequency, signalCategory } = req.body || {};
     if (!name || !url) {
       return res.status(400).json({ error: 'name and url are required' });
     }
@@ -47,7 +47,16 @@ router.post('/monitor', requirePaid, enforceSourceLimit, express.json(), async (
       method: 'playwright',
       usePlaywright: true,
       discoveryKeyword: keyword != null ? String(keyword).slice(0, 200) : null,
-      fromDiscovery: true
+      fromDiscovery: true,
+      ...(triggerLogic != null && String(triggerLogic).trim()
+        ? { triggerLogic: String(triggerLogic).trim().slice(0, 800) }
+        : {}),
+      ...(suggestedFrequency != null && String(suggestedFrequency).trim()
+        ? { suggestedMonitorFrequency: String(suggestedFrequency).trim().slice(0, 32) }
+        : {}),
+      ...(signalCategory != null && String(signalCategory).trim()
+        ? { signalCategory: String(signalCategory).trim().slice(0, 80) }
+        : {})
     };
     const result = await createUserSourceCore({ userId, sourceData, req });
     res.json(result);

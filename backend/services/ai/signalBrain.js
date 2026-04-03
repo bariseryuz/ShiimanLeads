@@ -22,7 +22,7 @@ function userProfileHasSignalInputs(row) {
 }
 
 /**
- * Roadmap template: analyst for [Industry], sells to [Target Audience], rank 1–10 on [Positive Signals].
+ * Analyst + event detection: permits vs hiring vs funding vs new location (trigger-based reasoning).
  */
 function buildSignalAnalystPrompt(userProfile) {
   const industry = String(userProfile.industry || '').trim() || "the client's industry";
@@ -33,13 +33,27 @@ function buildSignalAnalystPrompt(userProfile) {
   let text =
     `You are an analyst for ${industry}. ` +
     `Your client sells to ${targetAudience}. ` +
-    `Rank this lead from 1–10 based on how strongly it matches these positive signals: ${positiveSignals}.`;
+    `Rank this lead from 1–10 based on how strongly it matches these positive signals: ${positiveSignals}.\n\n` +
+    `EVENT ANALYSIS — Identify the primary "Trigger Event" in the data (use only what is present; do not invent facts):\n` +
+    `- CONSTRUCTION / PERMIT: permit numbers, square footage, zoning, contractor, address, job value.\n` +
+    `- HIRING: job title, job description, careers page, ATS (Greenhouse/Lever), "we're hiring".\n` +
+    `- FUNDING / STARTUP: funding round, investors, Crunchbase-style facts if present.\n` +
+    `- EXPANSION / REAL ESTATE: new office, relocation, lease, BizJournal-style headlines if present.\n` +
+    `- NEW BUSINESS: grand opening, new location, "opening soon".\n` +
+    `- UNKNOWN / OTHER: weak or ambiguous.\n\n` +
+    `If HIRING is the main signal, briefly infer commercial intent for ${industry} only as a soft hypothesis, e.g. ` +
+    `hiring developers → possible need for SaaS/cloud/tools; hiring sales → CRM/lead gen; hiring PMs → delivery stack. ` +
+    `Keep inferences tentative and label them as hypotheses.\n\n` +
+    `RECENCY: If the data includes a posted date or "hours/days ago" and the signal is hiring or time-sensitive, ` +
+    `favor higher scores (e.g. 9–10) when recency clearly indicates the last 48 hours; otherwise score normally.\n`;
   if (negativeSignals) {
-    text += ` Downrank or penalize leads that show these negative signals: ${negativeSignals}.`;
+    text += `Downrank leads that show these negative signals: ${negativeSignals}.\n`;
   }
   text +=
-    '\n\nReturn ONLY valid JSON with this exact shape (no markdown fences):\n' +
-    '{"score": <integer 1-10>, "reason": "<one or two sentences>", "contact_name": "<best contact or company name if inferable; else empty string>"}\n\n' +
+    '\nReturn ONLY valid JSON (no markdown fences) with this exact shape:\n' +
+    '{"score": <integer 1-10>, "reason": "<one or two sentences: why this score for this client>", "contact_name": "<best contact or company name if inferable; else empty string>", ' +
+    '"trigger_type": "<one of: construction_permit | hiring | funding | expansion | new_business | unknown>", ' +
+    '"trigger_event": "<short label of the detected event>"}\n\n' +
     'Lead data to evaluate:\n';
   return text;
 }
@@ -58,10 +72,20 @@ function parseSignalJson(text) {
     if (typeof score === 'string') score = Number.parseFloat(score);
     if (typeof score !== 'number' || !Number.isFinite(score)) return null;
     score = Math.round(Math.min(10, Math.max(1, score)));
-    const reason = typeof o.reason === 'string' ? o.reason.trim() : String(o.reason || '').trim();
+    let reason = typeof o.reason === 'string' ? o.reason.trim() : String(o.reason || '').trim();
     const contact_name =
       o.contact_name == null ? '' : String(o.contact_name).trim().slice(0, 500);
-    return { score, reason: reason || '—', contact_name };
+    const trigger_type =
+      o.trigger_type == null ? '' : String(o.trigger_type).trim().slice(0, 80);
+    const trigger_event =
+      o.trigger_event == null ? '' : String(o.trigger_event).trim().slice(0, 300);
+    if (trigger_event || trigger_type) {
+      const prefix = [trigger_type, trigger_event].filter(Boolean).join(' · ');
+      reason = prefix ? `${prefix} — ${reason || ''}`.replace(/\s+—\s*$/, '').trim() || '—' : reason || '—';
+    } else {
+      reason = reason || '—';
+    }
+    return { score, reason, contact_name, trigger_type, trigger_event };
   } catch {
     return null;
   }
