@@ -51,9 +51,35 @@ router.post('/intro-email', requireSession, async (req, res) => {
   }
 });
 
+async function geocodeAddress(address) {
+  const nom = await axios.get('https://nominatim.openstreetmap.org/search', {
+    params: { q: address, format: 'json', limit: 1 },
+    headers: { 'User-Agent': 'ShiimanLeads/1.0 (https://shiiman-leads; map-preview)' },
+    timeout: 12000
+  });
+  const hit = nom.data && nom.data[0];
+  if (!hit || hit.lat == null || hit.lon == null) return null;
+  return { lat: hit.lat, lon: hit.lon };
+}
+
+function osmStaticMapUrl(lat, lon) {
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=18&size=640x360&maptype=mapnik`;
+}
+
+/** Geocode + fetch OSM static map image bytes (fallback when Street View fails). */
+async function fetchOsmMapImageBuffer(address) {
+  const g = await geocodeAddress(address);
+  if (!g) return null;
+  const staticUrl = osmStaticMapUrl(g.lat, g.lon);
+  const img = await axios.get(staticUrl, { responseType: 'arraybuffer', timeout: 15000, validateStatus: () => true });
+  if (img.status !== 200 || !String(img.headers['content-type'] || '').startsWith('image/')) return null;
+  return { buffer: Buffer.from(img.data), contentType: img.headers['content-type'], lat: g.lat, lon: g.lon };
+}
+
 /**
  * GET /api/enrichment/map-preview?address=...
- * Returns Street View (if GOOGLE_MAPS_API_KEY) or OSM static map via Nominatim geocode.
+ * Returns JSON with a same-origin image URL (see streetview-image) so the browser does not
+ * call Google with your API key directly — IP-restricted keys and referrer rules break <img> otherwise.
  */
 router.get('/map-preview', requireSession, async (req, res) => {
   const address = String(req.query.address || '').trim();
@@ -63,40 +89,96 @@ router.get('/map-preview', requireSession, async (req, res) => {
 
   const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_STATIC_MAPS_KEY;
   if (googleKey) {
-    const u = new URL('https://maps.googleapis.com/maps/api/streetview');
-    u.searchParams.set('size', '640x360');
-    u.searchParams.set('location', address);
-    u.searchParams.set('key', googleKey);
+    const proxyPath =
+      '/api/enrichment/streetview-image?address=' + encodeURIComponent(address);
     return res.json({
       source: 'streetview',
-      url: u.toString(),
+      url: proxyPath,
+      proxy: true,
       attribution: '© Google Street View'
     });
   }
 
   try {
-    const nom = await axios.get('https://nominatim.openstreetmap.org/search', {
-      params: { q: address, format: 'json', limit: 1 },
-      headers: { 'User-Agent': 'ShiimanLeads/1.0 (https://shiiman-leads; map-preview)' },
-      timeout: 12000
-    });
-    const hit = nom.data && nom.data[0];
-    if (!hit || hit.lat == null || hit.lon == null) {
+    const g = await geocodeAddress(address);
+    if (!g) {
       return res.json({ source: 'none', url: null, message: 'Could not geocode address' });
     }
-    const lat = hit.lat;
-    const lon = hit.lon;
-    const staticUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=18&size=640x360&maptype=mapnik`;
     return res.json({
       source: 'osm',
-      url: staticUrl,
-      lat,
-      lon,
+      url: osmStaticMapUrl(g.lat, g.lon),
+      lat: g.lat,
+      lon: g.lon,
       attribution: '© OpenStreetMap contributors'
     });
   } catch (e) {
     logger.warn(`[enrichment/map-preview] ${e.message}`);
     return res.json({ source: 'none', url: null, message: 'Map preview unavailable' });
+  }
+});
+
+/**
+ * GET /api/enrichment/streetview-image?address=...
+ * Proxies Google Street View Static API server-side (key never sent to browser).
+ * Falls back to OSM map image if Google returns non-image (403, wrong API, no coverage).
+ */
+router.get('/streetview-image', requireSession, async (req, res) => {
+  const address = String(req.query.address || '').trim();
+  if (!address || address.length < 3) {
+    return res.status(400).send('address required');
+  }
+
+  const googleKey = process.env.GOOGLE_MAPS_API_KEY || process.env.GOOGLE_STATIC_MAPS_KEY;
+  if (!googleKey) {
+    return res.status(503).send('GOOGLE_MAPS_API_KEY not configured');
+  }
+
+  const u = new URL('https://maps.googleapis.com/maps/api/streetview');
+  u.searchParams.set('size', '640x360');
+  u.searchParams.set('location', address);
+  u.searchParams.set('key', googleKey);
+
+  try {
+    const response = await axios.get(u.toString(), {
+      responseType: 'arraybuffer',
+      timeout: 20000,
+      validateStatus: () => true
+    });
+
+    const ct = String(response.headers['content-type'] || '');
+    const okImage = response.status === 200 && ct.startsWith('image/');
+
+    if (okImage) {
+      res.set('Content-Type', ct);
+      res.set('Cache-Control', 'private, max-age=3600');
+      return res.send(Buffer.from(response.data));
+    }
+
+    const preview = Buffer.from(response.data).toString('utf8').slice(0, 200);
+    logger.warn(
+      `[streetview-image] Google returned status=${response.status} content-type=${ct} preview=${preview}`
+    );
+
+    const osm = await fetchOsmMapImageBuffer(address);
+    if (osm) {
+      res.set('Content-Type', osm.contentType);
+      res.set('Cache-Control', 'private, max-age=3600');
+      res.set('X-Map-Fallback', 'osm');
+      return res.send(osm.buffer);
+    }
+
+    return res.status(502).send('Street View unavailable for this address');
+  } catch (e) {
+    logger.error(`[streetview-image] ${e.message}`);
+    try {
+      const osm = await fetchOsmMapImageBuffer(address);
+      if (osm) {
+        res.set('Content-Type', osm.contentType);
+        res.set('X-Map-Fallback', 'osm');
+        return res.send(osm.buffer);
+      }
+    } catch (_) {}
+    return res.status(502).send('Map preview failed');
   }
 });
 
