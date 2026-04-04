@@ -17,24 +17,21 @@
       background-color: rgba(255, 0, 0, 0.15) !important;
     }
 
-    /* Inline AI toggle button and summary styling */
-    .ai-toggle-btn {
+    /* AI Enrichment — opens dedicated page per row */
+    .ai-enrichment-btn {
       margin-left: 0.5rem;
       font-size: 0.75rem;
-      padding: 0.25rem 0.5rem;
+      padding: 0.35rem 0.65rem;
       cursor: pointer;
-      background: #fbbf24;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       border: none;
-      border-radius: 4px;
-      color: #000;
+      border-radius: 6px;
+      color: #fff;
+      font-weight: 600;
+      white-space: nowrap;
     }
-    .ai-toggle-btn:hover {
-      background: #f59e0b;
-    }
-    .summary-cell {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
+    .ai-enrichment-btn:hover {
+      filter: brightness(1.08);
     }
     
     /* Progress Modal Styles */
@@ -1015,9 +1012,8 @@
     let isLoadingMore = false;
     let currentFilters = {};
 
-    // AI lead maps for inline summaries
+    // AI lead map — used when navigating to AI Enrichment page
     const clientLeadsByKey = {};
-    const clientLeadSummaries = {};
 
     // Toggle metrics panel
     function toggleMetrics() {
@@ -1036,52 +1032,20 @@
     }
 
     /**
-     * Toggle summary for a specific lead cell in client portal table.
-     * Inserts or restores the original HTML and caches AI summaries.
+     * Open the AI Enrichment page for this row (lead snapshot in sessionStorage).
      */
-    async function toggleClientSummary(key) {
-      const td = document.getElementById(`ai-cell-${key}`);
-      if (!td) return;
-
-      // currently showing summary?
-      if (td.dataset.showingSummary === 'true') {
-        td.innerHTML = td.dataset.originalHtml || td.innerHTML;
-        td.dataset.showingSummary = 'false';
+    function goToAiEnrichment(key) {
+      const lead = clientLeadsByKey[key];
+      if (!lead) {
+        alert('Lead data not found. Refresh the dashboard and try again.');
         return;
       }
-
-      // store original HTML first time
-      if (!td.dataset.originalHtml) {
-        td.dataset.originalHtml = td.innerHTML;
-      }
-
-      // if we already fetched before
-      if (clientLeadSummaries[key]) {
-        td.innerHTML = `<div class="summary-cell">${escapeHtml(clientLeadSummaries[key])}<button onclick="toggleClientSummary('${key}')">↩️ Details</button></div>`;
-        td.dataset.showingSummary = 'true';
-        return;
-      }
-
-      // otherwise request summary from server
-      td.innerHTML = '⚡ Generating summary...';
       try {
-        const lead = clientLeadsByKey[key];
-        const response = await fetch('/api/summarize/instant', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lead, template: 'default', maxTokens: 512 })
-        });
-        if (!response.ok) throw new Error('Failed to fetch summary');
-        const data = await response.json();
-        const summaryText = data.summary;
-        clientLeadSummaries[key] = summaryText;
-        td.innerHTML = `<div class="summary-cell">${escapeHtml(summaryText)}<button onclick="toggleClientSummary('${key}')">↩️ Details</button></div>`;
-        td.dataset.showingSummary = 'true';
-      } catch (err) {
-        console.error(err);
-        alert('❌ Error fetching summary');
-        td.innerHTML = td.dataset.originalHtml || td.innerHTML;
-        td.dataset.showingSummary = 'false';
+        sessionStorage.setItem('aiEnrichmentLead_' + key, JSON.stringify(lead));
+        window.location.href = '/ai-enrichment.html?k=' + encodeURIComponent(String(key));
+      } catch (e) {
+        console.error(e);
+        alert('Could not open AI Enrichment. The row may be too large for the browser to pass along.');
       }
     }
 
@@ -1412,12 +1376,18 @@
                 formattedVal = escapeHtml(String(value));
               }
 
-              // attach AI toggle button only to first column
+              // AI Enrichment button on first column (e.g. Signal line)
               if (idx === 0) {
                 const key = lead.__clientKey;
                 td.id = `ai-cell-${key}`;
-                td.dataset.originalHtml = '';
-                td.innerHTML = `<span class="cell-text">${formattedVal}</span> <button class="btn btn-primary btn-sm ai-toggle-btn" onclick="toggleClientSummary('${key}')">⚡</button>`;
+                td.style.verticalAlign = 'middle';
+                td.innerHTML = `<span class="cell-text">${formattedVal}</span>`;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-primary btn-sm ai-enrichment-btn';
+                btn.textContent = 'AI Enrichment';
+                btn.addEventListener('click', () => goToAiEnrichment(key));
+                td.appendChild(btn);
               } else {
                 td.innerHTML = formattedVal;
               }

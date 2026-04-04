@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+  <title>AI Enrichment - Shiiman Leads</title>
+  <link rel="icon" type="image/svg+xml" href="icons/dashboard.svg">
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --enrich-bg: #0f172a;
+      --enrich-term: #22c55e;
+      --enrich-term-dim: #4ade80;
+      --card: #ffffff;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --pillar-a: #6366f1;
+      --pillar-b: #0ea5e9;
+      --pillar-c: #f59e0b;
+    }
+    body { font-family: Inter, system-ui, sans-serif; background: #f1f5f9; margin: 0; min-height: 100vh; color: #0f172a; }
+    .enrich-shell { max-width: 1280px; margin: 0 auto; padding: 1rem 1rem 3rem; }
+    .enrich-grid {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .enrich-grid { grid-template-columns: 1fr; }
+      .terminal-panel { position: relative !important; top: auto !important; }
+    }
+    .back-row { margin-bottom: 0.75rem; }
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      color: #0066cc;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 0.9375rem;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    /* Live Agent Terminal */
+    .terminal-panel {
+      position: sticky;
+      top: 1rem;
+      background: var(--enrich-bg);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 12px 40px rgba(15, 23, 42, 0.35);
+      border: 1px solid #1e293b;
+    }
+    .terminal-head {
+      background: #1e293b;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .terminal-head span.dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .terminal-body {
+      font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      font-size: 0.72rem;
+      line-height: 1.55;
+      color: var(--enrich-term-dim);
+      padding: 0.85rem 0.9rem 1rem;
+      min-height: 280px;
+      max-height: min(70vh, 520px);
+      overflow-y: auto;
+    }
+    .terminal-body .line { margin-bottom: 0.65rem; padding-left: 0.25rem; border-left: 2px solid rgba(34, 197, 94, 0.35); }
+    .terminal-body .prompt { color: #64748b; user-select: none; }
+    .terminal-body .done { color: #38bdf8; border-left-color: #38bdf8; }
+
+    .hero-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+      margin-bottom: 1rem;
+      border: 1px solid var(--line);
+    }
+    .hero-card h1 { margin: 0 0 0.35rem; font-size: 1.35rem; }
+    .lead-meta { font-size: 0.8125rem; color: var(--muted); }
+    .signal-strip {
+      margin-top: 0.85rem;
+      padding: 0.75rem 1rem;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(14, 165, 233, 0.06));
+      border-radius: 8px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      border: 1px solid rgba(99, 102, 241, 0.2);
+    }
+    .signal-strip strong { color: #4338ca; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 0.35rem; }
+
+    .pillar {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+      border: 1px solid var(--line);
+      box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
+    }
+    .pillar h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .pillar h2 .tag { font-size: 0.65rem; font-weight: 800; padding: 0.2rem 0.45rem; border-radius: 4px; color: #fff; }
+    .tag-a { background: var(--pillar-a); }
+    .tag-b { background: var(--pillar-b); }
+    .tag-c { background: var(--pillar-c); }
+    .pillar p { margin: 0 0 0.65rem; font-size: 0.9rem; line-height: 1.55; color: #334155; }
+    .pillar p:last-child { margin-bottom: 0; }
+    .skeleton {
+      background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+      background-size: 200% 100%;
+      animation: sk 1.2s ease-in-out infinite;
+      border-radius: 6px;
+      min-height: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    @keyframes sk { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    .contact-card {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      padding: 0.85rem;
+      background: #f8fafc;
+      border-radius: 8px;
+      margin-top: 0.5rem;
+      border: 1px solid var(--line);
+    }
+    .contact-card .chip {
+      font-size: 0.8rem;
+      padding: 0.35rem 0.65rem;
+      background: #fff;
+      border-radius: 6px;
+      border: 1px solid var(--line);
+    }
+    .badge-verified {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #047857;
+      background: #d1fae5;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+    }
+    .badge-unverified {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #b45309;
+      background: #fef3c7;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+    }
+
+    .map-box {
+      margin-top: 0.75rem;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: #e2e8f0;
+      min-height: 200px;
+      position: relative;
+    }
+    .map-box img { width: 100%; height: auto; display: block; vertical-align: middle; }
+    .map-caption { font-size: 0.72rem; color: var(--muted); margin-top: 0.35rem; }
+
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .score-ring {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: conic-gradient(#6366f1 calc(var(--p) * 1%), #e2e8f0 0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 1.1rem;
+      color: #312e81;
+    }
+    .score-ring span {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn-intro {
+      margin-top: 0.75rem;
+      padding: 0.55rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: #fff;
+    }
+    .btn-intro:hover { filter: brightness(1.06); }
+    .btn-intro:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .email-out {
+      margin-top: 0.75rem;
+      padding: 1rem;
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      color: #1e293b;
+    }
+
+    .err-banner {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+    }
+    .hint-ai { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; font-style: italic; }
+  </style>
+</head>
+<body>
+  <nav class="navbar" style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+    <div class="nav-container">
+      <a href="/" style="text-decoration: none;">
+        <span class="brand-name" style="font-weight: 700; color: #000000; font-size: 1.125rem;">Shiiman Leads</span>
+      </a>
+      <div class="desktop-nav" style="display: flex; align-items: center; gap: 1rem;">
+        <a href="/client-portal.html" style="color: #0066cc; font-weight: 600;">← Dashboard</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="enrich-shell">
+    <div class="back-row">
+      <a class="back-link" href="/client-portal.html">← Back to dashboard</a>
+    </div>
+
+    <div id="errBanner" class="err-banner" style="display: none;"></div>
+
+    <div id="mainUI" style="display: none;">
+      <div class="enrich-grid">
+        <div class="main-col">
+          <div class="hero-card">
+            <h1>AI Enrichment</h1>
+            <div class="lead-meta" id="leadMeta"></div>
+            <div class="signal-strip" id="signalStrip" style="display: none;">
+              <strong>Signal line</strong>
+              <span id="signalText"></span>
+            </div>
+          </div>
+
+          <!-- A -->
+          <section class="pillar" id="pillarA">
+            <h2><span class="tag tag-a">A</span> Company / property situation</h2>
+            <div class="skel-wrap" id="skelA">
+              <div class="skeleton" style="width:100%;"></div>
+              <div class="skeleton" style="width:92%;"></div>
+              <div class="skeleton" style="width:80%;"></div>
+            </div>
+            <div id="contentA" style="display: none;">
+              <p><strong>AI insight</strong></p>
+              <p id="situationInsight"></p>
+              <p><strong>External data angle</strong></p>
+              <p id="marketSnippet"></p>
+              <p class="hint-ai">Market growth stats are summarized from the lead context; plug in your data vendor for live zip trends.</p>
+            </div>
+          </section>
+
+          <!-- B -->
+          <section class="pillar" id="pillarB">
+            <h2><span class="tag tag-b">B</span> The decision maker</h2>
+            <div class="skel-wrap" id="skelB">
+              <div class="skeleton" style="width:100%;"></div>
+              <div class="skeleton" style="width:88%;"></div>
+            </div>
+            <div id="contentB" style="display: none;">
+              <p><strong>LinkedIn &amp; role angle</strong></p>
+              <p id="decisionBlurb"></p>
+              <p id="linkedinAngle" style="font-size:0.85rem;color:#475569;"></p>
+              <div class="contact-card" id="contactCard"></div>
+              <p id="verifyStory" style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;"></p>
+              <button type="button" class="btn-intro" id="btnIntro">Generate intro email</button>
+              <div class="email-out" id="emailOut" style="display: none;"></div>
+            </div>
+          </section>
+
+          <!-- C -->
+          <section class="pillar" id="pillarC">
+            <h2><span class="tag tag-c">C</span> Project context</h2>
+            <div class="skel-wrap" id="skelC">
+              <div class="skeleton" style="height: 180px;"></div>
+              <div class="skeleton" style="width:70%;"></div>
+            </div>
+            <div id="contentC" style="display: none;">
+              <p><strong>Visual — parcel / street context</strong></p>
+              <div class="map-box" id="mapBox">
+                <div class="skeleton" style="height:200px;border:none;margin:0;"></div>
+              </div>
+              <p class="map-caption" id="mapCaption"></p>
+              <p><strong>Risk / opportunity</strong></p>
+              <div class="score-row">
+                <div class="score-ring" id="scoreRing" style="--p: 0;"><span id="scoreNum">–</span></div>
+                <p id="riskSummary" style="flex:1; min-width:200px; margin:0;"></p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="terminal-panel" aria-label="Live agent activity">
+          <div class="terminal-head">
+            <span class="dot"></span>
+            LIVE AGENT — TRAIN OF THOUGHT
+          </div>
+          <div class="terminal-body" id="terminalBody">
+            <div class="line"><span class="prompt">$</span> Initializing session…</div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    checkAuth();
+
+    function extractAddr(lead) {
+      const sl = lead.signal_line != null ? String(lead.signal_line) : '';
+      const m = sl.match(/\[([^\]]+)\]/);
+      if (m) return m[1].trim();
+      return (
+        lead.PropertyAddress ||
+        lead.property_address ||
+        lead.address ||
+        lead.parcel_address ||
+        'this property'
+      );
+    }
+
+    function extractCityState(lead) {
+      const addr = extractAddr(lead);
+      const parts = addr.split(',').map(function (s) { return s.trim(); });
+      if (parts.length >= 2) {
+        return {
+          city: parts[parts.length - 2] || 'the area',
+          state: (parts[parts.length - 1] || '').replace(/\d/g, '').trim().split(' ')[0] || ''
+        };
+      }
+      return { city: lead.City || lead.city || 'the area', state: lead.State || lead.state || '' };
+    }
+
+    function buildTrainLines(lead) {
+      const addr = extractAddr(lead);
+      const cs = extractCityState(lead);
+      const city = cs.city || 'the area';
+      const st = cs.state ? ', ' + cs.state : '';
+      return [
+        'Connecting to live research agent…',
+        'Searching the web for recent zoning & permit context near ' + addr + '…',
+        'Scanning ' + city + st + ' open data / municipal signals for permit type & project scale…',
+        'Identifying decision makers on LinkedIn (public profile signals)…',
+        'Cross-referencing contact details across available sources…',
+        'Estimating project risk / opportunity from permit metadata…',
+        'Synthesis complete — rendering enrichment report.'
+      ];
+    }
+
+    function appendTerminalLine(text, isDone) {
+      const el = document.getElementById('terminalBody');
+      const line = document.createElement('div');
+      line.className = 'line' + (isDone ? ' done' : '');
+      line.innerHTML = '<span class="prompt">›</span> ' + escapeHtml(text);
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function escapeHtml(t) {
+      const d = document.createElement('div');
+      d.textContent = t;
+      return d.innerHTML;
+    }
+
+    function pickContact(lead) {
+      return {
+        name: lead.contact_name || lead.OwnerName || lead.ContractorName || lead.owner_name || '—',
+        email: lead.enriched_email || lead.email || lead.Email || lead.owner_email || null,
+        phone: lead.ContractorPhone || lead.phone || lead.Phone || lead.owner_phone || null,
+        linkedin: lead.linkedin_url || lead.linkedin || lead.LinkedIn_URL || null
+      };
+    }
+
+    (function init() {
+      const params = new URLSearchParams(window.location.search);
+      const k = params.get('k');
+      const err = document.getElementById('errBanner');
+      const mainUI = document.getElementById('mainUI');
+
+      if (!k) {
+        err.style.display = 'block';
+        err.textContent = 'Missing lead reference. Open AI Enrichment from a row on the dashboard.';
+        return;
+      }
+
+      let raw = null;
+      try {
+        raw = sessionStorage.getItem('aiEnrichmentLead_' + k);
+      } catch (e) {
+        err.style.display = 'block';
+        err.textContent = 'Could not read lead data.';
+        return;
+      }
+
+      if (!raw) {
+        err.style.display = 'block';
+        err.textContent = 'Return to the dashboard and click “AI Enrichment” on a row again.';
+        return;
+      }
+
+      let lead;
+      try {
+        lead = JSON.parse(raw);
+      } catch (e) {
+        err.style.display = 'block';
+        err.textContent = 'Invalid lead data.';
+        return;
+      }
+
+      window.__aiEnrichmentLead = lead;
+      mainUI.style.display = 'block';
+
+      const idPart = lead.id != null ? 'Lead #' + lead.id : 'Lead';
+      const src = lead._source_name || lead.source || 'Source';
+      document.getElementById('leadMeta').textContent = idPart + ' · ' + src;
+
+      const sl = lead.signal_line != null && String(lead.signal_line).trim()
+        ? String(lead.signal_line).trim()
+        : null;
+      if (sl) {
+        document.getElementById('signalStrip').style.display = 'block';
+        document.getElementById('signalText').textContent = sl;
+      }
+
+      const lines = buildTrainLines(lead);
+      let lineIdx = 0;
+      const terminalBody = document.getElementById('terminalBody');
+      terminalBody.innerHTML = '';
+
+      function runTerminalStep() {
+        if (lineIdx < lines.length) {
+          appendTerminalLine(lines[lineIdx], lineIdx === lines.length - 1);
+          lineIdx++;
+          setTimeout(runTerminalStep, 920);
+        }
+      }
+      setTimeout(runTerminalStep, 400);
+
+      let insightsPayload = null;
+      let introRevealed = false;
+      let introCached = '';
+
+      fetch('/api/enrichment/pillars', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ lead: lead })
+      })
+        .then(function (r) {
+          if (!r.ok) throw new Error('Pillars API HTTP ' + r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          insightsPayload = data.insights;
+          fillPillars(data.insights, lead);
+        })
+        .catch(function (e) {
+          console.error(e);
+          document.getElementById('skelA').innerHTML = '<p style="color:#b91c1c;font-size:0.9rem;">Could not load AI insights. Check GEMINI_API_KEY on the server.</p>';
+          document.getElementById('skelB').style.display = 'none';
+          document.getElementById('skelC').style.display = 'none';
+        });
+
+      const mapAddr = extractAddr(lead);
+      fetch('/api/enrichment/map-preview?address=' + encodeURIComponent(mapAddr), { credentials: 'include' })
+        .then(function (r) { return r.json(); })
+        .then(function (m) {
+          const box = document.getElementById('mapBox');
+          const cap = document.getElementById('mapCaption');
+          if (m.url) {
+            box.innerHTML = '';
+            const img = document.createElement('img');
+            img.alt = 'Map preview';
+            img.loading = 'lazy';
+            img.src = m.url;
+            box.appendChild(img);
+            cap.textContent = (m.source === 'streetview' ? 'Street View — ' : 'Map — ') + (m.attribution || '');
+          } else {
+            box.innerHTML = '<div style="padding:2rem;text-align:center;color:#64748b;font-size:0.85rem;">No map preview (geocoding failed or address too short).</div>';
+            cap.textContent = m.message || '';
+          }
+        })
+        .catch(function () {
+          document.getElementById('mapBox').innerHTML = '<div style="padding:2rem;text-align:center;color:#64748b;">Map unavailable.</div>';
+        });
+
+      document.getElementById('btnIntro').addEventListener('click', function () {
+        const btn = document.getElementById('btnIntro');
+        const out = document.getElementById('emailOut');
+        if (!introRevealed && introCached) {
+          introRevealed = true;
+          out.style.display = 'block';
+          out.textContent = introCached;
+          btn.textContent = 'Regenerate intro email';
+          return;
+        }
+        btn.disabled = true;
+        fetch('/api/enrichment/intro-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ lead: lead, prior: insightsPayload })
+        })
+          .then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+          })
+          .then(function (d) {
+            const t = d.intro_email || '';
+            out.style.display = 'block';
+            out.textContent = t;
+            introCached = t;
+            introRevealed = true;
+            btn.textContent = 'Regenerate intro email';
+          })
+          .catch(function () {
+            alert('Could not regenerate intro email.');
+          })
+          .finally(function () {
+            btn.disabled = false;
+          });
+      });
+
+      function fillPillars(ins, leadRef) {
+        document.getElementById('skelA').style.display = 'none';
+        document.getElementById('contentA').style.display = 'block';
+        document.getElementById('situationInsight').textContent = ins.situation_insight || '—';
+        document.getElementById('marketSnippet').textContent = ins.market_snippet || '—';
+
+        document.getElementById('skelB').style.display = 'none';
+        document.getElementById('contentB').style.display = 'block';
+        document.getElementById('decisionBlurb').textContent = ins.decision_maker_blurb || '—';
+        document.getElementById('linkedinAngle').textContent = ins.linkedin_angle ? 'LinkedIn: ' + ins.linkedin_angle : '';
+
+        const c = pickContact(leadRef);
+        const card = document.getElementById('contactCard');
+        const verified = !!ins.email_verified;
+        card.innerHTML =
+          '<span class="chip"><strong>Name</strong> ' + escapeHtml(String(c.name)) + '</span>' +
+          '<span class="chip"><strong>Email</strong> ' + escapeHtml(c.email || '—') + ' ' +
+          (verified
+            ? '<span class="badge-verified">✓ Verified</span>'
+            : '<span class="badge-unverified">Single source</span>') +
+          '</span>' +
+          '<span class="chip"><strong>Phone</strong> ' + escapeHtml(c.phone || '—') + '</span>' +
+          (c.linkedin
+            ? '<span class="chip"><a href="' + escapeHtml(c.linkedin) + '" target="_blank" rel="noopener">LinkedIn profile</a></span>'
+            : '');
+
+        document.getElementById('verifyStory').textContent = ins.contact_email_verified_story || '';
+
+        introCached = ins.icebreaker_email || '';
+        document.getElementById('emailOut').style.display = 'none';
+        document.getElementById('emailOut').textContent = introCached;
+
+        document.getElementById('skelC').style.display = 'none';
+        document.getElementById('contentC').style.display = 'block';
+        const score = ins.risk_opportunity_score != null ? Number(ins.risk_opportunity_score) : 5;
+        const clamped = Math.min(10, Math.max(1, score));
+        document.getElementById('scoreNum').textContent = String(clamped);
+        document.getElementById('scoreRing').style.setProperty('--p', String(clamped * 10));
+        document.getElementById('riskSummary').textContent = ins.risk_opportunity_summary || '—';
+
+        document.getElementById('btnIntro').textContent = 'Generate intro email';
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -51,6 +51,7 @@ const billingRoutes = require('./routes/billing');
 const discoverRoutes = require('./routes/discover');
 const ingestRoutes = require('./routes/ingest');
 const usageRoutes = require('./routes/usage');
+const enrichmentRoutes = require('./routes/enrichment');
 
 // === EMAIL CONFIGURATION ===
 let mailTransport = null;
@@ -168,6 +169,7 @@ function startServer() {
   app.use('/api/discover', discoverRoutes); // Phase 4: niche URL discovery
   app.use('/api/ingest', ingestRoutes); // Inbound leads + API tokens
   app.use('/api/usage', usageRoutes); // Monthly usage vs plan limits
+  app.use('/api/enrichment', enrichmentRoutes); // AI Enrichment page (pillars, map preview, intro email)
   app.use('/api/enterprise', enterpriseRoutes); // SSO / compliance capability flags
 
   // === DEBUG ENDPOINT (Volume Verification) ===
