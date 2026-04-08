@@ -10,10 +10,10 @@ const { log: auditLog } = require('./auditLog');
 const { scrapeForUser } = require('../legacyScraper');
 
 /**
- * @param {{ userId: number, sourceData: object, req: import('express').Request }} opts
+ * @param {{ userId: number, sourceData: object, req: import('express').Request, skipAutoScrape?: boolean, skipNotification?: boolean }} opts
  * @returns {Promise<{ success: boolean, id: number, message: string }>}
  */
-async function createUserSourceCore({ userId, sourceData, req }) {
+async function createUserSourceCore({ userId, sourceData, req, skipAutoScrape = false, skipNotification = false }) {
   if (!userId) {
     const err = new Error('Not authenticated');
     err.status = 401;
@@ -47,11 +47,13 @@ async function createUserSourceCore({ userId, sourceData, req }) {
       : undefined);
   const tableName = createSourceTable(newSourceId, schemaForTable);
   logger.info(`✅ Created dedicated table: ${tableName} for "${sourceData.name}"`);
-  await createNotification(
-    userId,
-    'source_added',
-    `✅ Added new source: ${sourceData.name} with table ${tableName}`
-  );
+  if (!skipNotification) {
+    await createNotification(
+      userId,
+      'source_added',
+      `✅ Added new source: ${sourceData.name} with table ${tableName}`
+    );
+  }
   await auditLog({
     userId,
     actorUserId: userId,
@@ -62,7 +64,8 @@ async function createUserSourceCore({ userId, sourceData, req }) {
     req
   });
 
-  const AUTO_SCRAPE_ON_ADD = String(process.env.AUTO_SCRAPE_ON_ADD || '').trim().toLowerCase() === 'true';
+  const AUTO_SCRAPE_ON_ADD =
+    !skipAutoScrape && String(process.env.AUTO_SCRAPE_ON_ADD || '').trim().toLowerCase() === 'true';
   const toScrape = { ...sourceData, id: newSourceId, _sourceId: newSourceId };
   if (AUTO_SCRAPE_ON_ADD) {
     logger.info(`New source added by user ${userId}, triggering immediate scrape`);
