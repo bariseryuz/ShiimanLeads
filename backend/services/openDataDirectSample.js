@@ -7,6 +7,7 @@
 const axios = require('axios');
 const logger = require('../utils/logger');
 const { ensureArcGISFeatureLayerQueryUrl } = require('../engine/adapters/rest');
+const { getGlobalAxiosProxyOpts } = require('../engine/axiosProxy');
 
 const TIMEOUT = 22000;
 
@@ -18,12 +19,17 @@ function parseSocrataResource(pageUrl) {
   try {
     const u = new URL(pageUrl);
     const host = u.hostname;
-    if (!/socrata\.com$/i.test(host) && !host.includes('socrata')) return null;
-
     let m = pageUrl.match(/\/dataset\/[^/]+\/([0-9a-z]{4}-[0-9a-z]{4})/i);
     if (!m) m = pageUrl.match(/\/resource\/([0-9a-z]{4}-[0-9a-z]{4})/i);
-    if (!m) m = pageUrl.match(/\/([0-9a-z]{4}-[0-9a-z]{4})(?:\?|$|\/)/i);
+    if (!m) m = pageUrl.match(/\/([0-9a-z]{4}-[0-9a-z]{4})(?:\?|$|\/|\.json)/i);
     if (!m) return null;
+    const likelySocrataApi =
+      /socrata\.com$/i.test(host) ||
+      host.includes('socrata') ||
+      /^data\.[a-z0-9.-]+\.(gov|org)$/i.test(host) ||
+      /\.opendata\.[a-z0-9.-]+\.(gov|org)$/i.test(host) ||
+      /^opendata\.[a-z0-9.-]+\.(gov|org)$/i.test(host);
+    if (!likelySocrataApi) return null;
     return { host, resourceId: m[1] };
   } catch {
     return null;
@@ -45,7 +51,8 @@ async function fetchSocrataSample(host, resourceId, limit) {
   const res = await axios.get(api, {
     params: { $limit: limit },
     timeout: TIMEOUT,
-    validateStatus: s => s === 200
+    validateStatus: s => s === 200,
+    ...getGlobalAxiosProxyOpts()
   });
   if (!Array.isArray(res.data)) return null;
   return res.data.slice(0, limit);
@@ -85,7 +92,8 @@ async function fetchRowsFromArcgisItemId(itemId, layerIndex = 0, limit = 15) {
       resultRecordCount: limit
     },
     timeout: TIMEOUT,
-    validateStatus: () => true
+    validateStatus: () => true,
+    ...getGlobalAxiosProxyOpts()
   });
   const data = qr.data;
   if (data?.error) {

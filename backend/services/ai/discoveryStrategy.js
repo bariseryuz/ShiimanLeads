@@ -12,6 +12,28 @@ const {
   dedupeSearchResults,
   sleep
 } = require('../serperSearch');
+const { retrieveLeadGenContext, isRagEnabled } = require('./rag/leadGenRag');
+
+/**
+ * Prepend retrieval-augmented passages to long discovery prompts (optional).
+ */
+async function augmentPromptWithRag(queryText, promptBody) {
+  if (!isRagEnabled() || !String(queryText || '').trim()) return promptBody;
+  try {
+    const ctx = await retrieveLeadGenContext(String(queryText).slice(0, 8000), {
+      topK: 5,
+      maxChars: 3500
+    });
+    if (!ctx) return promptBody;
+    return (
+      `Retrieved knowledge base passages (hints only — follow the JSON shape and safety rules first):\n${ctx}\n\n---\n\n` +
+      promptBody
+    );
+  } catch (e) {
+    logger.warn(`[RAG] discoveryStrategy: ${e.message}`);
+    return promptBody;
+  }
+}
 
 function parseSuggestionsJson(text) {
   if (!text || typeof text !== 'string') return null;
@@ -214,7 +236,7 @@ async function fetchDiscoverySuggestions(keyword) {
     throw new Error('AI not configured (GEMINI_API_KEY)');
   }
 
-  const prompt =
+  let prompt =
     `The user is looking for lead generation sources for the niche: "${k}".\n` +
     `As an expert growth hacker, suggest exactly 5 specific types of sources to monitor.\n\n` +
     `For each source, provide:\n` +
@@ -226,6 +248,8 @@ async function fetchDiscoverySuggestions(keyword) {
     `{"suggestions":[{"title":"...","url":"...","description":"...","type":"direct_url"}]}\n` +
     `You may also return a raw JSON array of 5 objects with the same fields.\n\n` +
     `Focus on TRIGGER EVENTS (new projects, new hires, new sales, openings, funding) — not generic static directories.`;
+
+  prompt = await augmentPromptWithRag(k, prompt);
 
   try {
     const model = getGeminiModel('discovery');
@@ -286,7 +310,7 @@ async function generateDiscoveryStrategy(profile) {
     throw new Error('AI not configured (GEMINI_API_KEY)');
   }
 
-  const prompt =
+  let prompt =
     'You are a world-class B2B lead generation strategist (not a web browser — you only suggest URLs).\n' +
     'Map the client offer to TRIGGER EVENTS, then to AGGREGATOR SOURCES where those events are already collected.\n\n' +
     `What they sell: ${product || '(not specified)'}\n` +
@@ -303,6 +327,9 @@ async function generateDiscoveryStrategy(profile) {
     'Every monitorUrl must start with http:// or https://. ' +
     'Prefer aggregator/list pages over scraping entire corporate homepages. ' +
     'Diversify: include hiring + news/permits + at least one local or niche source when relevant.';
+
+  const ragQuery = [product, customer, triggerEvents, location].filter(Boolean).join(' ').trim();
+  prompt = await augmentPromptWithRag(ragQuery || `${product} ${customer} ${triggerEvents}`, prompt);
 
   try {
     const model = getGeminiModel('discovery');
@@ -397,9 +424,11 @@ async function generateDiscoveryFromGoogleSearch(profile) {
     `${contextBits}\n\n` +
     'Return ONLY valid JSON: {"queries":["query 1","query 2",...]}';
 
+  let queryGenPromptAug = await augmentPromptWithRag(contextBits, queryGenPrompt);
+
   const model = getGeminiModel('discovery');
   const qRes = await retryWithBackoff(
-    () => model.generateContent(queryGenPrompt),
+    () => model.generateContent(queryGenPromptAug),
     {
       maxRetries: scaleLimits.gemini.maxRetries,
       baseMs: scaleLimits.gemini.retryBaseMs
@@ -451,8 +480,10 @@ async function generateDiscoveryFromGoogleSearch(profile) {
     '"triggerLogic":"why monitoring this URL fits the seller"}]}\n' +
     'Exactly 5 suggestions. Every monitorUrl must match a link from the results exactly.';
 
+  const packPromptAug = await augmentPromptWithRag(contextBits, packPrompt);
+
   const packRes = await retryWithBackoff(
-    () => model.generateContent(packPrompt),
+    () => model.generateContent(packPromptAug),
     {
       maxRetries: scaleLimits.gemini.maxRetries,
       baseMs: scaleLimits.gemini.retryBaseMs

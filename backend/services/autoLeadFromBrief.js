@@ -9,7 +9,8 @@ const { buildManifestFromBrief } = require('./ai/deepExtractManifest');
 const { filterLeadsToBrief } = require('./ai/deepExtractFilter');
 const { runExtractNowForUrl } = require('./discoverExtractRun');
 const { fetchOpenDataSampleRows } = require('./openDataDirectSample');
-const { sortCandidateSources } = require('./candidateUrlSort');
+const { discoverEmbeddedDatasetUrls } = require('./portalDatasetDiscovery');
+const { sortCandidateSources, sortUrls } = require('./candidateUrlSort');
 
 function isCatalogStubUrl(url) {
   try {
@@ -85,7 +86,35 @@ async function fetchLeadsFromBriefOnly(opts) {
 
     try {
       const n = Math.min(maxLeads - collected.length, 25, perUrlBudget);
-      const directRows = await fetchOpenDataSampleRows(url, Math.max(n, 5));
+      const need = Math.max(n, 5);
+      let directRows = await fetchOpenDataSampleRows(url, need);
+      if (!directRows?.length) {
+        const inner = sortUrls(await discoverEmbeddedDatasetUrls(url));
+        for (const innerUrl of inner) {
+          directRows = await fetchOpenDataSampleRows(innerUrl, need);
+          if (directRows?.length) {
+            urlsAttempted.push(innerUrl);
+            logger.info(`auto-leads: portal expand → ${innerUrl.slice(0, 90)}`);
+            break;
+          }
+        }
+        if (!directRows?.length) {
+          for (const innerUrl of inner) {
+            if (!/featureserver\/\d+|\/mapserver\//i.test(innerUrl)) continue;
+            try {
+              const arcRows = await tryArcgisSampleRows(innerUrl, need);
+              if (arcRows?.length) {
+                directRows = arcRows;
+                urlsAttempted.push(innerUrl);
+                logger.info(`auto-leads: portal expand ArcGIS REST ${innerUrl.slice(0, 90)}`);
+                break;
+              }
+            } catch (e) {
+              logger.debug(`auto-leads expand ArcGIS ${innerUrl.slice(0, 50)}: ${e.message}`);
+            }
+          }
+        }
+      }
       if (directRows && directRows.length) {
         const { leads: filtered, applied } = await filterLeadsToBrief(b, manifest.strict_match_rules, directRows);
         const slice = (filtered && filtered.length ? filtered : directRows).slice(0, perUrlBudget);

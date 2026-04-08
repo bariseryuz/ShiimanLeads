@@ -25,15 +25,59 @@ function parseProxyListFromEnv() {
 /**
  * Next proxy for this browser launch (rotation across list).
  * Playwright: https://playwright.dev/docs/network#http-proxy
- * @returns {{ server: string } | null}
+ * @returns {{ server: string, username?: string, password?: string } | null}
  */
-function getNextProxyForLaunch() {
+function getNextProxyFromList() {
   const list = parseProxyListFromEnv();
   if (!list.length) return null;
   const idx = proxyRoundRobin % list.length;
   proxyRoundRobin += 1;
   logger.debug(`Playwright proxy rotation: ${idx + 1}/${list.length}`);
-  return { server: list[idx] };
+  return parseProxyServerObject(list[idx]);
+}
+
+/**
+ * Single proxy from env (system proxy, Clash, corporate gateway).
+ * Uses PLAYWRIGHT_PROXY_SERVER, then HTTPS_PROXY, then HTTP_PROXY.
+ */
+function getProxyFromStandardEnv() {
+  const raw =
+    process.env.PLAYWRIGHT_PROXY_SERVER ||
+    process.env.HTTPS_PROXY ||
+    process.env.HTTP_PROXY ||
+    '';
+  const s = String(raw).trim();
+  if (!s) return null;
+  return parseProxyServerObject(s);
+}
+
+/** Parse "http://user:pass@host:port" into Playwright proxy object */
+function parseProxyServerObject(serverUrl) {
+  try {
+    const u = new URL(serverUrl);
+    const out = { server: `${u.protocol}//${u.host}` };
+    if (u.username) {
+      out.username = decodeURIComponent(u.username);
+      out.password = decodeURIComponent(u.password || '');
+    }
+    return out;
+  } catch {
+    return { server: serverUrl };
+  }
+}
+
+function maskProxyForLog(proxy) {
+  if (!proxy || !proxy.server) return '';
+  return String(proxy.server).replace(/\/\/([^:]+):([^@]+)@/, '//$1:****@');
+}
+
+/**
+ * Proxy for Chromium: rotating list wins; else standard env (HTTPS_PROXY, etc.).
+ */
+function getProxyForLaunch() {
+  const fromList = getNextProxyFromList();
+  if (fromList) return fromList;
+  return getProxyFromStandardEnv();
 }
 
 /**
@@ -52,9 +96,10 @@ function getStealthLaunchOptions() {
       '--disable-features=IsolateOrigins,site-per-process'
     ]
   };
-  const proxy = getNextProxyForLaunch();
+  const proxy = getProxyForLaunch();
   if (proxy) {
     opts.proxy = proxy;
+    logger.info(`Playwright proxy: ${maskProxyForLog(proxy)}`);
   }
   return opts;
 }
@@ -169,6 +214,7 @@ module.exports = {
   getStealthContextOptions,
   injectStealthScripts,
   createStealthBrowser,
-  getNextProxyForLaunch,
+  getNextProxyForLaunch: getProxyForLaunch,
+  getProxyForLaunch,
   parseProxyListFromEnv
 };

@@ -6,6 +6,7 @@ const logger = require('../../utils/logger');
 const { getGeminiModel, isAIAvailable } = require('./geminiClient');
 const { retryWithBackoff } = require('../../utils/aiRetry');
 const scaleLimits = require('../../config/scaleLimits');
+const { retrieveLeadGenContext, isRagEnabled } = require('./rag/leadGenRag');
 
 function parseJsonBlock(text) {
   let t = String(text || '').trim();
@@ -40,6 +41,15 @@ async function buildManifestFromBrief(brief) {
     throw new Error('AI not configured (GEMINI_API_KEY)');
   }
 
+  let ragContext = '';
+  if (isRagEnabled()) {
+    try {
+      ragContext = await retrieveLeadGenContext(b, { topK: 4, maxChars: 3000 });
+    } catch (e) {
+      logger.debug(`deepExtractManifest RAG: ${e.message}`);
+    }
+  }
+
   const prompt =
     'You help configure a web scraper. The user will give a URL and a brief describing WHAT data they want and in WHAT shape.\n' +
     'Return ONLY valid JSON with this exact shape:\n' +
@@ -52,6 +62,7 @@ async function buildManifestFromBrief(brief) {
     '- field_schema: 4–12 keys. Keys must be stable snake_case. Descriptions must match the user brief.\n' +
     '- Do NOT invent contact emails unless the user asked for contacts and the page type usually has them.\n' +
     '- navigation_instructions: assume the browser is already on the site homepage or the URL provided; guide toward the dataset/table view.\n\n' +
+    (ragContext ? `Retrieved domain knowledge (public data patterns — user brief still wins):\n${ragContext}\n\n` : '') +
     `User brief:\n${b.slice(0, 6000)}`;
 
   const model = getGeminiModel('discovery');

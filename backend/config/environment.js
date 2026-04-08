@@ -49,7 +49,8 @@ module.exports = {
   // Google Gemini AI
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
   
-  // Playwright
+  // RAG (lead-gen prompts): RAG_ENABLED (default on), RAG_TOP_K — see services/ai/rag/leadGenRag.js
+  // Playwright (browser): also reads PLAYWRIGHT_PROXY_LIST, PLAYWRIGHT_PROXY_SERVER, HTTPS_PROXY, HTTP_PROXY in stealth.js
   PLAYWRIGHT_HEADLESS: process.env.PLAYWRIGHT_HEADLESS !== 'false',
   PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
     || process.env.PLAYWRIGHT_EXECUTABLE_PATH,

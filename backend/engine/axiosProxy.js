@@ -59,4 +59,25 @@ function axiosProxyFromManifest(manifest, opts = {}) {
   return cfg || undefined;
 }
 
-module.exports = { buildAxiosProxyConfig, axiosProxyFromManifest };
+/**
+ * Optional proxy for discovery fetches (portal HTML, etc.) when no manifest is involved.
+ * Order: PROXY_URL, first PROXY_URLS, HTTPS_PROXY, HTTP_PROXY.
+ * @returns {{ proxy: import('axios').AxiosProxyConfig } | {}}
+ */
+function getGlobalAxiosProxyOpts() {
+  const candidates = [
+    process.env.PROXY_URL,
+    ...(envConfig.PROXY_URLS || []),
+    process.env.HTTPS_PROXY,
+    process.env.HTTP_PROXY
+  ]
+    .map(s => String(s || '').trim())
+    .filter(Boolean);
+  for (const c of candidates) {
+    const cfg = buildAxiosProxyConfig(c);
+    if (cfg) return { proxy: cfg };
+  }
+  return {};
+}
+
+module.exports = { buildAxiosProxyConfig, axiosProxyFromManifest, getGlobalAxiosProxyOpts };

@@ -41,12 +41,22 @@ function getGeminiModel(purpose = 'extraction') {
   });
 }
 
+/** Same API key; used for RAG (text-embedding-004). Not JSON mode. */
+function getEmbeddingModel() {
+  if (!genAI) {
+    logger.error('❌ AI Client: Embeddings require GEMINI_API_KEY / GOOGLE_API_KEY');
+    throw new Error('GEMINI_API_KEY is missing from environment variables');
+  }
+  return genAI.getGenerativeModel({ model: 'text-embedding-004' });
+}
+
 /**
  * Clean Export with Status Check
  */
 module.exports = { 
   genAI, 
-  getGeminiModel, 
+  getGeminiModel,
+  getEmbeddingModel,
   isAIAvailable: () => {
     const available = !!genAI;
     if (!available) {

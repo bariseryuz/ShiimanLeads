@@ -6,6 +6,7 @@ function apiLikelihoodScore(url) {
   const u = String(url || '');
   if (/hub\.arcgis\.com\/datasets\/[a-f0-9]{32}/i.test(u)) return 100;
   if (/[0-9a-z]{4}-[0-9a-z]{4}/i.test(u) && /socrata/i.test(u)) return 95;
+  if (/[0-9a-z]{4}-[0-9a-z]{4}/i.test(u) && /\/(resource|dataset)\//i.test(u)) return 93;
   if (/featureserver\/\d+|\/mapserver\//i.test(u)) return 90;
   if (/data\.[a-z.]+\.gov\/datasets\/.+\/about/i.test(u)) return 5;
   if (/hub\.arcgis\.com\/maps\//i.test(u)) return 20;

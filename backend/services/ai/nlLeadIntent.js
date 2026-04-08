@@ -12,6 +12,7 @@ const { googleSearchOrganic, hasSerper, dedupeSearchResults, sleep } = require('
 const { ensureArcGISFeatureLayerQueryUrl } = require('../../engine/adapters/rest');
 const { fetchOpenDataSampleRows } = require('../openDataDirectSample');
 const { sortUrls } = require('../candidateUrlSort');
+const { retrieveLeadGenContext, isRagEnabled } = require('./rag/leadGenRag');
 
 function parseIntentJson(text) {
   let t = String(text || '').trim();
@@ -38,6 +39,15 @@ async function parseBriefWithGemini(brief) {
     throw new Error('AI not configured (GEMINI_API_KEY)');
   }
 
+  let ragContext = '';
+  if (isRagEnabled()) {
+    try {
+      ragContext = await retrieveLeadGenContext(b, { topK: 5, maxChars: 3500 });
+    } catch (e) {
+      logger.debug(`nlLeadIntent RAG: ${e.message}`);
+    }
+  }
+
   const prompt =
     'You extract structured lead-search intent from a user message. Return ONLY valid JSON:\n' +
     '{\n' +
@@ -51,6 +61,9 @@ async function parseBriefWithGemini(brief) {
     '  "wants_contact_info": <boolean>,\n' +
     '  "keywords_for_search": ["3-6 short phrases for Google queries"]\n' +
     '}\n\n' +
+    (ragContext
+      ? `Retrieved domain knowledge (tune geography, keywords, and record types — user message still wins):\n${ragContext}\n\n`
+      : '') +
     `User message:\n${b.slice(0, 4000)}`;
 
   const model = getGeminiModel('discovery');
