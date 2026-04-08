@@ -27,8 +27,12 @@
   <div class="strategy-wrap">
     <div class="strategy-card">
       <h1>Find sources to monitor</h1>
-      <p class="hint">Describe what you sell and who buys it — we suggest <strong>aggregator pages</strong> (jobs, news, permits) to monitor. You don’t need a URL to start.</p>
+      <p class="hint">Describe what you sell and where — we use AI to suggest <strong>real pages</strong> (jobs, news, permits, open data). <strong>Search Google</strong> runs live web search (Serper) + AI to pick monitorable URLs. You don’t need a JSON API or a source URL to start.</p>
 
+      <div class="field">
+        <label for="location">City / metro / state <span style="font-weight:400;color:#64748b;">(recommended)</span></label>
+        <input id="location" type="text" placeholder="e.g. Nashville, TN or Miami-Dade County, FL" maxlength="200" autocomplete="off">
+      </div>
       <div class="field">
         <label for="product">What do you sell?</label>
         <input id="product" type="text" placeholder="e.g. Commercial blinds &amp; shades" maxlength="300" autocomplete="off">
@@ -94,12 +98,13 @@
       const out = document.getElementById('results');
       err.style.display = 'none';
       out.style.display = 'none';
-      if (!product && !customer && !events) {
-        err.textContent = 'Fill in at least one field.';
+      const location = (document.getElementById('location').value || '').trim();
+      if (!product && !customer && !events && !location) {
+        err.textContent = 'Fill in at least one field (location + what you sell works well).';
         err.style.display = 'block';
         return;
       }
-      lastContext = { product, customer, events };
+      lastContext = { product, customer, events, location };
       const btnGen = document.getElementById('btnGen');
       const btnGoogle = document.getElementById('btnGoogle');
       btnGen.disabled = true;
@@ -109,7 +114,7 @@
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ product, customer, triggerEvents: events })
+          body: JSON.stringify({ product, customer, triggerEvents: events, location })
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -156,7 +161,7 @@
       const items = window._strategySuggestions || [];
       const s = items[index];
       if (!s) return;
-      const kw = [lastContext.product, lastContext.customer].filter(Boolean).join(' | ').slice(0, 200);
+      const kw = [lastContext.location, lastContext.product, lastContext.customer].filter(Boolean).join(' | ').slice(0, 200);
       try {
         const res = await fetch('/api/discover/monitor', {
           method: 'POST',

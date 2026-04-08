@@ -259,6 +259,13 @@ async function fetchDiscoverySuggestions(keyword) {
  * @param {{ product?: string, customer?: string, triggerEvents?: string }} profile
  * @param {{ product?: string, customer?: string, triggerEvents?: string }} [aliases] - alternate keys from forms: whatYouSell, perfectCustomer, events
  */
+function extractLocation(profile) {
+  const p = profile && typeof profile === 'object' ? profile : {};
+  return String(
+    p.location || p.metro || p.area || p.city || p.geo || p.region || ''
+  ).trim();
+}
+
 async function generateDiscoveryStrategy(profile) {
   const p = profile && typeof profile === 'object' ? profile : {};
   const product = String(
@@ -270,9 +277,10 @@ async function generateDiscoveryStrategy(profile) {
   const triggerEvents = String(
     p.triggerEvents || p.events || p.triggers || p.when || ''
   ).trim();
+  const location = extractLocation(p);
 
-  if (!product && !customer && !triggerEvents) {
-    throw new Error('Provide at least one of: product, customer, triggerEvents');
+  if (!product && !customer && !triggerEvents && !location) {
+    throw new Error('Provide at least one of: product, customer, triggerEvents, location');
   }
   if (!isAIAvailable()) {
     throw new Error('AI not configured (GEMINI_API_KEY)');
@@ -283,6 +291,7 @@ async function generateDiscoveryStrategy(profile) {
     'Map the client offer to TRIGGER EVENTS, then to AGGREGATOR SOURCES where those events are already collected.\n\n' +
     `What they sell: ${product || '(not specified)'}\n` +
     `Ideal customer: ${customer || '(not specified)'}\n` +
+    (location ? `Geographic focus (anchor ALL relevant sources here): ${location}\n` : '') +
     `Trigger events they care about (e.g. new lease, hiring, permit filed, funding): ${triggerEvents || '(infer from product + customer)'}\n\n` +
     'Return ONLY valid JSON with exactly 5 suggestions. Each must be a scrapable monitoring blueprint:\n' +
     '{"suggestions":[{"title":"short name e.g. LinkedIn Jobs — Office Manager Dallas","kind":"url"|"search_query",' +
@@ -313,7 +322,7 @@ async function generateDiscoveryStrategy(profile) {
     }
     return {
       suggestions,
-      context: { product, customer, triggerEvents }
+      context: { product, customer, triggerEvents, location: location || undefined }
     };
   } catch (e) {
     logger.error(`[Discovery] generateDiscoveryStrategy: ${e.message}`);
@@ -351,6 +360,7 @@ async function generateDiscoveryFromGoogleSearch(profile) {
   const customer = String(p.customer || p.perfectCustomer || '').trim();
   const triggerEvents = String(p.triggerEvents || p.events || '').trim();
   const keyword = String(p.keyword || '').trim();
+  const location = extractLocation(p);
 
   if (!isAIAvailable()) {
     throw new Error('AI not configured (GEMINI_API_KEY)');
@@ -362,18 +372,28 @@ async function generateDiscoveryFromGoogleSearch(profile) {
     );
   }
 
-  const contextBits = [product && `Product/service: ${product}`, customer && `Ideal customer: ${customer}`, triggerEvents && `Trigger events: ${triggerEvents}`, keyword && `Focus keyword: ${keyword}`]
+  const contextBits = [
+    product && `Product/service: ${product}`,
+    customer && `Ideal customer: ${customer}`,
+    location && `Geographic focus (every query MUST name this place or metro — e.g. city + state): ${location}`,
+    triggerEvents && `Trigger events: ${triggerEvents}`,
+    keyword && `Focus keyword: ${keyword}`
+  ]
     .filter(Boolean)
     .join('\n');
 
   if (!contextBits.trim()) {
-    throw new Error('Provide at least one of: product, customer, triggerEvents, keyword');
+    throw new Error('Provide at least one of: product, customer, triggerEvents, keyword, location');
   }
 
   const queryGenPrompt =
     'You help B2B sellers find MONITORABLE web pages (aggregators, portals, job search URLs, news sections, open data).\n' +
     'Generate 4-5 concise Google search queries (English) that are likely to return such pages — not generic blog spam.\n' +
-    'Include diverse intent: hiring/job boards, permits/construction, local business news, funding/startup where relevant.\n\n' +
+    'Include diverse intent: hiring/job boards, permits/construction, local business news, funding/startup where relevant.\n' +
+    (location
+      ? `CRITICAL: The user named a location — include "${location}" (or the metro/county) inside MOST queries so results are geographically real.\n`
+      : '') +
+    '\n' +
     `${contextBits}\n\n` +
     'Return ONLY valid JSON: {"queries":["query 1","query 2",...]}';
 
@@ -417,7 +437,11 @@ async function generateDiscoveryFromGoogleSearch(profile) {
 
   const packPrompt =
     'You are a lead-gen strategist. Below are REAL Google organic results (title, link, snippet). ' +
-    'Choose exactly 5 as the best monitorable sources for this seller. Prefer list pages, search result pages on LinkedIn jobs, government portals, news sections, job boards — not generic homepages when a deeper URL is better.\n\n' +
+    'Choose exactly 5 as the best monitorable sources for this seller. Prefer list pages, search result pages on LinkedIn jobs, government portals, news sections, job boards — not generic homepages when a deeper URL is better.\n' +
+    (location
+      ? `Favor URLs that clearly relate to "${location}" (local gov, regional news, metro job boards) when snippets support it.\n`
+      : '') +
+    '\n' +
     `${contextBits}\n\n` +
     'Results JSON array:\n' +
     JSON.stringify(pool.map((r, i) => ({ i, title: r.title, link: r.link, snippet: r.snippet })), null, 2) +
@@ -464,7 +488,7 @@ async function generateDiscoveryFromGoogleSearch(profile) {
 
   return {
     suggestions,
-    context: { product, customer, triggerEvents, keyword },
+    context: { product, customer, triggerEvents, keyword, location: location || undefined },
     queriesUsed: queries,
     resultsPooled: pool.length
   };

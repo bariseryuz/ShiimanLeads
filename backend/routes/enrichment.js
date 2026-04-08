@@ -62,18 +62,72 @@ async function geocodeAddress(address) {
   return { lat: hit.lat, lon: hit.lon };
 }
 
-function osmStaticMapUrl(lat, lon) {
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lon}&zoom=18&size=640x360&maptype=mapnik`;
+/**
+ * Satellite / roadmap image via Google Maps Static API (same key as Street View).
+ * Enable "Maps Static API" in Google Cloud for this key.
+ */
+async function fetchGoogleStaticMapFromAddress(address, key) {
+  const u = new URL('https://maps.googleapis.com/maps/api/staticmap');
+  u.searchParams.set('center', address);
+  u.searchParams.set('zoom', '18');
+  u.searchParams.set('size', '640x360');
+  u.searchParams.set('scale', '2');
+  u.searchParams.set('maptype', 'satellite');
+  u.searchParams.set('key', key);
+  const response = await axios.get(u.toString(), {
+    responseType: 'arraybuffer',
+    timeout: 20000,
+    validateStatus: () => true
+  });
+  const ct = String(response.headers['content-type'] || '');
+  if (response.status === 200 && ct.startsWith('image/')) {
+    return { buffer: Buffer.from(response.data), contentType: ct, source: 'google_static' };
+  }
+  const preview = Buffer.from(response.data).toString('utf8').slice(0, 180);
+  logger.warn(`[enrichment] Google Static Map status=${response.status} ct=${ct} preview=${preview}`);
+  return null;
 }
 
-/** Geocode + fetch OSM static map image bytes (fallback when Street View fails). */
-async function fetchOsmMapImageBuffer(address) {
-  const g = await geocodeAddress(address);
-  if (!g) return null;
-  const staticUrl = osmStaticMapUrl(g.lat, g.lon);
-  const img = await axios.get(staticUrl, { responseType: 'arraybuffer', timeout: 15000, validateStatus: () => true });
+function latLonToTileXY(lat, lon, z) {
+  const latRad = (lat * Math.PI) / 180;
+  const n = 2 ** z;
+  const x = Math.floor(((lon + 180) / 360) * n);
+  const y = Math.floor(
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
+  );
+  return { x, y };
+}
+
+/**
+ * Single OSM map tile (no staticmap.openstreetmap.de — unreliable DNS on some hosts e.g. Railway).
+ */
+async function fetchOsmTileBuffer(lat, lon) {
+  const z = 17;
+  const { x, y } = latLonToTileXY(Number(lat), Number(lon), z);
+  const url = `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+  const img = await axios.get(url, {
+    responseType: 'arraybuffer',
+    timeout: 15000,
+    headers: { 'User-Agent': 'ShiimanLeads/1.0 (enrichment map; +https://shiiman.com)' },
+    validateStatus: () => true
+  });
   if (img.status !== 200 || !String(img.headers['content-type'] || '').startsWith('image/')) return null;
-  return { buffer: Buffer.from(img.data), contentType: img.headers['content-type'], lat: g.lat, lon: g.lon };
+  return { buffer: Buffer.from(img.data), contentType: img.headers['content-type'], source: 'osm_tile' };
+}
+
+/**
+ * Fallback when Street View fails: Google Static Map → OSM tile (geocode + tile).
+ */
+async function fetchMapFallbackImage(address, googleKey) {
+  if (googleKey) {
+    const g = await fetchGoogleStaticMapFromAddress(address, googleKey);
+    if (g) return g;
+  }
+  const geo = await geocodeAddress(address);
+  if (!geo) return null;
+  const t = await fetchOsmTileBuffer(geo.lat, geo.lon);
+  if (t) return t;
+  return null;
 }
 
 /**
@@ -104,9 +158,11 @@ router.get('/map-preview', requireSession, async (req, res) => {
     if (!g) {
       return res.json({ source: 'none', url: null, message: 'Could not geocode address' });
     }
+    const proxyPath = '/api/enrichment/osm-tile-image?address=' + encodeURIComponent(address);
     return res.json({
       source: 'osm',
-      url: osmStaticMapUrl(g.lat, g.lon),
+      url: proxyPath,
+      proxy: true,
       lat: g.lat,
       lon: g.lon,
       attribution: '© OpenStreetMap contributors'
@@ -159,25 +215,52 @@ router.get('/streetview-image', requireSession, async (req, res) => {
       `[streetview-image] Google returned status=${response.status} content-type=${ct} preview=${preview}`
     );
 
-    const osm = await fetchOsmMapImageBuffer(address);
-    if (osm) {
-      res.set('Content-Type', osm.contentType);
+    const fb = await fetchMapFallbackImage(address, googleKey);
+    if (fb) {
+      res.set('Content-Type', fb.contentType);
       res.set('Cache-Control', 'private, max-age=3600');
-      res.set('X-Map-Fallback', 'osm');
-      return res.send(osm.buffer);
+      res.set('X-Map-Fallback', fb.source || 'fallback');
+      return res.send(fb.buffer);
     }
 
     return res.status(502).send('Street View unavailable for this address');
   } catch (e) {
     logger.error(`[streetview-image] ${e.message}`);
     try {
-      const osm = await fetchOsmMapImageBuffer(address);
-      if (osm) {
-        res.set('Content-Type', osm.contentType);
-        res.set('X-Map-Fallback', 'osm');
-        return res.send(osm.buffer);
+      const fb = await fetchMapFallbackImage(address, googleKey);
+      if (fb) {
+        res.set('Content-Type', fb.contentType);
+        res.set('Cache-Control', 'private, max-age=3600');
+        res.set('X-Map-Fallback', fb.source || 'fallback');
+        return res.send(fb.buffer);
       }
-    } catch (_) {}
+    } catch (e2) {
+      logger.warn(`[streetview-image] fallback error: ${e2.message}`);
+    }
+    return res.status(502).send('Map preview failed');
+  }
+});
+
+/**
+ * GET /api/enrichment/osm-tile-image?address=...
+ * Proxies a single OSM tile (when no Google key — map-preview JSON points here).
+ */
+router.get('/osm-tile-image', requireSession, async (req, res) => {
+  const address = String(req.query.address || '').trim();
+  if (!address || address.length < 3) {
+    return res.status(400).send('address required');
+  }
+  try {
+    const geo = await geocodeAddress(address);
+    if (!geo) return res.status(404).send('Could not geocode');
+    const t = await fetchOsmTileBuffer(geo.lat, geo.lon);
+    if (!t) return res.status(502).send('Tile unavailable');
+    res.set('Content-Type', t.contentType);
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.set('X-Map-Source', 'osm_tile');
+    return res.send(t.buffer);
+  } catch (e) {
+    logger.error(`[osm-tile-image] ${e.message}`);
     return res.status(502).send('Map preview failed');
   }
 });
