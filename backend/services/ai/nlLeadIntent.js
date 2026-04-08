@@ -61,13 +61,18 @@ async function parseBriefWithGemini(brief) {
   if (!o || typeof o !== 'object') {
     throw new Error('Could not understand that request — try adding location, permit type, and any dollar threshold.');
   }
+  let triggerOrRecord = String(o.trigger_or_record || 'building permit').trim();
+  if (!triggerOrRecord || /^unknown$/i.test(triggerOrRecord)) {
+    triggerOrRecord = 'building permit';
+  }
+
   return {
     lead_count: Math.min(25, Math.max(1, parseInt(o.lead_count, 10) || 3)),
     geography: String(o.geography || '').trim() || 'United States',
     geography_kind: String(o.geography_kind || 'unknown'),
     state_code: String(o.state_code || '').trim().toUpperCase().slice(0, 2),
     asset_or_use: String(o.asset_or_use || '').trim(),
-    trigger_or_record: String(o.trigger_or_record || 'building permit').trim(),
+    trigger_or_record: triggerOrRecord,
     min_project_value_usd:
       o.min_project_value_usd != null && Number.isFinite(Number(o.min_project_value_usd))
         ? Number(o.min_project_value_usd)
@@ -83,11 +88,13 @@ function buildSerperQueries(intent) {
   const geo = intent.geography;
   const st = intent.state_code;
   const asset = intent.asset_or_use;
-  const trig = intent.trigger_or_record;
+  let trig = intent.trigger_or_record;
+  if (!trig || /^unknown$/i.test(String(trig))) trig = 'building permit';
   const base = [
     `${geo} ${trig} open data ArcGIS FeatureServer site:gov`,
-    `${st ? st + ' ' : ''}${trig} ${asset || 'residential'} portal site:gov`,
-    `${geo} county ${trig} GIS layer`
+    `${st ? st + ' ' : ''}${trig} ${asset || 'commercial'} site:gov`,
+    `${geo} ${trig} Socrata OR data portal`,
+    `${geo} county ${trig} GIS`
   ];
   if (intent.keywords_for_search.length) {
     for (const k of intent.keywords_for_search.slice(0, 2)) {
@@ -102,16 +109,52 @@ function looksLikeArcGisDataUrl(link) {
 }
 
 /**
+ * Resolve FeatureServer layer URL, MapServer/N, or MapServer/layers catalog to a /query URL.
+ */
+async function resolveArcgisQueryUrl(layerPageUrl) {
+  const raw = String(layerPageUrl || '').trim();
+  if (!/^https?:\/\//i.test(raw)) return null;
+
+  if (looksLikeArcGisDataUrl(raw)) {
+    return ensureArcGISFeatureLayerQueryUrl(raw);
+  }
+
+  try {
+    const lower = raw.toLowerCase();
+    if (lower.includes('/mapserver/') && lower.endsWith('/layers')) {
+      const resp = await axios.get(raw.split('?')[0], {
+        params: { f: 'json' },
+        timeout: 18000,
+        validateStatus: () => true
+      });
+      const layers = Array.isArray(resp.data?.layers) ? resp.data.layers : [];
+      const first =
+        layers.find(l => String(l.type || '').toLowerCase().includes('feature')) || layers[0];
+      if (first && Number.isFinite(Number(first.id))) {
+        const base = raw.replace(/\/layers\/?$/i, '').replace(/\/$/, '');
+        return `${base}/${first.id}/query`;
+      }
+      return null;
+    }
+
+    if (/\/mapserver\/\d+$/i.test(raw) && !lower.includes('/query')) {
+      return `${raw.replace(/\/$/, '')}/query`;
+    }
+  } catch (e) {
+    logger.warn(`[nlLeadIntent] resolveArcgisQueryUrl: ${e.message}`);
+  }
+  return null;
+}
+
+/**
  * Fetch up to N sample feature attributes from a public ArcGIS layer URL.
  */
 async function tryArcgisSampleRows(layerPageUrl, maxFeatures = 5) {
-  if (!looksLikeArcGisDataUrl(layerPageUrl)) return null;
-  let queryUrl = ensureArcGISFeatureLayerQueryUrl(layerPageUrl.trim());
+  let queryUrl = await resolveArcgisQueryUrl(layerPageUrl);
+  if (!queryUrl) return null;
   try {
     const u = new URL(queryUrl);
-    if (!u.pathname.toLowerCase().includes('/query')) {
-      queryUrl = ensureArcGISFeatureLayerQueryUrl(layerPageUrl);
-    }
+    if (!u.pathname.toLowerCase().includes('/query')) return null;
   } catch {
     return null;
   }
@@ -142,17 +185,28 @@ async function tryArcgisSampleRows(layerPageUrl, maxFeatures = 5) {
   }
 }
 
+function filterUnhelpfulSearchLinks(rows) {
+  return rows.filter(r => {
+    const u = String(r.link || '');
+    if (/\.pdf(\?|$)/i.test(u)) return false;
+    if (/\.(png|jpg|jpeg|gif)(\?|$)/i.test(u)) return false;
+    return true;
+  });
+}
+
 async function pickBestSourceUrls(organicPool, intent) {
-  if (!organicPool.length || !isAIAvailable()) return [];
+  const pool = filterUnhelpfulSearchLinks(organicPool);
+  if (!pool.length || !isAIAvailable()) return [];
   try {
     const model = getGeminiModel('discovery');
     const pack =
       'Pick up to 5 URLs most likely to yield ROW-LEVEL public records (permits, licenses, bids, violations).\n' +
-      'Prefer: official .gov portals, open-data hubs, ArcGIS FeatureServer layers, Socrata — but include a county/city search portal if it is the best match.\n' +
+      'Prefer: ArcGIS FeatureServer or MapServer layer URLs, Socrata, open-data APIs — NOT generic department homepages unless no better link exists.\n' +
+      'Never pick PDF or image URLs. Prefer links whose path includes FeatureServer, MapServer, "data", "permits", or hub.arcgis.com datasets.\n' +
       `Intent: ${JSON.stringify(intent)}\n\n` +
       'Candidates (title, link, snippet):\n' +
       JSON.stringify(
-        organicPool.slice(0, 25).map((r, i) => ({ i, title: r.title, link: r.link, snippet: r.snippet })),
+        pool.slice(0, 25).map((r, i) => ({ i, title: r.title, link: r.link, snippet: r.snippet })),
         null,
         2
       ) +
@@ -167,7 +221,7 @@ async function pickBestSourceUrls(organicPool, intent) {
     const urls = Array.isArray(o?.urls)
       ? o.urls.map(u => String(u || '').trim()).filter(u => /^https?:\/\//i.test(u))
       : [];
-    const allowed = new Set(organicPool.map(r => r.link));
+    const allowed = new Set(pool.map(r => r.link));
     return urls.filter(u => allowed.has(u)).slice(0, 5);
   } catch (e) {
     logger.warn(`[nlLeadIntent] pickBestSourceUrls: ${e.message}`);
@@ -214,7 +268,10 @@ async function runNlLeadIntentDiscovery(brief) {
 
   let pickedUrls = await pickBestSourceUrls(pool, intent);
   if (!pickedUrls.length) {
-    pickedUrls = pool.filter(r => looksLikeArcGisDataUrl(r.link)).map(r => r.link).slice(0, 3);
+    pickedUrls = pool
+      .filter(r => looksLikeArcGisDataUrl(r.link) || /\/mapserver\//i.test(String(r.link || '')))
+      .map(r => r.link)
+      .slice(0, 3);
   }
   // Last resort: any organic HTTPS links so brief-only flows can still try browser extraction
   if (!pickedUrls.length && pool.length) {
@@ -236,7 +293,8 @@ async function runNlLeadIntentDiscovery(brief) {
 
   let preview_leads = null;
   let preview_note = null;
-  const firstArc = pickedUrls.find(looksLikeArcGisDataUrl);
+  const firstArc =
+    pickedUrls.find(looksLikeArcGisDataUrl) || pickedUrls.find(u => /\/mapserver\//i.test(String(u || '')));
   if (firstArc) {
     const n = Math.min(intent.lead_count, 10);
     preview_leads = await tryArcgisSampleRows(firstArc, n);

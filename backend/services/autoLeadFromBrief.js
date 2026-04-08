@@ -70,7 +70,7 @@ async function fetchLeadsFromBriefOnly(opts) {
     const url = c.url;
     urlsAttempted.push(url);
 
-    if (/featureserver\/\d+/i.test(url)) {
+    if (/featureserver\/\d+|\/mapserver\//i.test(url)) {
       try {
         const n = Math.min(maxLeads - collected.length, 25, perUrlBudget);
         const arcRows = await tryArcgisSampleRows(url, Math.max(n, 5));
