@@ -8,6 +8,19 @@ const { runNlLeadIntentDiscovery, tryArcgisSampleRows } = require('./ai/nlLeadIn
 const { buildManifestFromBrief } = require('./ai/deepExtractManifest');
 const { filterLeadsToBrief } = require('./ai/deepExtractFilter');
 const { runExtractNowForUrl } = require('./discoverExtractRun');
+const { fetchOpenDataSampleRows } = require('./openDataDirectSample');
+const { sortCandidateSources } = require('./candidateUrlSort');
+
+function isCatalogStubUrl(url) {
+  try {
+    const p = new URL(String(url)).pathname.toLowerCase();
+    if (p.includes('/datasets/') && p.endsWith('/about')) return true;
+    if (p.includes('hub.arcgis.com') && p.includes('/maps/')) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 function dedupeLeads(rows, maxLeads) {
   const seen = new Set();
@@ -33,10 +46,10 @@ async function fetchLeadsFromBriefOnly(opts) {
   }
 
   const maxLeads = Math.min(50, Math.max(1, parseInt(opts.maxLeads, 10) || 15));
-  const maxSites = Math.min(3, Math.max(1, parseInt(opts.maxSites, 10) || 2));
+  const maxSites = Math.min(5, Math.max(1, parseInt(opts.maxSites, 10) || 3));
 
   const discovery = await runNlLeadIntentDiscovery(b);
-  const candidates = discovery.candidate_sources || [];
+  const candidates = sortCandidateSources(discovery.candidate_sources || []);
 
   if (!candidates.length) {
     return {
@@ -70,6 +83,24 @@ async function fetchLeadsFromBriefOnly(opts) {
     const url = c.url;
     urlsAttempted.push(url);
 
+    try {
+      const n = Math.min(maxLeads - collected.length, 25, perUrlBudget);
+      const directRows = await fetchOpenDataSampleRows(url, Math.max(n, 5));
+      if (directRows && directRows.length) {
+        const { leads: filtered, applied } = await filterLeadsToBrief(b, manifest.strict_match_rules, directRows);
+        const slice = (filtered && filtered.length ? filtered : directRows).slice(0, perUrlBudget);
+        for (const row of slice) {
+          collected.push(row);
+          if (collected.length >= maxLeads) break;
+        }
+        logger.info(`auto-leads: open-data API ${url.slice(0, 72)} → ${slice.length} rows (filter ${applied})`);
+        if (collected.length >= maxLeads) break;
+        continue;
+      }
+    } catch (e) {
+      logger.warn(`auto-leads open-data direct ${url.slice(0, 60)}: ${e.message}`);
+    }
+
     if (/featureserver\/\d+|\/mapserver\//i.test(url)) {
       try {
         const n = Math.min(maxLeads - collected.length, 25, perUrlBudget);
@@ -86,6 +117,11 @@ async function fetchLeadsFromBriefOnly(opts) {
       } catch (e) {
         logger.warn(`auto-leads ArcGIS failed ${url}: ${e.message}`);
       }
+      continue;
+    }
+
+    if (isCatalogStubUrl(url)) {
+      logger.info(`auto-leads: skip Playwright for catalog/map stub ${url.slice(0, 90)}`);
       continue;
     }
 

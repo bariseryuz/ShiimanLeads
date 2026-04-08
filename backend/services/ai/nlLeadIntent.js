@@ -10,6 +10,8 @@ const { retryWithBackoff } = require('../../utils/aiRetry');
 const scaleLimits = require('../../config/scaleLimits');
 const { googleSearchOrganic, hasSerper, dedupeSearchResults, sleep } = require('../serperSearch');
 const { ensureArcGISFeatureLayerQueryUrl } = require('../../engine/adapters/rest');
+const { fetchOpenDataSampleRows } = require('../openDataDirectSample');
+const { sortUrls } = require('../candidateUrlSort');
 
 function parseIntentJson(text) {
   let t = String(text || '').trim();
@@ -281,6 +283,8 @@ async function runNlLeadIntentDiscovery(brief) {
       .slice(0, 5);
   }
 
+  pickedUrls = sortUrls(pickedUrls);
+
   const candidate_sources = pickedUrls.map(url => {
     const row = pool.find(r => r.link === url);
     return {
@@ -293,22 +297,29 @@ async function runNlLeadIntentDiscovery(brief) {
 
   let preview_leads = null;
   let preview_note = null;
-  const firstArc =
-    pickedUrls.find(looksLikeArcGisDataUrl) || pickedUrls.find(u => /\/mapserver\//i.test(String(u || '')));
-  if (firstArc) {
-    const n = Math.min(intent.lead_count, 10);
-    preview_leads = await tryArcgisSampleRows(firstArc, n);
-    if (preview_leads?.length) {
-      preview_note =
-        `Showing up to ${preview_leads.length} raw rows from the first working public layer (where=1=1). ` +
-        `Your filters (e.g. $300k+ multifamily) must be applied via the correct field names after you inspect the layer.`;
-    } else {
-      preview_note =
-        'Found candidate URLs but could not fetch a live sample (auth, wrong layer URL, or non-public layer). Add the URL as a JSON API source and set query filters there.';
+  const firstUrl = pickedUrls[0];
+  if (firstUrl) {
+    try {
+      preview_leads = await fetchOpenDataSampleRows(firstUrl, Math.min(intent.lead_count, 10));
+    } catch (e) {
+      logger.warn(`[nlLeadIntent] openDataDirect preview: ${e.message}`);
     }
+  }
+  if (!preview_leads?.length) {
+    const firstArc =
+      pickedUrls.find(looksLikeArcGisDataUrl) || pickedUrls.find(u => /\/mapserver\//i.test(String(u || '')));
+    if (firstArc) {
+      const n = Math.min(intent.lead_count, 10);
+      preview_leads = await tryArcgisSampleRows(firstArc, n);
+    }
+  }
+  if (preview_leads?.length) {
+    preview_note =
+      `Showing up to ${preview_leads.length} raw rows from the first candidate (open-data API or public layer, where=1=1). ` +
+      `Apply dollar/location filters using the correct field names in My sources → JSON API if needed.`;
   } else {
     preview_note =
-      'No direct ArcGIS layer URL in the top results — use the links below to find your county open-data layer, then add it under My sources → JSON API.';
+      'Could not fetch a live sample from the first URL (portal page only, auth, or non-public layer). Try another candidate or add the dataset as a JSON API source.';
   }
 
   return {

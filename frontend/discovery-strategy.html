@@ -187,7 +187,7 @@
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brief: brief, maxLeads: 15, maxSites: 2 })
+          body: JSON.stringify({ brief: brief, maxLeads: 15, maxSites: 3 })
         });
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
