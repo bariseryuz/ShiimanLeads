@@ -9,6 +9,7 @@ const {
   generateDiscoveryStrategy,
   generateDiscoveryFromGoogleSearch
 } = require('../services/ai/discoveryStrategy');
+const { runNlLeadIntentDiscovery } = require('../services/ai/nlLeadIntent');
 const { createUserSourceCore } = require('../services/createUserSourceCore');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
@@ -75,6 +76,7 @@ router.post('/strategy', requirePaid, express.json(), withDiscoveryMonthlyLimit,
       product: out.context.product,
       customer: out.context.customer,
       triggerEvents: out.context.triggerEvents,
+      location: out.context.location,
       suggestions: out.suggestions
     });
   } catch (e) {
@@ -102,6 +104,7 @@ router.post('/google', requirePaid, express.json(), withDiscoveryMonthlyLimit, a
       customer: out.context.customer,
       triggerEvents: out.context.triggerEvents,
       keyword: out.context.keyword,
+      location: out.context.location,
       queriesUsed: out.queriesUsed,
       resultsPooled: out.resultsPooled,
       suggestions: out.suggestions
@@ -114,6 +117,29 @@ router.post('/google', requirePaid, express.json(), withDiscoveryMonthlyLimit, a
         : 500;
     logger.error(`POST /api/discover/google: ${msg}`);
     res.status(code).json({ error: msg });
+  }
+});
+
+/**
+ * POST /api/discover/nl-intent
+ * Body: { brief: "3 leads: new multifamily building permits in California over $300k..." }
+ * Parses intent with Gemini, searches Google via Serper for open-data URLs, may return sample ArcGIS rows.
+ */
+router.post('/nl-intent', requirePaid, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
+  try {
+    const brief = req.body && req.body.brief;
+    if (!brief || String(brief).trim().length < 8) {
+      return res.status(400).json({
+        error: 'Provide a brief (what leads, where, e.g. permits, dollar threshold).'
+      });
+    }
+    const out = await runNlLeadIntentDiscovery(String(brief).trim());
+    await incrementUsage(req.session.user.id, 'discovery', 1);
+    res.json({ success: true, mode: 'nl_intent', ...out });
+  } catch (e) {
+    const msg = e.message || String(e);
+    logger.error(`POST /api/discover/nl-intent: ${msg}`);
+    res.status(500).json({ error: msg });
   }
 });
 

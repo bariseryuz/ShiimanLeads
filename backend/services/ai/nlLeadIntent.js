@@ -1,0 +1,265 @@
+/**
+ * Natural-language "find me leads like X" — parse intent, search the web (Serper), optionally sample ArcGIS rows.
+ * Does not guarantee contacts: permit data rarely includes email; enrichment is separate.
+ */
+
+const axios = require('axios');
+const logger = require('../../utils/logger');
+const { getGeminiModel, isAIAvailable } = require('./geminiClient');
+const { retryWithBackoff } = require('../../utils/aiRetry');
+const scaleLimits = require('../../config/scaleLimits');
+const { googleSearchOrganic, hasSerper, dedupeSearchResults, sleep } = require('../serperSearch');
+const { ensureArcGISFeatureLayerQueryUrl } = require('../../engine/adapters/rest');
+
+function parseIntentJson(text) {
+  let t = String(text || '').trim();
+  t = t.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
+  const start = t.indexOf('{');
+  const end = t.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  try {
+    return JSON.parse(t.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} brief - User sentence e.g. "3 hot leads, new multifamily permits in CA over $300k"
+ */
+async function parseBriefWithGemini(brief) {
+  const b = String(brief || '').trim();
+  if (b.length < 8) {
+    throw new Error('Describe what leads you need in at least a short paragraph.');
+  }
+  if (!isAIAvailable()) {
+    throw new Error('AI not configured (GEMINI_API_KEY)');
+  }
+
+  const prompt =
+    'You extract structured lead-search intent from a user message. Return ONLY valid JSON:\n' +
+    '{\n' +
+    '  "lead_count": <number 1-25, default 3>,\n' +
+    '  "geography": "<plain words e.g. California, Los Angeles County, Nashville TN>",\n' +
+    '  "geography_kind": "state"|"county"|"city"|"metro"|"unknown",\n' +
+    '  "state_code": "<two-letter US state if applicable or empty>",\n' +
+    '  "asset_or_use": "<e.g. multifamily residential, commercial office>",\n' +
+    '  "trigger_or_record": "<e.g. building permit, certificate of occupancy, new construction>",\n' +
+    '  "min_project_value_usd": <number or null if not specified>,\n' +
+    '  "wants_contact_info": <boolean>,\n' +
+    '  "keywords_for_search": ["3-6 short phrases for Google queries"]\n' +
+    '}\n\n' +
+    `User message:\n${b.slice(0, 4000)}`;
+
+  const model = getGeminiModel('discovery');
+  const result = await retryWithBackoff(
+    () => model.generateContent(prompt),
+    { maxRetries: scaleLimits.gemini.maxRetries, baseMs: scaleLimits.gemini.retryBaseMs }
+  );
+  const raw = (await result.response).text();
+  const o = parseIntentJson(raw);
+  if (!o || typeof o !== 'object') {
+    throw new Error('Could not understand that request — try adding location, permit type, and any dollar threshold.');
+  }
+  return {
+    lead_count: Math.min(25, Math.max(1, parseInt(o.lead_count, 10) || 3)),
+    geography: String(o.geography || '').trim() || 'United States',
+    geography_kind: String(o.geography_kind || 'unknown'),
+    state_code: String(o.state_code || '').trim().toUpperCase().slice(0, 2),
+    asset_or_use: String(o.asset_or_use || '').trim(),
+    trigger_or_record: String(o.trigger_or_record || 'building permit').trim(),
+    min_project_value_usd:
+      o.min_project_value_usd != null && Number.isFinite(Number(o.min_project_value_usd))
+        ? Number(o.min_project_value_usd)
+        : null,
+    wants_contact_info: !!o.wants_contact_info,
+    keywords_for_search: Array.isArray(o.keywords_for_search)
+      ? o.keywords_for_search.map(k => String(k || '').trim()).filter(Boolean).slice(0, 8)
+      : []
+  };
+}
+
+function buildSerperQueries(intent) {
+  const geo = intent.geography;
+  const st = intent.state_code;
+  const asset = intent.asset_or_use;
+  const trig = intent.trigger_or_record;
+  const base = [
+    `${geo} ${trig} open data ArcGIS FeatureServer site:gov`,
+    `${st ? st + ' ' : ''}${trig} ${asset || 'residential'} portal site:gov`,
+    `${geo} county ${trig} GIS layer`
+  ];
+  if (intent.keywords_for_search.length) {
+    for (const k of intent.keywords_for_search.slice(0, 2)) {
+      base.push(`${k} site:gov OR site:org`);
+    }
+  }
+  return [...new Set(base.map(q => q.trim()).filter(q => q.length > 5))].slice(0, 5);
+}
+
+function looksLikeArcGisDataUrl(link) {
+  return typeof link === 'string' && /featureserver\/\d+/i.test(link) && /^https?:\/\//i.test(link);
+}
+
+/**
+ * Fetch up to N sample feature attributes from a public ArcGIS layer URL.
+ */
+async function tryArcgisSampleRows(layerPageUrl, maxFeatures = 5) {
+  if (!looksLikeArcGisDataUrl(layerPageUrl)) return null;
+  let queryUrl = ensureArcGISFeatureLayerQueryUrl(layerPageUrl.trim());
+  try {
+    const u = new URL(queryUrl);
+    if (!u.pathname.toLowerCase().includes('/query')) {
+      queryUrl = ensureArcGISFeatureLayerQueryUrl(layerPageUrl);
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const response = await axios.get(queryUrl, {
+      params: {
+        f: 'json',
+        where: '1=1',
+        outFields: '*',
+        returnGeometry: false,
+        resultRecordCount: maxFeatures
+      },
+      timeout: 18000,
+      validateStatus: () => true
+    });
+    const data = response.data;
+    if (data?.error) {
+      logger.warn(`[nlLeadIntent] ArcGIS error: ${JSON.stringify(data.error).slice(0, 200)}`);
+      return null;
+    }
+    const features = Array.isArray(data?.features) ? data.features : [];
+    const rows = features.slice(0, maxFeatures).map(f => f.attributes || {});
+    return rows.length ? rows : null;
+  } catch (e) {
+    logger.warn(`[nlLeadIntent] ArcGIS sample failed: ${e.message}`);
+    return null;
+  }
+}
+
+async function pickBestSourceUrls(organicPool, intent) {
+  if (!organicPool.length || !isAIAvailable()) return [];
+  try {
+    const model = getGeminiModel('discovery');
+    const pack =
+      'Pick up to 5 URLs that are most likely to be OPEN DATA / permit / GIS layers (ArcGIS FeatureServer, Socrata, data.gov).\n' +
+      `Intent: ${JSON.stringify(intent)}\n\n` +
+      'Candidates (title, link, snippet):\n' +
+      JSON.stringify(
+        organicPool.slice(0, 25).map((r, i) => ({ i, title: r.title, link: r.link, snippet: r.snippet })),
+        null,
+        2
+      ) +
+      '\n\nReturn ONLY JSON: {"urls":["https://..."]} — use link values exactly from candidates. Prefer FeatureServer URLs.';
+
+    const result = await retryWithBackoff(
+      () => model.generateContent(pack),
+      { maxRetries: scaleLimits.gemini.maxRetries, baseMs: scaleLimits.gemini.retryBaseMs }
+    );
+    const raw = (await result.response).text();
+    const o = parseIntentJson(raw);
+    const urls = Array.isArray(o?.urls)
+      ? o.urls.map(u => String(u || '').trim()).filter(u => /^https?:\/\//i.test(u))
+      : [];
+    const allowed = new Set(organicPool.map(r => r.link));
+    return urls.filter(u => allowed.has(u)).slice(0, 5);
+  } catch (e) {
+    logger.warn(`[nlLeadIntent] pickBestSourceUrls: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * End-to-end: NL brief → intent → Serper → ranked URLs → optional ArcGIS preview rows.
+ */
+async function runNlLeadIntentDiscovery(brief) {
+  const intent = await parseBriefWithGemini(brief);
+
+  if (!hasSerper()) {
+    return {
+      intent,
+      search_queries_used: [],
+      results_pooled: 0,
+      candidate_sources: [],
+      preview_leads: null,
+      preview_note:
+        'Add SERPER_API_KEY to the server to search Google for real permit/open-data URLs. Intent was parsed successfully.',
+      disclaimer:
+        'Automated search finds public data portals — not guaranteed emails. Map valuation/multifamily filters after you connect a source; field names differ by county.'
+    };
+  }
+
+  const queries = buildSerperQueries(intent);
+  const maxSerper = parseInt(process.env.NL_INTENT_MAX_SERPER || '6', 10) || 6;
+  const nq = Math.min(queries.length, maxSerper);
+  const collected = [];
+  for (let i = 0; i < nq; i++) {
+    try {
+      const rows = await googleSearchOrganic(queries[i], { num: 10 });
+      rows.forEach(r => collected.push({ ...r, sourceQuery: queries[i] }));
+    } catch (e) {
+      logger.warn(`[nlLeadIntent] Serper query failed: ${e.message}`);
+    }
+    await sleep(400);
+  }
+
+  const deduped = dedupeSearchResults(collected);
+  const pool = deduped.slice(0, 30);
+
+  let pickedUrls = await pickBestSourceUrls(pool, intent);
+  if (!pickedUrls.length) {
+    pickedUrls = pool.filter(r => looksLikeArcGisDataUrl(r.link)).map(r => r.link).slice(0, 3);
+  }
+
+  const candidate_sources = pickedUrls.map(url => {
+    const row = pool.find(r => r.link === url);
+    return {
+      title: row?.title || 'Source',
+      url,
+      snippet: (row?.snippet || '').slice(0, 400),
+      sourceQuery: row?.sourceQuery
+    };
+  });
+
+  let preview_leads = null;
+  let preview_note = null;
+  const firstArc = pickedUrls.find(looksLikeArcGisDataUrl);
+  if (firstArc) {
+    const n = Math.min(intent.lead_count, 10);
+    preview_leads = await tryArcgisSampleRows(firstArc, n);
+    if (preview_leads?.length) {
+      preview_note =
+        `Showing up to ${preview_leads.length} raw rows from the first working public layer (where=1=1). ` +
+        `Your filters (e.g. $300k+ multifamily) must be applied via the correct field names after you inspect the layer.`;
+    } else {
+      preview_note =
+        'Found candidate URLs but could not fetch a live sample (auth, wrong layer URL, or non-public layer). Add the URL as a JSON API source and set query filters there.';
+    }
+  } else {
+    preview_note =
+      'No direct ArcGIS layer URL in the top results — use the links below to find your county open-data layer, then add it under My sources → JSON API.';
+  }
+
+  return {
+    intent,
+    search_queries_used: queries.slice(0, nq),
+    results_pooled: pool.length,
+    candidate_sources,
+    preview_leads,
+    preview_note,
+    disclaimer:
+      'Contact emails are rarely in permit APIs. Use enrichment and your ICP after leads are in the dashboard.'
+  };
+}
+
+module.exports = {
+  parseBriefWithGemini,
+  runNlLeadIntentDiscovery,
+  buildSerperQueries,
+  tryArcgisSampleRows
+};
