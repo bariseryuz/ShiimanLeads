@@ -11,10 +11,8 @@ const {
 } = require('../services/ai/discoveryStrategy');
 const { runNlLeadIntentDiscovery } = require('../services/ai/nlLeadIntent');
 const { createUserSourceCore } = require('../services/createUserSourceCore');
-const { buildManifestFromBrief } = require('../services/ai/deepExtractManifest');
-const { filterLeadsToBrief } = require('../services/ai/deepExtractFilter');
-const { scrapeForUser } = require('../legacyScraper');
-const { dbAll, dbRun } = require('../db');
+const { runExtractNowForUrl } = require('../services/discoverExtractRun');
+const { fetchLeadsFromBriefOnly } = require('../services/autoLeadFromBrief');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
 const { assertMonthlyAllowance, incrementUsage } = require('../services/usageMeter');
@@ -125,15 +123,42 @@ router.post('/google', requirePaid, express.json(), withDiscoveryMonthlyLimit, a
 });
 
 /**
- * POST /api/discover/nl-intent
- * Body: { brief: "3 leads: new multifamily building permits in California over $300k..." }
- * Parses intent with Gemini, searches Google via Serper for open-data URLs, may return sample ArcGIS rows.
+ * POST /api/discover/auto-leads — Primary flow: brief only → search → extract → leads (no URL required).
+ * Body: { brief, maxLeads?: 15, maxSites?: 2 }
  */
+router.post('/auto-leads', requirePaid, enforceSourceLimit, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
+  try {
+    const userId = req.session?.user?.id;
+    const body = req.body || {};
+    const brief = body.brief != null ? String(body.brief).trim() : '';
+    if (brief.length < 12) {
+      return res.status(400).json({
+        error: 'Describe the leads you want (location, record type, filters) in at least one sentence.'
+      });
+    }
+    const maxLeads = Math.min(50, Math.max(1, parseInt(body.maxLeads, 10) || 15));
+    const maxSites = Math.min(3, Math.max(1, parseInt(body.maxSites, 10) || 2));
+
+    const out = await fetchLeadsFromBriefOnly({
+      userId,
+      brief,
+      req,
+      maxLeads,
+      maxSites
+    });
+    await incrementUsage(req.session.user.id, 'discovery', 1);
+    res.json(out);
+  } catch (e) {
+    const msg = e.message || String(e);
+    const code = msg.includes('Describe') || msg.includes('at least') ? 400 : 500;
+    logger.error(`POST /api/discover/auto-leads: ${msg}`);
+    res.status(code).json({ error: msg });
+  }
+});
+
 /**
- * POST /api/discover/extract-now
+ * POST /api/discover/extract-now — Optional: you already have a URL.
  * Body: { url, brief, maxLeads?: 15, deleteAfter?: false }
- * Creates a temporary Playwright+AI source, runs one scrape with navigation + screenshot extraction,
- * optionally filters rows to the brief, returns structured leads (not just suggested URLs).
  */
 router.post('/extract-now', requirePaid, enforceSourceLimit, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
   try {
@@ -156,100 +181,25 @@ router.post('/extract-now', requirePaid, enforceSourceLimit, express.json(), wit
     const maxLeads = Math.min(50, Math.max(1, parseInt(body.maxLeads, 10) || 15));
     const deleteAfter = body.deleteAfter === true || body.deleteAfter === 'true';
 
-    const manifest = await buildManifestFromBrief(brief);
-    let host = 'site';
-    try {
-      host = new URL(pageUrl).hostname.replace(/^www\./i, '') || 'site';
-    } catch {
-      /* ignore */
-    }
-
-    const nav = [
-      manifest.navigation_instructions,
-      'STRICT OUTPUT: Only extract rows that match the user criteria; use null for missing cells.',
-      `USER INTENT (for filtering columns): ${brief.slice(0, 1500)}`
-    ].filter(Boolean);
-
-    const sourceData = {
-      name: `Extract ${host}`.slice(0, 200),
-      url: pageUrl,
-      method: 'playwright',
-      usePlaywright: true,
-      useAI: true,
-      type: 'html',
-      fieldSchema: manifest.field_schema,
-      aiPrompt: nav.join('\n\n'),
-      discoveryKeyword: brief.slice(0, 200),
-      fromDiscovery: true,
-      deepExtractOneShot: true,
-      extractionLimits: {
-        maxTotalRows: maxLeads,
-        maxPages: 3,
-        maxRowsPerPage: Math.min(50, maxLeads + 5)
-      }
-    };
-
-    const created = await createUserSourceCore({
+    const out = await runExtractNowForUrl({
       userId,
-      sourceData,
-      req,
-      skipAutoScrape: true,
-      skipNotification: true
-    });
-    const sourceId = created.id;
-
-    const toScrape = { ...sourceData, id: sourceId, _sourceId: sourceId };
-    await scrapeForUser(userId, [toScrape], {
-      maxTotalRows: maxLeads,
-      maxPages: 3,
-      maxRowsPerPage: Math.min(50, maxLeads + 5)
-    });
-
-    let rows = await dbAll(
-      'SELECT id, raw_data, created_at FROM leads WHERE user_id = ? AND source_id = ? ORDER BY id DESC LIMIT ?',
-      [userId, sourceId, Math.min(100, maxLeads * 2)]
-    );
-
-    const parsed = rows
-      .map(r => {
-        let data = {};
-        if (r.raw_data) {
-          try {
-            data = JSON.parse(r.raw_data);
-          } catch {
-            data = { _raw: r.raw_data };
-          }
-        }
-        return { lead_id: r.id, created_at: r.created_at, ...data };
-      })
-      .filter(obj => obj && typeof obj === 'object');
-
-    const { leads: filtered, applied: strictFilterApplied } = await filterLeadsToBrief(
       brief,
-      manifest.strict_match_rules,
-      parsed
-    );
-    const leads = filtered.slice(0, maxLeads);
-    const note =
-      parsed.length > 0 && leads.length === 0 && strictFilterApplied
-        ? 'Strict filter matched no rows against your brief. Try a broader brief or verify the page shows qualifying records.'
-        : null;
-
-    if (deleteAfter) {
-      await dbRun('DELETE FROM leads WHERE user_id = ? AND source_id = ?', [userId, sourceId]);
-      await dbRun('DELETE FROM user_sources WHERE user_id = ? AND id = ?', [userId, sourceId]);
-    }
+      url: pageUrl,
+      maxLeads,
+      deleteAfter,
+      req
+    });
 
     await incrementUsage(req.session.user.id, 'discovery', 1);
     res.json({
       success: true,
       mode: 'extract_now',
-      source_id: deleteAfter ? null : sourceId,
-      field_schema: manifest.field_schema,
-      strict_match_rules: manifest.strict_match_rules,
-      strict_filter_applied: strictFilterApplied,
-      leads,
-      note,
+      source_id: out.sourceId,
+      field_schema: out.manifest.field_schema,
+      strict_match_rules: out.manifest.strict_match_rules,
+      strict_filter_applied: out.strictFilterApplied,
+      leads: out.leads,
+      note: out.note,
       deleted_ephemeral_source: deleteAfter
     });
   } catch (e) {

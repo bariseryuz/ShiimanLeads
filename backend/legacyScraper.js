@@ -24,6 +24,12 @@ const { fetchArcGISRecords } = require('./services/scraper/arcgis');
 const { getRateLimiter } = require('./services/scraper/rateLimiter');
 const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./services/scraper/stealth');
 const { setupApiInterceptor, waitForApiResponse, extractRecordsFromApiResponse } = require('./services/scraper/apiInterceptor');
+const {
+  createStructuredCaptureState,
+  attachStructuredJsonListener,
+  collectStructuredRecords,
+  shouldFallbackToVision
+} = require('./services/scraper/structuredFirst');
 const { mergeLimits, isPageLimitReached, isTotalRowLimitReached } = require('./config/extractionLimits');
 const { SCREENSHOT_DIR } = require('./config/paths');
 const engine = require('./engine');
@@ -494,6 +500,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         const context = await browser.newContext(getStealthContextOptions());
         const page = await context.newPage();
         await injectStealthScripts(page);
+        const structuredState = createStructuredCaptureState();
+        attachStructuredJsonListener(page, structuredState);
         await setupPopupBlocking(page);
 
         try {
@@ -584,10 +592,45 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             await page.waitForTimeout(3000);
           }
 
+          /** Structured-first: JSON from network + JSON-LD + DOM tables (no screenshots). Skips vision if rows found. */
+          let structuredRowCount = 0;
+          const structuredFirstEnabled =
+            source.structuredFirst !== false && String(process.env.STRUCTURED_FIRST || '').toLowerCase() !== 'false';
+          if (structuredFirstEnabled) {
+            await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+            await page.waitForTimeout(2000);
+            const cap =
+              limits.maxTotalRows != null && limits.maxTotalRows > 0 ? limits.maxTotalRows : 100;
+            const { records: structuredRecords } = await collectStructuredRecords(page, structuredState, {
+              fieldSchema: source.fieldSchema,
+              maxRows: cap
+            });
+            for (const record of structuredRecords) {
+              if (isTotalRowLimitReached(totalInserted, limits)) break;
+              if (
+                await insertLeadIfNew({
+                  raw: JSON.stringify(record),
+                  sourceName: source.name,
+                  lead: record,
+                  userId,
+                  sourceId: source.id,
+                  sourceUrl: source.url,
+                  ...primaryIdOpts(source)
+                })
+              ) {
+                sourceNewLeads++;
+                totalInserted++;
+                structuredRowCount++;
+              }
+            }
+          }
+
+          const needVision = shouldFallbackToVision(source, structuredRowCount);
+
           // MODE DETECT
           const isWide = await page.evaluate(() => document.documentElement.scrollWidth > (window.innerWidth + 100));
 
-          if (isWide && source.useAI) {
+          if (needVision && isWide && source.useAI) {
             logger.info(`🎯 Mode: Wide Table Grid Scroll`);
             const gridResult = await captureGridScrollScreenshots(page, { selector: 'body', horizontalScrollStep: 1000, verticalScrollStep: 800 });
             for (const tile of gridResult.tiles) {
@@ -600,7 +643,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
                 }
               }
             }
-          } else if (source.useAI) {
+          } else if (needVision && source.useAI) {
             logger.info(`🎯 Mode: Standard Pagination/Scroll`);
             let pageNumber = 1;
             let hasMorePages = true;

@@ -23,13 +23,27 @@
     .err { color: #b91c1c; font-size: 0.9rem; margin-top: 0.75rem; }
     .extract-out { margin-top: 0.75rem; padding: 0.75rem; background: #0f172a; color: #e2e8f0; border-radius: 8px; font-size: 0.75rem; overflow: auto; max-height: 360px; }
     .btn-teal { background: #0d9488 !important; border-color: #0d9488 !important; }
+    details.strategy-card summary { list-style: none; }
+    details.strategy-card summary::-webkit-details-marker { display: none; }
   </style>
 </head>
 <body>
   <div class="strategy-wrap">
     <div class="strategy-card">
-      <h1>Find sources to monitor</h1>
-      <p class="hint">Describe what you sell and where — we use AI to suggest <strong>real pages</strong> (jobs, news, permits, open data). <strong>Search Google</strong> runs live web search (Serper) + AI to pick monitorable URLs. You don’t need a JSON API or a source URL to start.</p>
+      <h1>Get leads</h1>
+      <p class="hint">Describe the leads you want (location, type, filters). We <strong>search the web</strong>, pick likely sources, <strong>open them</strong>, and <strong>return rows</strong> — you don’t need a URL. Optional tools below if you want to suggest sources only or paste a specific link.</p>
+
+      <div class="field">
+        <label for="leadBrief">What leads do you want?</label>
+        <textarea id="leadBrief" placeholder="Example: Recent commercial building permits in Travis County TX over $250k — I need project address, valuation, and applicant name if shown." style="min-height:120px;"></textarea>
+      </div>
+      <button type="button" class="btn-primary" id="btnAutoLeads" style="background:#7c3aed;border-color:#7c3aed;">Find leads for me</button>
+      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">Uses Serper + Gemini + browser extraction; first run may take <strong>1–3 minutes</strong>. Add <code>SERPER_API_KEY</code> and <code>GEMINI_API_KEY</code> in server <code>.env</code>.</p>
+    </div>
+
+    <details class="strategy-card">
+      <summary style="font-size:1.05rem;font-weight:600;color:#0f172a;padding:0.25rem 0;cursor:pointer;">Optional — strategy form, Google URLs, or source preview only</summary>
+      <p class="hint" style="margin-top:0.75rem;">Fill these if you sell B2B and want <strong>suggested pages to monitor</strong> (not automatic row extraction). Your main request stays in the box above.</p>
 
       <div class="field">
         <label for="location">City / metro / state <span style="font-weight:400;color:#64748b;">(recommended)</span></label>
@@ -52,11 +66,13 @@
         <button type="button" class="btn-primary" id="btnGoogle" style="background:#0f766e;border-color:#0f766e;" title="Uses Serper + Google">Search Google for URLs</button>
       </div>
       <div class="field" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid #e5e7eb;">
-        <label for="nlBrief">Or describe the leads you need in one message</label>
-        <textarea id="nlBrief" placeholder="Example: 3 hot leads — new multifamily building permits in California, project budget over $300,000, I need owner or GC contact hints." style="min-height:100px;"></textarea>
-        <button type="button" class="btn-primary" id="btnNl" style="margin-top:0.5rem;background:#7c3aed;border-color:#7c3aed;">Find sources + preview (plain English)</button>
+        <button type="button" class="btn-primary" id="btnNl" style="margin-top:0.5rem;background:#475569;border-color:#475569;">Preview source URLs only (no row extraction)</button>
+        <p class="hint" style="margin-top:0.5rem;font-size:0.8rem;">Uses the <strong>same text</strong> from “What leads do you want?” above — lists candidate links without opening sites to extract.</p>
       </div>
       <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">“Search Google” runs <strong>real Google searches</strong> via the Serper API (add <code>SERPER_API_KEY</code> in server .env — see <a href="https://serper.dev" target="_blank" rel="noopener">serper.dev</a>). We don’t automate google.com in a browser (blocked / ToS).</p>
+    </details>
+
+    <div class="strategy-card" style="padding-top:0.5rem;">
       <div id="err" class="err" style="display:none;"></div>
     </div>
 
@@ -118,8 +134,76 @@
     }
 
     function buildNlBrief() {
-      return (document.getElementById('nlBrief').value || '').trim();
+      return (document.getElementById('leadBrief').value || '').trim();
     }
+
+    function renderAutoLeads(data) {
+      const out = document.getElementById('results');
+      let html = '<h2 style="font-size:1.15rem;color:#0f172a;margin:0 0 0.75rem 0;">Leads</h2>';
+      if (data.note) {
+        html += '<p style="font-size:0.88rem;color:#b45309;margin:0 0 0.75rem 0;">' + escapeHtml(data.note) + '</p>';
+      }
+      if (data.urls_attempted && data.urls_attempted.length) {
+        html += '<p style="font-size:0.82rem;color:#475569;margin:0 0 0.5rem 0;"><strong>Opened / tried:</strong> ' +
+          data.urls_attempted.map(function (u) { return '<a href="' + escapeAttr(u) + '" target="_blank" rel="noopener">' + escapeHtml(u) + '</a>'; }).join(' · ') +
+          '</p>';
+      }
+      if (data.preview_note) {
+        html += '<p style="font-size:0.8rem;color:#64748b;margin:0 0 0.75rem 0;">' + escapeHtml(data.preview_note) + '</p>';
+      }
+      html += '<pre class="extract-out" style="max-height:480px;">' +
+        escapeHtml(JSON.stringify({
+          intent: data.intent,
+          field_schema: data.field_schema,
+          leads: data.leads,
+          candidate_sources: data.candidate_sources
+        }, null, 2)) +
+        '</pre>';
+      if (data.disclaimer) {
+        html += '<p style="font-size:0.8rem;color:#64748b;margin-top:0.75rem;">' + escapeHtml(data.disclaimer) + '</p>';
+      }
+      out.innerHTML = html;
+      out.style.display = 'block';
+      out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.getElementById('btnAutoLeads').onclick = async function () {
+      const brief = buildNlBrief();
+      const err = document.getElementById('err');
+      const out = document.getElementById('results');
+      err.style.display = 'none';
+      out.style.display = 'none';
+      if (brief.length < 12) {
+        err.textContent = 'Write at least one clear sentence: what leads, where, and any filters (e.g. permit type, dollar amount).';
+        err.style.display = 'block';
+        return;
+      }
+      const btn = document.getElementById('btnAutoLeads');
+      const prev = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Searching & extracting… (1–3 min)';
+      try {
+        const res = await fetch('/api/discover/auto-leads', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brief: brief, maxLeads: 15, maxSites: 2 })
+        });
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          err.textContent = data.error || res.statusText || 'Request failed';
+          err.style.display = 'block';
+          return;
+        }
+        renderAutoLeads(data);
+      } catch (e) {
+        err.textContent = e.message || 'Network error';
+        err.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    };
 
     /**
      * Opens the URL in Playwright, navigates with AI, extracts rows in the requested shape, then strict-filters to the brief.
@@ -245,7 +329,7 @@
     };
 
     document.getElementById('btnNl').onclick = async function () {
-      const brief = (document.getElementById('nlBrief').value || '').trim();
+      const brief = (document.getElementById('leadBrief').value || '').trim();
       const err = document.getElementById('err');
       const out = document.getElementById('results');
       err.style.display = 'none';
@@ -326,7 +410,7 @@
           var i = parseInt(b.getAttribute('data-nl-monitor'), 10);
           var c = (window._nlCandidates || [])[i];
           if (!c) return;
-          document.getElementById('nlBrief').value = (document.getElementById('nlBrief').value || '');
+          document.getElementById('leadBrief').value = (document.getElementById('leadBrief').value || '');
           startMonitorNl(c);
         };
       });

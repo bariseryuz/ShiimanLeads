@@ -147,7 +147,8 @@ async function pickBestSourceUrls(organicPool, intent) {
   try {
     const model = getGeminiModel('discovery');
     const pack =
-      'Pick up to 5 URLs that are most likely to be OPEN DATA / permit / GIS layers (ArcGIS FeatureServer, Socrata, data.gov).\n' +
+      'Pick up to 5 URLs most likely to yield ROW-LEVEL public records (permits, licenses, bids, violations).\n' +
+      'Prefer: official .gov portals, open-data hubs, ArcGIS FeatureServer layers, Socrata — but include a county/city search portal if it is the best match.\n' +
       `Intent: ${JSON.stringify(intent)}\n\n` +
       'Candidates (title, link, snippet):\n' +
       JSON.stringify(
@@ -155,7 +156,7 @@ async function pickBestSourceUrls(organicPool, intent) {
         null,
         2
       ) +
-      '\n\nReturn ONLY JSON: {"urls":["https://..."]} — use link values exactly from candidates. Prefer FeatureServer URLs.';
+      '\n\nReturn ONLY JSON: {"urls":["https://..."]} — use link values exactly from candidates.';
 
     const result = await retryWithBackoff(
       () => model.generateContent(pack),
@@ -214,6 +215,13 @@ async function runNlLeadIntentDiscovery(brief) {
   let pickedUrls = await pickBestSourceUrls(pool, intent);
   if (!pickedUrls.length) {
     pickedUrls = pool.filter(r => looksLikeArcGisDataUrl(r.link)).map(r => r.link).slice(0, 3);
+  }
+  // Last resort: any organic HTTPS links so brief-only flows can still try browser extraction
+  if (!pickedUrls.length && pool.length) {
+    pickedUrls = pool
+      .map(r => r.link)
+      .filter(u => typeof u === 'string' && /^https?:\/\//i.test(u))
+      .slice(0, 5);
   }
 
   const candidate_sources = pickedUrls.map(url => {
