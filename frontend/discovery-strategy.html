@@ -6,7 +6,7 @@
   <title>Lead strategy — Shiiman Leads</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    .strategy-wrap { max-width: 720px; margin: 100px auto 48px; padding: 0 16px; }
+    .strategy-wrap { max-width: 960px; margin: 100px auto 48px; padding: 0 16px; }
     .strategy-card { background: rgba(255,255,255,0.95); border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #e5e7eb; }
     .strategy-card h1 { font-size: 1.35rem; margin: 0 0 0.5rem 0; color: #111; }
     .strategy-card p.hint { color: #64748b; font-size: 0.9rem; margin: 0 0 1rem 0; }
@@ -25,6 +25,23 @@
     .btn-teal { background: #0d9488 !important; border-color: #0d9488 !important; }
     details.strategy-card summary { list-style: none; }
     details.strategy-card summary::-webkit-details-marker { display: none; }
+    .lead-panel { max-width: 920px; margin: 0 auto; }
+    .lead-summary { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem 1.1rem; margin-bottom: 1rem; font-size: 0.95rem; color: #334155; line-height: 1.5; }
+    .lead-summary strong { color: #0f172a; }
+    .lead-count-badge { display: inline-block; background: #ede9fe; color: #5b21b6; font-size: 0.8rem; font-weight: 600; padding: 0.2rem 0.55rem; border-radius: 6px; margin-left: 0.35rem; vertical-align: middle; }
+    .lead-table-wrap { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+    .lead-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .lead-table th { text-align: left; padding: 0.65rem 0.75rem; background: #f1f5f9; color: #475569; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+    .lead-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f1f5f9; vertical-align: top; color: #1e293b; }
+    .lead-table tr:last-child td { border-bottom: none; }
+    .lead-table .muted { color: #64748b; font-size: 0.82rem; }
+    .source-list { margin: 0.75rem 0 0 0; padding: 0; list-style: none; font-size: 0.88rem; }
+    .source-list li { margin-bottom: 0.45rem; padding-left: 0; }
+    .source-list a { color: #0066cc; text-decoration: none; }
+    .source-list a:hover { text-decoration: underline; }
+    details.lead-tech { margin-top: 1rem; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem 0.75rem; background: #fafafa; font-size: 0.85rem; }
+    details.lead-tech summary { cursor: pointer; color: #64748b; font-weight: 500; }
+    details.lead-tech[open] summary { margin-bottom: 0.5rem; }
   </style>
 </head>
 <body>
@@ -137,31 +154,104 @@
       return (document.getElementById('leadBrief').value || '').trim();
     }
 
+    function intentPlainSummary(intent) {
+      if (!intent || typeof intent !== 'object') return '';
+      var parts = [];
+      var geo = (intent.geography || '').trim();
+      if (geo) parts.push(geo + (intent.state_code ? ', ' + intent.state_code : ''));
+      var trig = (intent.trigger_or_record || '').replace(/_/g, ' ');
+      if (trig && trig.toLowerCase() !== 'unknown') parts.push(trig);
+      if (intent.asset_or_use) parts.push(intent.asset_or_use + ' focus');
+      if (intent.min_project_value_usd != null && intent.min_project_value_usd !== '') {
+        parts.push('roughly $' + Number(intent.min_project_value_usd).toLocaleString() + '+ where data allows');
+      }
+      return parts.length ? parts.join(' · ') : '';
+    }
+
+    function normalizeLeadRow(row) {
+      if (!row || typeof row !== 'object') return null;
+      var id = row.Permit__ != null ? String(row.Permit__) : (row.permitnum != null ? String(row.permitnum) : '—');
+      var addr = row.Address || row.originaladdress1 || row.originaladdress || '';
+      var city = row.City || row.originalcity || '';
+      var st = row.State || row.originalstate || '';
+      var zip = row.ZIP || row.originalzip || '';
+      var line1 = addr || '—';
+      var line2 = [city, st].filter(Boolean).join(', ');
+      if (zip) line2 = line2 ? (line2 + ' ' + zip) : zip;
+      var costRaw = row.Const_Cost != null ? row.Const_Cost : row.estprojectcostdec;
+      var cost = '—';
+      if (costRaw != null && costRaw !== '') {
+        var n = typeof costRaw === 'number' ? costRaw : parseFloat(String(costRaw).replace(/[^0-9.-]/g, ''), 10);
+        cost = Number.isFinite(n) ? ('$' + n.toLocaleString()) : String(costRaw);
+      }
+      var typ = row.Permit_Type_Description || row.Permit_Subtype_Description || row.description || row.permittypemapped || row.permitclassmapped || '';
+      return { id: id, line1: line1, line2: line2, cost: cost, type: typ || '—' };
+    }
+
+    function buildLeadTableHtml(leads) {
+      if (!leads || !leads.length) {
+        return '<p style="color:#64748b;font-size:0.9rem;margin:0;">No rows in this extract.</p>';
+      }
+      var html = '<div class="lead-table-wrap"><table class="lead-table"><thead><tr><th>Record #</th><th>Location</th><th>Est. cost</th><th>Type / description</th></tr></thead><tbody>';
+      for (var i = 0; i < leads.length; i++) {
+        var n = normalizeLeadRow(leads[i]);
+        if (!n) continue;
+        html += '<tr><td>' + escapeHtml(n.id) + '</td><td><div>' + escapeHtml(n.line1) + '</div>' +
+          (n.line2 ? '<div class="muted">' + escapeHtml(n.line2) + '</div>' : '') + '</td><td>' + escapeHtml(n.cost) + '</td><td>' +
+          escapeHtml(n.type.length > 120 ? n.type.slice(0, 117) + '…' : n.type) + '</td></tr>';
+      }
+      html += '</tbody></table></div>';
+      return html;
+    }
+
     function renderAutoLeads(data) {
       const out = document.getElementById('results');
-      let html = '<h2 style="font-size:1.15rem;color:#0f172a;margin:0 0 0.75rem 0;">Leads</h2>';
+      const intent = data.intent || {};
+      const leads = Array.isArray(data.leads) ? data.leads : [];
+      const summaryLine = intentPlainSummary(intent);
+      var html = '<div class="lead-panel strategy-card">';
+      html += '<h2 style="font-size:1.25rem;color:#0f172a;margin:0 0 0.75rem 0;">Your leads</h2>';
+
+      if (summaryLine) {
+        html += '<div class="lead-summary"><strong>What we searched for:</strong> ' + escapeHtml(summaryLine) + '</div>';
+      }
+
       if (data.note) {
-        html += '<p style="font-size:0.88rem;color:#b45309;margin:0 0 0.75rem 0;">' + escapeHtml(data.note) + '</p>';
+        html += '<p style="font-size:0.9rem;color:#b45309;margin:0 0 1rem 0;">' + escapeHtml(data.note) + '</p>';
       }
-      if (data.urls_attempted && data.urls_attempted.length) {
-        html += '<p style="font-size:0.82rem;color:#475569;margin:0 0 0.5rem 0;"><strong>Opened / tried:</strong> ' +
-          data.urls_attempted.map(function (u) { return '<a href="' + escapeAttr(u) + '" target="_blank" rel="noopener">' + escapeHtml(u) + '</a>'; }).join(' · ') +
-          '</p>';
+
+      if (leads.length) {
+        html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Sample records <span class="lead-count-badge">' + leads.length + ' shown</span></p>';
+        html += '<p class="hint" style="margin:0 0 0.75rem 0;font-size:0.85rem;">These come from public permit and open-data APIs. Field names vary by city — we show a simple view below.</p>';
+        html += buildLeadTableHtml(leads);
+      } else {
+        html += '<p style="color:#64748b;font-size:0.95rem;">No rows came back this time. Try refining your description or use the optional tools below to pick a specific data source.</p>';
+        if (data.preview_note) {
+          html += '<p style="font-size:0.85rem;color:#64748b;margin-top:0.5rem;">' + escapeHtml(data.preview_note) + '</p>';
+        }
       }
-      if (data.preview_note) {
-        html += '<p style="font-size:0.8rem;color:#64748b;margin:0 0 0.75rem 0;">' + escapeHtml(data.preview_note) + '</p>';
+
+      var sources = data.candidate_sources || [];
+      if (sources.length) {
+        html += '<p style="margin:1rem 0 0.35rem 0;font-weight:600;font-size:0.9rem;color:#334155;">Sources we used</p><ul class="source-list">';
+        for (var j = 0; j < Math.min(sources.length, 6); j++) {
+          var s = sources[j];
+          var t = (s && s.title) ? s.title : 'Source';
+          var u = (s && s.url) ? s.url : '#';
+          html += '<li><a href="' + escapeAttr(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a></li>';
+        }
+        html += '</ul>';
       }
-      html += '<pre class="extract-out" style="max-height:480px;">' +
-        escapeHtml(JSON.stringify({
-          intent: data.intent,
-          field_schema: data.field_schema,
-          leads: data.leads,
-          candidate_sources: data.candidate_sources
-        }, null, 2)) +
-        '</pre>';
+
       if (data.disclaimer) {
-        html += '<p style="font-size:0.8rem;color:#64748b;margin-top:0.75rem;">' + escapeHtml(data.disclaimer) + '</p>';
+        html += '<p style="font-size:0.85rem;color:#64748b;margin:1rem 0 0 0;line-height:1.45;">' + escapeHtml(data.disclaimer) + '</p>';
       }
+
+      html += '<details class="lead-tech"><summary>Technical details (JSON)</summary><pre class="extract-out" style="max-height:320px;margin:0;">' +
+        escapeHtml(JSON.stringify({ intent: data.intent, field_schema: data.field_schema, leads: data.leads, candidate_sources: data.candidate_sources }, null, 2)) +
+        '</pre></details>';
+      html += '</div>';
+
       out.innerHTML = html;
       out.style.display = 'block';
       out.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -236,21 +326,23 @@
           if (slotEl) slotEl.innerHTML = '';
           return;
         }
-        var block = '<p style="margin:0 0 0.5rem 0;font-size:0.75rem;color:#94a3b8;">field_schema + strict_filter_applied + leads (JSON)</p>' +
-          '<pre class="extract-out">' + escapeHtml(JSON.stringify({
+        var block = '';
+        if (data.note) {
+          block += '<p style="margin:0 0 0.75rem 0;font-size:0.88rem;color:#b45309;">' + escapeHtml(data.note) + '</p>';
+        }
+        block += '<p style="margin:0 0 0.5rem 0;font-weight:600;font-size:0.95rem;color:#0f172a;">Extracted rows</p>';
+        block += buildLeadTableHtml(data.leads || []);
+        block += '<details class="lead-tech" style="margin-top:0.75rem;"><summary>Technical details (JSON)</summary><pre class="extract-out" style="max-height:280px;">' +
+          escapeHtml(JSON.stringify({
             field_schema: data.field_schema,
             strict_match_rules: data.strict_match_rules,
             strict_filter_applied: data.strict_filter_applied,
-            note: data.note,
             leads: data.leads
-          }, null, 2)) + '</pre>';
-        if (data.note) {
-          block = '<p style="margin:0 0 0.5rem 0;font-size:0.82rem;color:#b45309;">' + escapeHtml(data.note) + '</p>' + block;
-        }
+          }, null, 2)) + '</pre></details>';
         if (slotEl) slotEl.innerHTML = block;
         else {
           const out = document.getElementById('results');
-          out.insertAdjacentHTML('beforeend', '<div class="strategy-card"><h2 style="font-size:1.05rem;">Extract result</h2>' + block + '</div>');
+          out.insertAdjacentHTML('beforeend', '<div class="strategy-card lead-panel"><h2 style="font-size:1.1rem;">Extract result</h2>' + block + '</div>');
         }
       } catch (e) {
         err.textContent = e.message || 'Network error';
