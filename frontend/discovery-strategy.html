@@ -42,6 +42,48 @@
     details.lead-tech { margin-top: 1rem; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem 0.75rem; background: #fafafa; font-size: 0.85rem; }
     details.lead-tech summary { cursor: pointer; color: #64748b; font-weight: 500; }
     details.lead-tech[open] summary { margin-bottom: 0.5rem; }
+    /* Dedicated “lead run” dashboard — not the My Sources table UI */
+    .lead-dashboard-section {
+      max-width: 920px; margin: 1.5rem auto 0; padding: 0 16px 48px;
+    }
+    .lead-dashboard-inner {
+      background: linear-gradient(180deg, #f8fafc 0%, #fff 48%);
+      border: 1px solid #e2e8f0; border-radius: 16px; padding: 1.35rem 1.25rem 1.5rem;
+      box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    }
+    .lead-dashboard-inner .dashboard-kicker {
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #7c3aed; margin: 0 0 0.35rem 0;
+    }
+    .lead-dashboard-inner .dashboard-title { font-size: 1.35rem; margin: 0 0 0.5rem 0; color: #0f172a; }
+    .lead-dashboard-inner .dashboard-note {
+      font-size: 0.85rem; color: #64748b; margin: 0 0 1rem 0; line-height: 1.5; padding: 0.65rem 0.85rem; background: #fff; border-radius: 8px; border: 1px dashed #cbd5e1;
+    }
+    .lead-cards-grid {
+      display: grid; gap: 0.85rem;
+      grid-template-columns: 1fr;
+    }
+    @media (min-width: 640px) {
+      .lead-cards-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+    }
+    .lead-card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem 1rem 0.85rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .lead-card__head { font-size: 0.75rem; font-weight: 600; color: #64748b; margin-bottom: 0.5rem; }
+    .lead-card__id { color: #0f172a; font-weight: 700; }
+    .lead-card__addr { font-size: 0.95rem; font-weight: 600; color: #0f172a; line-height: 1.35; }
+    .lead-card__meta { font-size: 0.82rem; color: #64748b; margin: 0.25rem 0 0.65rem; }
+    .lead-card__row { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; font-size: 0.82rem; padding: 0.35rem 0; border-top: 1px solid #f1f5f9; }
+    .lead-card__label { color: #94a3b8; min-width: 4.5rem; }
+    .source-cards { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0 0; padding: 0; list-style: none; }
+    .source-cards li { margin: 0; }
+    .source-cards a {
+      display: inline-block; font-size: 0.8rem; padding: 0.4rem 0.65rem; border-radius: 999px;
+      background: #f1f5f9; color: #0f172a; text-decoration: none; border: 1px solid #e2e8f0; max-width: 100%;
+    }
+    .source-cards a:hover { background: #e0e7ff; border-color: #c7d2fe; }
+    details.lead-table-fallback { margin-top: 1rem; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem 0.75rem; background: #fafafa; font-size: 0.85rem; }
+    details.lead-table-fallback summary { cursor: pointer; color: #64748b; font-weight: 500; }
   </style>
 </head>
 <body>
@@ -94,7 +136,10 @@
     </div>
 
     <div id="results" style="display:none;"></div>
-    <p style="text-align:center;margin-top:1.5rem;"><a href="/profile.html">← Profile</a> · <a href="/my-sources.html">My sources</a></p>
+
+    <section id="leadDashboard" class="lead-dashboard-section" style="display:none;" aria-label="Lead run results"></section>
+
+    <p style="text-align:center;margin-top:1.5rem;"><a href="/profile.html">← Profile</a> · <a href="/my-sources.html">My sources</a> (ongoing monitoring)</p>
   </div>
 
   <script>
@@ -108,9 +153,18 @@
       return escapeHtml(t).replace(/"/g, '&quot;');
     }
 
+    function hideLeadDashboard() {
+      var d = document.getElementById('leadDashboard');
+      if (d) {
+        d.innerHTML = '';
+        d.style.display = 'none';
+      }
+    }
+
     let lastContext = { product: '', customer: '', events: '' };
 
     function renderResults(items, metaHtml) {
+      hideLeadDashboard();
       const out = document.getElementById('results');
       out.innerHTML = (metaHtml || '') +
         '<h2 style="font-size:1.1rem;color:#0f172a;margin:0 0 0.75rem 0;">Recommended for you</h2>' +
@@ -204,13 +258,46 @@
       return html;
     }
 
+    function buildLeadCardsHtml(leads) {
+      if (!leads || !leads.length) {
+        return '<p style="color:#64748b;font-size:0.9rem;margin:0;">No rows in this extract.</p>';
+      }
+      var html = '<div class="lead-cards-grid">';
+      for (var i = 0; i < leads.length; i++) {
+        var n = normalizeLeadRow(leads[i]);
+        if (!n) continue;
+        html += '<article class="lead-card">' +
+          '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span></div>' +
+          '<div class="lead-card__body">' +
+          '<div class="lead-card__addr">' + escapeHtml(n.line1) + '</div>' +
+          (n.line2 ? '<div class="lead-card__meta">' + escapeHtml(n.line2) + '</div>' : '') +
+          '<div class="lead-card__row"><span class="lead-card__label">Est. cost</span><span>' + escapeHtml(n.cost) + '</span></div>' +
+          '<div class="lead-card__row"><span class="lead-card__label">Type</span><span>' +
+          escapeHtml(n.type.length > 220 ? n.type.slice(0, 217) + '…' : n.type) + '</span></div>' +
+          '</div></article>';
+      }
+      html += '</div>';
+      return html;
+    }
+
     function renderAutoLeads(data) {
-      const out = document.getElementById('results');
+      var dash = document.getElementById('leadDashboard');
+      var strategyOut = document.getElementById('results');
+      if (strategyOut) strategyOut.style.display = 'none';
+      if (!dash) {
+        if (strategyOut) {
+          strategyOut.innerHTML = '<p class="hint">Lead dashboard container missing — refresh the page.</p>';
+          strategyOut.style.display = 'block';
+        }
+        return;
+      }
       const intent = data.intent || {};
       const leads = Array.isArray(data.leads) ? data.leads : [];
       const summaryLine = intentPlainSummary(intent);
-      var html = '<div class="lead-panel strategy-card">';
-      html += '<h2 style="font-size:1.25rem;color:#0f172a;margin:0 0 0.75rem 0;">Your leads</h2>';
+      var html = '<div class="lead-dashboard-inner">';
+      html += '<p class="dashboard-kicker">Lead discovery run</p>';
+      html += '<h2 class="dashboard-title">Your leads</h2>';
+      html += '<p class="dashboard-note">This view is only for this search — <strong>not</strong> the same grid as <a href="/my-sources.html">My sources</a> (that’s for saved monitors and scraping). Here we show a quick read — cards first, table optional.</p>';
 
       if (summaryLine) {
         html += '<div class="lead-summary"><strong>What we searched for:</strong> ' + escapeHtml(summaryLine) + '</div>';
@@ -221,11 +308,12 @@
       }
 
       if (leads.length) {
-        html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Sample records <span class="lead-count-badge">' + leads.length + ' shown</span></p>';
-        html += '<p class="hint" style="margin:0 0 0.75rem 0;font-size:0.85rem;">These come from public permit and open-data APIs. Field names vary by city — we show a simple view below.</p>';
-        html += buildLeadTableHtml(leads);
+        html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Records found <span class="lead-count-badge">' + leads.length + '</span></p>';
+        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">From public open-data / permit APIs when available. Field names differ by city — cards highlight the usual fields.</p>';
+        html += buildLeadCardsHtml(leads);
+        html += '<details class="lead-table-fallback"><summary>Table view (compact)</summary>' + buildLeadTableHtml(leads) + '</details>';
       } else {
-        html += '<p style="color:#64748b;font-size:0.95rem;">No rows came back this time. Try refining your description or use the optional tools below to pick a specific data source.</p>';
+        html += '<p style="color:#64748b;font-size:0.95rem;">No rows came back this time. Try refining your description or use the optional tools above to pick a specific data source.</p>';
         if (data.preview_note) {
           html += '<p style="font-size:0.85rem;color:#64748b;margin-top:0.5rem;">' + escapeHtml(data.preview_note) + '</p>';
         }
@@ -233,12 +321,13 @@
 
       var sources = data.candidate_sources || [];
       if (sources.length) {
-        html += '<p style="margin:1rem 0 0.35rem 0;font-weight:600;font-size:0.9rem;color:#334155;">Sources we used</p><ul class="source-list">';
-        for (var j = 0; j < Math.min(sources.length, 6); j++) {
+        html += '<p style="margin:1.25rem 0 0.5rem 0;font-weight:600;font-size:0.88rem;color:#334155;">Sources considered</p>';
+        html += '<ul class="source-cards">';
+        for (var j = 0; j < Math.min(sources.length, 8); j++) {
           var s = sources[j];
           var t = (s && s.title) ? s.title : 'Source';
           var u = (s && s.url) ? s.url : '#';
-          html += '<li><a href="' + escapeAttr(u) + '" target="_blank" rel="noopener">' + escapeHtml(t) + '</a></li>';
+          html += '<li><a href="' + escapeAttr(u) + '" target="_blank" rel="noopener" title="' + escapeAttr(u) + '">' + escapeHtml(t.length > 60 ? t.slice(0, 57) + '…' : t) + '</a></li>';
         }
         html += '</ul>';
       }
@@ -252,9 +341,9 @@
         '</pre></details>';
       html += '</div>';
 
-      out.innerHTML = html;
-      out.style.display = 'block';
-      out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      dash.innerHTML = html;
+      dash.style.display = 'block';
+      dash.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     document.getElementById('btnAutoLeads').onclick = async function () {
@@ -268,6 +357,7 @@
         err.style.display = 'block';
         return;
       }
+      hideLeadDashboard();
       const btn = document.getElementById('btnAutoLeads');
       const prev = btn.textContent;
       btn.disabled = true;
@@ -299,6 +389,7 @@
      * Opens the URL in Playwright, navigates with AI, extracts rows in the requested shape, then strict-filters to the brief.
      */
     async function runExtractNow(url, brief, btn, slotEl) {
+      hideLeadDashboard();
       const err = document.getElementById('err');
       err.style.display = 'none';
       if (!brief || brief.length < 12) {
@@ -361,6 +452,7 @@
       const out = document.getElementById('results');
       err.style.display = 'none';
       out.style.display = 'none';
+      hideLeadDashboard();
       const location = (document.getElementById('location').value || '').trim();
       if (!product && !customer && !events && !location) {
         err.textContent = 'Fill in at least one field (location + what you sell works well).';
@@ -426,6 +518,7 @@
       const out = document.getElementById('results');
       err.style.display = 'none';
       out.style.display = 'none';
+      hideLeadDashboard();
       if (brief.length < 8) {
         err.textContent = 'Write at least one sentence describing the leads you want.';
         err.style.display = 'block';
@@ -457,6 +550,7 @@
     };
 
     function renderNlIntent(data) {
+      hideLeadDashboard();
       const out = document.getElementById('results');
       const intent = data.intent || {};
       let html = '<h2 style="font-size:1.1rem;color:#0f172a;margin:0 0 0.75rem 0;">What we understood</h2>';

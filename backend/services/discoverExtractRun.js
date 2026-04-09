@@ -7,7 +7,8 @@ const { buildManifestFromBrief } = require('./ai/deepExtractManifest');
 const { filterLeadsToBrief } = require('./ai/deepExtractFilter');
 const { createUserSourceCore } = require('./createUserSourceCore');
 const { scrapeForUser } = require('../legacyScraper');
-const { dbAll, dbRun } = require('../db');
+const { dbAll } = require('../db');
+const { deleteUserSourceCascade } = require('./deleteUserSourceCascade');
 /**
  * @param {{ userId: number, brief: string, url: string, maxLeads: number, deleteAfter: boolean, req: import('express').Request, manifest?: object }} opts
  */
@@ -94,8 +95,7 @@ async function runExtractNowForUrl(opts) {
       : null;
 
   if (deleteAfter) {
-    await dbRun('DELETE FROM leads WHERE user_id = ? AND source_id = ?', [userId, sourceId]);
-    await dbRun('DELETE FROM user_sources WHERE user_id = ? AND id = ?', [userId, sourceId]);
+    await deleteUserSourceCascade(userId, sourceId);
   }
 
   return {

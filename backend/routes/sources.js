@@ -14,6 +14,7 @@ const { discoverEndpoint } = require('../services/endpointDiscovery');
 const { METHODS_WITH_BODY } = require('../engine/adapters/rest');
 const { requirePaid, enforceSourceLimit, allowUnpaidScrape } = require('../middleware/billing');
 const { log: auditLog } = require('../services/auditLog');
+const { deleteUserSourceCascade } = require('../services/deleteUserSourceCascade');
 
 function envBool(name) {
   const v = process.env[name];
@@ -346,7 +347,7 @@ router.delete('/:id', async (req, res) => {
     }
     const before = existing.source_data ? JSON.parse(existing.source_data) : null;
     logger.info(`Deleting source ${sourceId} for user ${userId}`);
-    await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+    await deleteUserSourceCascade(userId, sourceId);
     await auditLog({ userId, actorUserId: userId, action: 'source.deleted', entityType: 'source', entityId: sourceId, before, req });
     logger.info(`Successfully deleted source ${sourceId}`);
     res.json({ success: true });

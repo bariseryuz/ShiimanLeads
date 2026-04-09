@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { dbAll, dbGet, dbRun } = require('../db');
+const { db, dbAll, dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
 const { requireAdmin } = require('../middleware/auth');
 
@@ -121,7 +121,8 @@ router.delete('/sources/:userId/:sourceId', ensureAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Source not found' });
     }
     
-    await dbRun('DELETE FROM user_sources WHERE id = ? AND user_id = ?', [sourceId, userId]);
+    const { deleteUserSourceCascade } = require('../services/deleteUserSourceCascade');
+    await deleteUserSourceCascade(userId, sourceId);
     logger.info(`Admin deleted source ID ${sourceId} for user ID ${userId}`);
     res.json({ success: true });
   } catch (e) {
@@ -153,7 +154,19 @@ router.delete('/users/:userId', ensureAdmin, async (req, res) => {
     const sourcesCount = await dbGet('SELECT COUNT(*) as count FROM user_sources WHERE user_id = ?', [userId]);
     const leadsCount = await dbGet('SELECT COUNT(*) as count FROM leads WHERE user_id = ?', [userId]);
     
-    // Delete in correct order (respect foreign keys)
+    // Delete in correct order (respect foreign keys on leads, source_runs, source_health → user_sources)
+    await dbRun('DELETE FROM source_runs WHERE user_id = ?', [userId]);
+    await dbRun('DELETE FROM source_health WHERE user_id = ?', [userId]);
+    const userSourceRows = await dbAll('SELECT id FROM user_sources WHERE user_id = ?', [userId]);
+    for (const row of userSourceRows || []) {
+      const sid = row.id;
+      await dbRun('DELETE FROM source_reliability WHERE source_id = ?', [sid]);
+      try {
+        if (Number.isFinite(sid)) db.exec(`DROP TABLE IF EXISTS source_${sid}`);
+      } catch (dropErr) {
+        logger.warn(`Admin delete user: could not DROP source_${sid}: ${dropErr.message}`);
+      }
+    }
     await dbRun('DELETE FROM leads WHERE user_id = ?', [userId]);
     await dbRun('DELETE FROM user_sources WHERE user_id = ?', [userId]);
     await dbRun('DELETE FROM users WHERE id = ?', [userId]);
