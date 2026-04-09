@@ -222,24 +222,168 @@
       return parts.length ? parts.join(' · ') : '';
     }
 
+    /**
+     * Open-data rows use different schemas (Socrata, ArcGIS attributes, GeoJSON properties).
+     * Older UI code only read a few Title-Case Socrata names — everything else showed "—".
+     */
+    function unwrapLeadRow(row) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+      var o = {};
+      if (row.attributes && typeof row.attributes === 'object' && !Array.isArray(row.attributes)) {
+        for (var a in row.attributes) {
+          if (Object.prototype.hasOwnProperty.call(row.attributes, a)) o[a] = row.attributes[a];
+        }
+      }
+      if (row.properties && typeof row.properties === 'object' && !Array.isArray(row.properties)) {
+        for (var p in row.properties) {
+          if (Object.prototype.hasOwnProperty.call(row.properties, p)) o[p] = row.properties[p];
+        }
+      }
+      for (var k in row) {
+        if (k === 'attributes' || k === 'properties' || k === 'geometry') continue;
+        if (Object.prototype.hasOwnProperty.call(row, k)) o[k] = row[k];
+      }
+      return Object.keys(o).length ? o : row;
+    }
+
+    function ciKeyMap(flat) {
+      var m = {};
+      for (var k in flat) {
+        if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+        var norm = String(k).toLowerCase().replace(/\s+/g, '_');
+        m[norm] = flat[k];
+      }
+      return m;
+    }
+
+    function pickFirstScalar(ci, keyList) {
+      for (var i = 0; i < keyList.length; i++) {
+        var v = ci[keyList[i]];
+        if (v == null || v === '') continue;
+        if (typeof v === 'object') continue;
+        return v;
+      }
+      return null;
+    }
+
+    function pickByKeyRegex(flat, patterns) {
+      var keys = Object.keys(flat);
+      for (var pi = 0; pi < patterns.length; pi++) {
+        var re = patterns[pi];
+        for (var i = 0; i < keys.length; i++) {
+          var k = keys[i];
+          if (!re.test(String(k).toLowerCase())) continue;
+          var v = flat[k];
+          if (v == null || v === '') continue;
+          if (typeof v === 'object') continue;
+          var s = String(v).trim();
+          if (s) return s;
+        }
+      }
+      return '';
+    }
+
     function normalizeLeadRow(row) {
-      if (!row || typeof row !== 'object') return null;
-      var id = row.Permit__ != null ? String(row.Permit__) : (row.permitnum != null ? String(row.permitnum) : '—');
-      var addr = row.Address || row.originaladdress1 || row.originaladdress || '';
-      var city = row.City || row.originalcity || '';
-      var st = row.State || row.originalstate || '';
-      var zip = row.ZIP || row.originalzip || '';
-      var line1 = addr || '—';
-      var line2 = [city, st].filter(Boolean).join(', ');
-      if (zip) line2 = line2 ? (line2 + ' ' + zip) : zip;
-      var costRaw = row.Const_Cost != null ? row.Const_Cost : row.estprojectcostdec;
+      var flat = unwrapLeadRow(row);
+      if (!flat || typeof flat !== 'object') return null;
+      var ci = ciKeyMap(flat);
+
+      var id =
+        pickFirstScalar(ci, [
+          'permit__', 'permitnum', 'permit_number', 'permit_no', 'permit_id', 'permit',
+          'application_number', 'application_no', 'application_id', 'app_number', 'app_no',
+          'case_number', 'case_no', 'record_number', 'record_no', 'file_number', 'filenumber',
+          'reference_number', 'ref_no', 'refnumber', 'parcel_id', 'parcel_number', 'parcel',
+          'tmk', 'tax_map_key', 'taxmapkey', 'tax_map', 'map_key',
+          'objectid', 'globalid', 'fid', 'oid', 'id'
+        ]);
+      if (id == null) {
+        id = pickByKeyRegex(flat, [
+          /permit.*(num|no|id|#)/i,
+          /application.*(num|no|id)/i,
+          /(case|record|file).*no/i,
+          /^parcel/i,
+          /^tmk$/i,
+          /objectid/i,
+          /^fid$/i
+        ]);
+      }
+      if (!id) id = '—';
+      else id = String(id);
+
+      var addr =
+        pickFirstScalar(ci, [
+          'address', 'originaladdress1', 'originaladdress', 'site_address', 'siteaddress',
+          'addr1', 'addr_line1', 'address_line_1', 'full_address', 'fulladdress', 'addr_full',
+          'location', 'site_location', 'premise_address', 'property_address', 'situation',
+          'streetaddress', 'street_address', 'street', 'mail_address', 'prop_address',
+          'location_address', 'parcel_address', 'worksite_address'
+        ]) || '';
+      if (!addr) addr = pickByKeyRegex(flat, [/address|location|site|street|premise|property.*addr|fulladdr/i]);
+
+      var city = pickFirstScalar(ci, ['city', 'originalcity', 'mail_city', 'cityname']) || '';
+      if (!city) city = pickByKeyRegex(flat, [/^city$/i, /mail_city/i, /cityname/i]);
+
+      var st = pickFirstScalar(ci, ['state', 'originalstate', 'state_code', 'mail_state', 'region']) || '';
+      if (!st) st = pickByKeyRegex(flat, [/^state$/i, /^st$/i, /region/i]);
+
+      var zip = pickFirstScalar(ci, ['zip', 'originalzip', 'postal', 'zipcode', 'postal_code', 'mail_zip']) || '';
+      if (!zip) zip = pickByKeyRegex(flat, [/^zip$/i, /postal/i]);
+
+      var line1 = (addr && String(addr).trim()) ? String(addr).trim() : '—';
+      var line2 = [city, st].filter(Boolean).map(function (x) { return String(x).trim(); }).filter(Boolean).join(', ');
+      if (zip) line2 = line2 ? (line2 + ' ' + zip) : String(zip);
+
+      var costRaw = pickFirstScalar(ci, [
+        'const_cost', 'estprojectcostdec', 'estprojectcost', 'est_cost', 'construction_cost',
+        'project_value', 'total_valuation', 'valuation', 'declared_value', 'job_value',
+        'building_value', 'permit_valuation', 'total_val', 'est_val', 'improvement_value',
+        'fee', 'total_fee', 'permit_fee', 'cost'
+      ]);
+      if (costRaw == null) {
+        var costGuess = pickByKeyRegex(flat, [
+          /est.*cost|project.*cost|construction.*val|const.*cost|valuation|declared|building.*val|improvement/i
+        ]);
+        costRaw = costGuess || null;
+      }
       var cost = '—';
       if (costRaw != null && costRaw !== '') {
         var n = typeof costRaw === 'number' ? costRaw : parseFloat(String(costRaw).replace(/[^0-9.-]/g, ''), 10);
         cost = Number.isFinite(n) ? ('$' + n.toLocaleString()) : String(costRaw);
       }
-      var typ = row.Permit_Type_Description || row.Permit_Subtype_Description || row.description || row.permittypemapped || row.permitclassmapped || '';
-      return { id: id, line1: line1, line2: line2, cost: cost, type: typ || '—' };
+
+      var typ =
+        pickFirstScalar(ci, [
+          'permit_type_description', 'permit_subtype_description', 'permittypemapped', 'permitclassmapped',
+          'description', 'permit_type', 'permit_type_desc', 'work_type', 'work_desc', 'class',
+          'use_type', 'activity', 'purpose', 'category', 'type', 'subtype', 'project_description'
+        ]) || '';
+      if (!typ) typ = pickByKeyRegex(flat, [
+        /permit.*type|work.*type|class|description|activity|purpose|use_type|project.*desc/i
+      ]);
+      if (!typ) typ = '—';
+
+      if (line1 === '—' && typ === '—') {
+        var bits = [];
+        var skipK = { shape: 1, geometry: 1, attributes: 1, properties: 1 };
+        for (var fk in flat) {
+          if (!Object.prototype.hasOwnProperty.call(flat, fk)) continue;
+          var fkl = fk.toLowerCase();
+          if (skipK[fkl] || /^shape_|^st_/i.test(fk)) continue;
+          var fv = flat[fk];
+          if (fv == null || fv === '' || typeof fv === 'object') continue;
+          var fs = String(fv).trim();
+          if (!fs || fs.length > 400) continue;
+          bits.push(fk + ': ' + fs);
+          if (bits.length >= 4) break;
+        }
+        if (bits.length) {
+          line1 = bits.slice(0, 2).join(' · ');
+          if (typ === '—') typ = bits.length > 2 ? bits.slice(2).join(' · ') : 'Additional fields';
+        }
+      }
+
+      return { id: id, line1: line1, line2: line2, cost: cost, type: typ };
     }
 
     function buildLeadTableHtml(leads) {
