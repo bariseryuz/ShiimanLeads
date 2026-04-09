@@ -1,7 +1,7 @@
 {
   "name": "shiiman-leads",
   "version": "1.0.0",
-  "description": "Automated construction permit leads ",
+  "description": "B2B AI lead generation SaaS: public records, open data, multi-tenant sources, and Gemini-powered discovery.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

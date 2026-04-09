@@ -171,6 +171,7 @@ function startServer() {
   app.use('/api/usage', usageRoutes); // Monthly usage vs plan limits
   app.use('/api/enrichment', enrichmentRoutes); // AI Enrichment page (pillars, map preview, intro email)
   app.use('/api/enterprise', enterpriseRoutes); // SSO / compliance capability flags
+  app.use('/api/product', require('./routes/productPublic')); // Public product facts (sales / security questionnaires)
   app.use('/api/ai', require('./routes/aiAssistant')); // Natural-language answers (Gemini prose)
 
   // === DEBUG ENDPOINT (Volume Verification) ===

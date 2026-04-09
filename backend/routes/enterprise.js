@@ -7,6 +7,7 @@ const router = express.Router();
 router.get('/capabilities', (req, res) => {
   res.json({
     version: 1,
+    product_overview: '/api/product',
     sso: {
       saml: false,
       oidc: false,
