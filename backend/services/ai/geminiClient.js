@@ -14,6 +14,10 @@ const MODEL_JSON = process.env.GEMINI_MODEL_JSON || 'gemini-2.0-flash-lite';
 /** Clearer writing for user-facing text (closer to the Gemini app experience) */
 const MODEL_PROSE = process.env.GEMINI_MODEL_PROSE || 'gemini-2.0-flash';
 
+/** Gemini API embedding model (NOT Vertex legacy names like text-embedding-004). See https://ai.google.dev/gemini-api/docs/embeddings */
+const EMBEDDING_MODEL =
+  String(process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001').trim() || 'gemini-embedding-001';
+
 const PROSE_PURPOSES = new Set(['summarize', 'prose', 'assistant', 'chat']);
 
 const DEFAULT_PROSE_SYSTEM = `You are a helpful AI assistant in the style of Google Gemini.
@@ -71,12 +75,16 @@ function getGeminiModel(purpose = 'extraction') {
   });
 }
 
+function getEmbeddingModelName() {
+  return EMBEDDING_MODEL;
+}
+
 function getEmbeddingModel() {
   if (!genAI) {
     logger.error('❌ AI Client: Embeddings require GEMINI_API_KEY / GOOGLE_API_KEY');
     throw new Error('GEMINI_API_KEY is missing from environment variables');
   }
-  return genAI.getGenerativeModel({ model: 'text-embedding-004' });
+  return genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
 }
 
 /**
@@ -105,9 +113,11 @@ module.exports = {
   genAI,
   getGeminiModel,
   getEmbeddingModel,
+  getEmbeddingModelName,
   generateProseAnswer,
   MODEL_JSON,
   MODEL_PROSE,
+  EMBEDDING_MODEL,
   isAIAvailable: () => {
     const available = !!genAI;
     if (!available) {

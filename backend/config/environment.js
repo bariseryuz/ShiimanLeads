@@ -50,7 +50,7 @@ module.exports = {
   GOOGLE_API_KEY: process.env.GOOGLE_API_KEY,
   
   // White-label / sales: PRODUCT_PUBLIC_NAME, PRODUCT_TAGLINE, PRODUCT_SALES_EMAIL, SUPPORT_EMAIL — see config/productIdentity.js and GET /api/product
-  // Gemini: GEMINI_MODEL_JSON (default gemini-2.0-flash-lite) for structured JSON; GEMINI_MODEL_PROSE (default gemini-2.0-flash) for summaries + /api/ai/ask
+  // Gemini: GEMINI_MODEL_JSON / GEMINI_MODEL_PROSE; RAG embeddings: GEMINI_EMBEDDING_MODEL (default gemini-embedding-001)
   // RAG (lead-gen prompts): RAG_ENABLED (default on), RAG_TOP_K — see services/ai/rag/leadGenRag.js
   // Playwright (browser): also reads PLAYWRIGHT_PROXY_LIST, PLAYWRIGHT_PROXY_SERVER, HTTPS_PROXY, HTTP_PROXY in stealth.js
   PLAYWRIGHT_HEADLESS: process.env.PLAYWRIGHT_HEADLESS !== 'false',

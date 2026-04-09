@@ -1,5 +1,6 @@
 /**
- * RAG for lead-gen / discovery prompts: embed corpus with Gemini text-embedding-004,
+ * RAG for lead-gen / discovery prompts: embed corpus with Gemini embedding API
+ * (default model gemini-embedding-001 — override with GEMINI_EMBEDDING_MODEL),
  * retrieve top chunks by cosine similarity to the user query, inject as context.
  */
 
@@ -10,7 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { TaskType } = require('@google/generative-ai');
 const logger = require('../../../utils/logger');
-const { isAIAvailable, getEmbeddingModel } = require('../geminiClient');
+const { isAIAvailable, getEmbeddingModel, getEmbeddingModelName } = require('../geminiClient');
 const { retryWithBackoff } = require('../../../utils/aiRetry');
 const scaleLimits = require('../../../config/scaleLimits');
 
@@ -175,7 +176,7 @@ async function ensureIndex() {
       logger.info('[RAG] Empty corpus — skipping RAG');
       return;
     }
-    const h = sha256(chunks.map(c => c.text).join('\n---\n'));
+    const h = sha256(`${getEmbeddingModelName()}\n${chunks.map(c => c.text).join('\n---\n')}`);
     let vectors = readCache(h, chunks.length);
 
     if (!vectors && isAIAvailable()) {
