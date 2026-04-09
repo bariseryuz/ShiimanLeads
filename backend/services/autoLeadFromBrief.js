@@ -58,6 +58,7 @@ async function fetchLeadsFromBriefOnly(opts) {
       mode: 'auto_leads',
       intent: discovery.intent,
       search_queries_used: discovery.search_queries_used,
+      search_queries_expanded: discovery.search_queries_expanded,
       results_pooled: discovery.results_pooled,
       candidate_sources: [],
       urls_attempted: [],
@@ -174,6 +175,36 @@ async function fetchLeadsFromBriefOnly(opts) {
     }
   }
 
+  // Second pass: if nothing was collected, keep "investigating" — browser-extract more ranked URLs
+  // (linear flow often stops after shallow open-data samples; this fills leads[] when deeper pages hold rows).
+  if (collected.length === 0 && candidates.length > maxSites) {
+    const extra = candidates.slice(maxSites, Math.min(maxSites + 5, candidates.length));
+    for (const c of extra) {
+      if (collected.length >= maxLeads) break;
+      const url = c.url;
+      urlsAttempted.push(url);
+      if (isCatalogStubUrl(url)) continue;
+      try {
+        const out = await runExtractNowForUrl({
+          userId: opts.userId,
+          brief: b,
+          url,
+          maxLeads: Math.min(perUrlBudget, maxLeads - collected.length),
+          deleteAfter: true,
+          req: opts.req,
+          manifest
+        });
+        for (const row of out.leads || []) {
+          collected.push(row);
+          if (collected.length >= maxLeads) break;
+        }
+        logger.info(`auto-leads: second-pass browser extract ${url.slice(0, 80)} → ${(out.leads || []).length} rows`);
+      } catch (e) {
+        logger.warn(`auto-leads second-pass extract failed ${url}: ${e.message}`);
+      }
+    }
+  }
+
   const leads = dedupeLeads(collected, maxLeads);
 
   const note = !leads.length && urlsAttempted.length
@@ -185,6 +216,7 @@ async function fetchLeadsFromBriefOnly(opts) {
     mode: 'auto_leads',
     intent: discovery.intent,
     search_queries_used: discovery.search_queries_used,
+    search_queries_expanded: discovery.search_queries_expanded,
     results_pooled: discovery.results_pooled,
     candidate_sources: candidates,
     urls_attempted: urlsAttempted,

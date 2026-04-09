@@ -13,6 +13,7 @@ const { ensureArcGISFeatureLayerQueryUrl } = require('../../engine/adapters/rest
 const { fetchOpenDataSampleRows } = require('../openDataDirectSample');
 const { sortUrls } = require('../candidateUrlSort');
 const { retrieveLeadGenContext, isRagEnabled } = require('./rag/leadGenRag');
+const { expandHighSignalSearchQueries } = require('./searchQueryExpansion');
 
 function parseIntentJson(text) {
   let t = String(text || '').trim();
@@ -264,8 +265,22 @@ async function runNlLeadIntentDiscovery(brief) {
     };
   }
 
-  const queries = buildSerperQueries(intent);
-  const maxSerper = parseInt(process.env.NL_INTENT_MAX_SERPER || '6', 10) || 6;
+  const baseQueries = buildSerperQueries(intent);
+  let expanded = [];
+  try {
+    const ex = await expandHighSignalSearchQueries(brief, intent);
+    expanded = Array.isArray(ex.queries) ? ex.queries : [];
+  } catch (e) {
+    logger.debug(`nlLeadIntent query expansion: ${e.message}`);
+  }
+  const queries = [
+    ...new Set(
+      [...expanded, ...baseQueries]
+        .map(q => String(q || '').trim())
+        .filter(q => q.length > 5)
+    )
+  ].slice(0, 10);
+  const maxSerper = Math.min(10, parseInt(process.env.NL_INTENT_MAX_SERPER || '8', 10) || 8);
   const nq = Math.min(queries.length, maxSerper);
   const collected = [];
   for (let i = 0; i < nq; i++) {
@@ -338,6 +353,7 @@ async function runNlLeadIntentDiscovery(brief) {
   return {
     intent,
     search_queries_used: queries.slice(0, nq),
+    search_queries_expanded: expanded.length ? expanded : undefined,
     results_pooled: pool.length,
     candidate_sources,
     preview_leads,

@@ -84,6 +84,16 @@
     .source-cards a:hover { background: #e0e7ff; border-color: #c7d2fe; }
     details.lead-table-fallback { margin-top: 1rem; border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.5rem 0.75rem; background: #fafafa; font-size: 0.85rem; }
     details.lead-table-fallback summary { cursor: pointer; color: #64748b; font-weight: 500; }
+    .lead-card__schema-title {
+      font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #7c3aed; margin: 0.5rem 0 0.35rem 0;
+    }
+    .lead-card__schema-hint { font-size: 0.72rem; color: #94a3b8; margin: 0 0 0.35rem 0; line-height: 1.35; }
+    .lead-card__dl { margin: 0.35rem 0 0 0; padding: 0; border-top: 1px solid #f1f5f9; }
+    .lead-card__dl dt {
+      font-size: 0.72rem; font-weight: 600; color: #64748b; margin: 0.5rem 0 0.15rem 0;
+    }
+    .lead-card__dl dd { margin: 0 0 0.35rem 0; font-size: 0.82rem; color: #0f172a; line-height: 1.4; word-break: break-word; }
+    .lead-card__empty-note { font-size: 0.78rem; color: #94a3b8; font-style: italic; margin: 0.25rem 0 0.5rem 0; }
   </style>
 </head>
 <body>
@@ -321,6 +331,164 @@
       return s.length > 350 ? s.slice(0, 347) + '…' : s;
     }
 
+    function normalizeKeyName(k) {
+      return String(k).toLowerCase().replace(/\s+/g, '_');
+    }
+
+    function prettifyFieldLabel(k) {
+      return String(k).replace(/_/g, ' ').replace(/\b\w/g, function (ch) { return ch.toUpperCase(); });
+    }
+
+    function findOriginalKeyForNormalized(flat, wantNorm) {
+      for (var k in flat) {
+        if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+        if (normalizeKeyName(k) === wantNorm) return k;
+      }
+      return null;
+    }
+
+    /**
+     * Map Gemini field_schema keys to actual row columns (ArcGIS/Socrata names rarely match 1:1).
+     * @returns {{ rowKey: string|null, val: * } | null}
+     */
+    function findBestRowKeyForSchemaKey(flat, schemaKey) {
+      var want = normalizeKeyName(schemaKey);
+      var ci = ciKeyMap(flat);
+      if (ci[want] != null && isClientUsefulValue(ci[want])) {
+        return { rowKey: findOriginalKeyForNormalized(flat, want), val: ci[want] };
+      }
+      for (var k in flat) {
+        if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+        if (normalizeKeyName(k) === want && isClientUsefulValue(flat[k])) {
+          return { rowKey: k, val: flat[k] };
+        }
+      }
+      var bestK = null;
+      var bestScore = 0;
+      var parts = want.split('_').filter(function (p) { return p.length > 1; });
+      for (var k2 in flat) {
+        if (!Object.prototype.hasOwnProperty.call(flat, k2)) continue;
+        if (isInternalGisKey(k2)) continue;
+        var kn = normalizeKeyName(k2);
+        var sc = 0;
+        if (kn === want) sc = 100;
+        else if (kn.indexOf(want) >= 0 || want.indexOf(kn) >= 0) sc = 45;
+        else {
+          for (var pi = 0; pi < parts.length; pi++) {
+            if (parts[pi].length > 2 && kn.indexOf(parts[pi]) >= 0) sc += 14;
+          }
+        }
+        if (sc > bestScore && isClientUsefulValue(flat[k2])) {
+          bestScore = sc;
+          bestK = k2;
+        }
+      }
+      if (bestK && bestScore >= 14) return { rowKey: bestK, val: flat[bestK] };
+      return null;
+    }
+
+    /**
+     * @param {Record<string, unknown>} flat
+     * @param {{ usedNorm?: Record<string, boolean>, limit?: number }} opts
+     */
+    function collectLeadDetailRows(flat, opts) {
+      opts = opts || {};
+      var limit = opts.limit || 10;
+      var usedNorm = opts.usedNorm || {};
+      var priorityRe = [
+        [130, /contractor|owner|applicant|developer|business|company|organization/i],
+        [110, /project|development|parcel|permit|application|case|record|title|program/i],
+        [85, /address|street|location|city|zip|valuation|cost|fee|amount|value|phone|email/i],
+        [55, /description|type|class|work|status|contact|name/i],
+        [12, /./]
+      ];
+      var scored = [];
+      for (var fk in flat) {
+        if (!Object.prototype.hasOwnProperty.call(flat, fk)) continue;
+        var fn = normalizeKeyName(fk);
+        if (usedNorm[fn]) continue;
+        if (isInternalGisKey(fk)) continue;
+        var fv = flat[fk];
+        if (!isClientUsefulValue(fv)) continue;
+        var disp = formatScalarForClient(fk, fv);
+        if (!disp) continue;
+        var score = 0;
+        var fkl = String(fk).toLowerCase();
+        for (var pr = 0; pr < priorityRe.length; pr++) {
+          if (priorityRe[pr][1].test(fkl)) { score = priorityRe[pr][0]; break; }
+        }
+        scored.push({ score: score, label: prettifyFieldLabel(fk), text: disp, norm: fn });
+      }
+      scored.sort(function (a, b) { return b.score - a.score; });
+      var out = [];
+      for (var i = 0; i < scored.length && out.length < limit; i++) {
+        out.push({ label: scored[i].label, text: scored[i].text });
+        usedNorm[scored[i].norm] = true;
+      }
+      return out;
+    }
+
+    function buildSingleLeadCardHtml(row, fieldSchema) {
+      var flat = unwrapLeadRow(row);
+      if (!flat) return '';
+      var n = normalizeLeadRow(row);
+      if (!n) n = { id: '—', line1: '—', line2: '', cost: '—', type: '—' };
+      var usedNorm = {};
+
+      var html = '<article class="lead-card">' +
+        '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span></div>' +
+        '<div class="lead-card__body">' +
+        '<div class="lead-card__addr">' + escapeHtml(n.line1) + '</div>' +
+        (n.line2 ? '<div class="lead-card__meta">' + escapeHtml(n.line2) + '</div>' : '') +
+        '<div class="lead-card__row"><span class="lead-card__label">Est. value / cost</span><span>' + escapeHtml(n.cost) + '</span></div>' +
+        '<div class="lead-card__row"><span class="lead-card__label">Summary</span><span>' +
+        escapeHtml(n.type.length > 240 ? n.type.slice(0, 237) + '…' : n.type) + '</span></div>';
+
+      var schema = fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema) ? fieldSchema : null;
+      var schemaKeys = schema ? Object.keys(schema) : [];
+      if (schemaKeys.length) {
+        html += '<p class="lead-card__schema-title">From your brief (AI field plan)</p>';
+        var schemaDl = '';
+        var anySchema = false;
+        for (var si = 0; si < schemaKeys.length; si++) {
+          var sk = schemaKeys[si];
+          var hint = String(schema[sk] || '').trim();
+          var match = findBestRowKeyForSchemaKey(flat, sk);
+          if (match && match.rowKey) usedNorm[normalizeKeyName(match.rowKey)] = true;
+          usedNorm[normalizeKeyName(sk)] = true;
+          if (match && match.val != null && isClientUsefulValue(match.val)) {
+            var disp = formatScalarForClient(match.rowKey || sk, match.val);
+            if (disp) {
+              anySchema = true;
+              var titleAttr = hint && hint.length < 300 ? ' title="' + escapeAttr(hint) + '"' : '';
+              schemaDl += '<dt' + titleAttr + '>' + escapeHtml(prettifyFieldLabel(sk)) + '</dt>' +
+                '<dd>' + escapeHtml(disp) + '</dd>';
+            }
+          }
+        }
+        if (anySchema) {
+          html += '<dl class="lead-card__dl">' + schemaDl + '</dl>';
+        } else {
+          html += '<p class="lead-card__empty-note">These rows don’t yet include values under the names your brief asked for — see “Readable columns” below.</p>';
+        }
+      }
+
+      html += '<p class="lead-card__schema-title" style="margin-top:0.65rem;">Readable columns</p>';
+      var details = collectLeadDetailRows(flat, { usedNorm: usedNorm, limit: 10 });
+      if (details.length) {
+        var detHtml = '';
+        for (var di = 0; di < details.length; di++) {
+          detHtml += '<dt>' + escapeHtml(details[di].label) + '</dt><dd>' + escapeHtml(details[di].text) + '</dd>';
+        }
+        html += '<dl class="lead-card__dl">' + detHtml + '</dl>';
+      } else {
+        html += '<p class="lead-card__empty-note">No human-readable fields in this sample (often a map/GIS layer). Try a more specific source or wording.</p>';
+      }
+
+      html += '</div></article>';
+      return html;
+    }
+
     function normalizeLeadRow(row) {
       var flat = unwrapLeadRow(row);
       if (!flat || typeof flat !== 'object') return null;
@@ -374,8 +542,8 @@
       var orgLine =
         pickFirstScalar(ci, [
           'project_name', 'development_name', 'project_title', 'site_name', 'development',
-          'owner_name', 'contractor_name', 'applicant_name', 'business_name', 'company_name',
-          'organization', 'developer', 'dba', 'trade_name', 'parcel_name'
+          'owner_name', 'contractor_name', 'applicant_name', 'applicant', 'business_name', 'company_name',
+          'organization', 'developer', 'dba', 'trade_name', 'parcel_name', 'contact_name', 'full_name'
         ]) || '';
       if (!orgLine || !isClientUsefulValue(orgLine)) orgLine = '';
 
@@ -408,8 +576,10 @@
       }
 
       var owner = pickFirstScalar(ci, ['owner_name', 'property_owner', 'land_owner', 'owner']) || '';
+      var applicant = pickFirstScalar(ci, ['applicant_name', 'applicant']) || '';
       var contractor = pickFirstScalar(ci, ['contractor_name', 'general_contractor', 'builder', 'contractor']) || '';
       if (owner && !isClientUsefulValue(owner)) owner = '';
+      if (applicant && !isClientUsefulValue(applicant)) applicant = '';
       if (contractor && !isClientUsefulValue(contractor)) contractor = '';
 
       var typ =
@@ -430,7 +600,10 @@
 
       var whoParts = [];
       if (owner) whoParts.push('Owner: ' + String(owner).trim());
-      if (contractor && String(contractor).trim() !== String(owner || '').trim()) whoParts.push('Contractor: ' + String(contractor).trim());
+      if (applicant && String(applicant).trim() !== String(owner || '').trim()) whoParts.push('Applicant: ' + String(applicant).trim());
+      if (contractor && String(contractor).trim() !== String(owner || '').trim() && String(contractor).trim() !== String(applicant || '').trim()) {
+        whoParts.push('Contractor: ' + String(contractor).trim());
+      }
       if (whoParts.length) {
         typ = typ && typ !== '—' ? (whoParts.join(' · ') + ' — ' + typ) : whoParts.join(' · ');
       }
@@ -473,39 +646,52 @@
       return { id: id, line1: line1, line2: line2, cost: cost, type: typ };
     }
 
-    function buildLeadTableHtml(leads) {
+    function buildLeadTableHtml(leads, fieldSchema) {
       if (!leads || !leads.length) {
         return '<p style="color:#64748b;font-size:0.9rem;margin:0;">No rows in this extract.</p>';
       }
-      var html = '<div class="lead-table-wrap"><table class="lead-table"><thead><tr><th>Record #</th><th>Location</th><th>Est. value / cost</th><th>Project & contacts</th></tr></thead><tbody>';
-      for (var i = 0; i < leads.length; i++) {
-        var n = normalizeLeadRow(leads[i]);
-        if (!n) continue;
-        html += '<tr><td>' + escapeHtml(n.id) + '</td><td><div>' + escapeHtml(n.line1) + '</div>' +
-          (n.line2 ? '<div class="muted">' + escapeHtml(n.line2) + '</div>' : '') + '</td><td>' + escapeHtml(n.cost) + '</td><td>' +
-          escapeHtml(n.type.length > 120 ? n.type.slice(0, 117) + '…' : n.type) + '</td></tr>';
+      var schema = fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema) ? fieldSchema : null;
+      var schemaKeys = schema ? Object.keys(schema) : [];
+      if (schemaKeys.length) {
+        var html = '<div class="lead-table-wrap"><table class="lead-table"><thead><tr><th>Record #</th>';
+        for (var h = 0; h < schemaKeys.length; h++) {
+          html += '<th>' + escapeHtml(prettifyFieldLabel(schemaKeys[h])) + '</th>';
+        }
+        html += '</tr></thead><tbody>';
+        for (var i = 0; i < leads.length; i++) {
+          var flat = unwrapLeadRow(leads[i]);
+          var n = normalizeLeadRow(leads[i]);
+          var rid = n && n.id ? n.id : '—';
+          html += '<tr><td>' + escapeHtml(rid) + '</td>';
+          for (var j = 0; j < schemaKeys.length; j++) {
+            var m = flat ? findBestRowKeyForSchemaKey(flat, schemaKeys[j]) : null;
+            var cell = m && isClientUsefulValue(m.val) ? formatScalarForClient(m.rowKey || schemaKeys[j], m.val) : '—';
+            html += '<td>' + escapeHtml(cell.length > 160 ? cell.slice(0, 157) + '…' : cell) + '</td>';
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        return html;
       }
-      html += '</tbody></table></div>';
-      return html;
+      var htmlLegacy = '<div class="lead-table-wrap"><table class="lead-table"><thead><tr><th>Record #</th><th>Location</th><th>Est. value / cost</th><th>Project & contacts</th></tr></thead><tbody>';
+      for (var li = 0; li < leads.length; li++) {
+        var nr = normalizeLeadRow(leads[li]);
+        if (!nr) continue;
+        htmlLegacy += '<tr><td>' + escapeHtml(nr.id) + '</td><td><div>' + escapeHtml(nr.line1) + '</div>' +
+          (nr.line2 ? '<div class="muted">' + escapeHtml(nr.line2) + '</div>' : '') + '</td><td>' + escapeHtml(nr.cost) + '</td><td>' +
+          escapeHtml(nr.type.length > 120 ? nr.type.slice(0, 117) + '…' : nr.type) + '</td></tr>';
+      }
+      htmlLegacy += '</tbody></table></div>';
+      return htmlLegacy;
     }
 
-    function buildLeadCardsHtml(leads) {
+    function buildLeadCardsHtml(leads, fieldSchema) {
       if (!leads || !leads.length) {
         return '<p style="color:#64748b;font-size:0.9rem;margin:0;">No rows in this extract.</p>';
       }
       var html = '<div class="lead-cards-grid">';
       for (var i = 0; i < leads.length; i++) {
-        var n = normalizeLeadRow(leads[i]);
-        if (!n) continue;
-        html += '<article class="lead-card">' +
-          '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span></div>' +
-          '<div class="lead-card__body">' +
-          '<div class="lead-card__addr">' + escapeHtml(n.line1) + '</div>' +
-          (n.line2 ? '<div class="lead-card__meta">' + escapeHtml(n.line2) + '</div>' : '') +
-          '<div class="lead-card__row"><span class="lead-card__label">Est. cost</span><span>' + escapeHtml(n.cost) + '</span></div>' +
-          '<div class="lead-card__row"><span class="lead-card__label">Project & contacts</span><span>' +
-          escapeHtml(n.type.length > 220 ? n.type.slice(0, 217) + '…' : n.type) + '</span></div>' +
-          '</div></article>';
+        html += buildSingleLeadCardHtml(leads[i], fieldSchema);
       }
       html += '</div>';
       return html;
@@ -540,9 +726,10 @@
 
       if (leads.length) {
         html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Records found <span class="lead-count-badge">' + leads.length + '</span></p>';
-        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">From public open-data / permit APIs when available. Field names differ by city — cards highlight the usual fields.</p>';
-        html += buildLeadCardsHtml(leads);
-        html += '<details class="lead-table-fallback"><summary>Table view (compact)</summary>' + buildLeadTableHtml(leads) + '</details>';
+        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Cards use your brief’s <strong>AI field plan</strong> when possible, then list <strong>readable columns</strong> from each row (owners, projects, amounts) — even when the API names don’t match our summary line.</p>';
+        var fs = data.field_schema && typeof data.field_schema === 'object' && !Array.isArray(data.field_schema) ? data.field_schema : null;
+        html += buildLeadCardsHtml(leads, fs);
+        html += '<details class="lead-table-fallback"><summary>Table view (compact)</summary>' + buildLeadTableHtml(leads, fs) + '</details>';
       } else {
         html += '<p style="color:#64748b;font-size:0.95rem;">No rows came back this time. Try refining your description or use the optional tools above to pick a specific data source.</p>';
         if (data.preview_note) {
