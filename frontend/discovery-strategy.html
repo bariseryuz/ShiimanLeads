@@ -94,20 +94,34 @@
     }
     .lead-card__dl dd { margin: 0 0 0.35rem 0; font-size: 0.82rem; color: #0f172a; line-height: 1.4; word-break: break-word; }
     .lead-card__empty-note { font-size: 0.78rem; color: #94a3b8; font-style: italic; margin: 0.25rem 0 0.5rem 0; }
+    .quick-read-block {
+      margin: 0 0 1.25rem 0;
+      padding: 1.1rem 1.15rem;
+      border-radius: 12px;
+      border: 1px solid #e9d5ff;
+      background: linear-gradient(135deg, #faf5ff 0%, #f8fafc 100%);
+      box-shadow: 0 1px 2px rgba(124, 58, 237, 0.06);
+    }
+    .quick-read-block h3 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #5b21b6; font-weight: 600; }
+    .quick-read-body { margin: 0; font-size: 0.95rem; color: #1e293b; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
   </style>
 </head>
 <body>
   <div class="strategy-wrap">
     <div class="strategy-card">
       <h1>Get leads</h1>
-      <p class="hint">Describe the leads you want (location, type, filters). We <strong>search the web</strong>, pick likely sources, <strong>open them</strong>, and <strong>return rows</strong> — you don’t need a URL. Optional tools below if you want to suggest sources only or paste a specific link.</p>
+      <p class="hint">Describe the leads you want (location, type, filters). You’ll get a <strong>quick read</strong> first — plain-English opportunities for that area — then optional sources and rows. Full row extraction uses the same keys as elsewhere; this screen is meant to feel like a short assistant reply, not a settings panel.</p>
 
       <div class="field">
         <label for="leadBrief">What leads do you want?</label>
         <textarea id="leadBrief" placeholder="Example: Recent commercial building permits in Travis County TX over $250k — I need project address, valuation, and applicant name if shown." style="min-height:120px;"></textarea>
       </div>
+      <label style="display:flex;align-items:flex-start;gap:0.5rem;margin:0 0 0.75rem 0;font-size:0.88rem;color:#334155;cursor:pointer;max-width:42rem;">
+        <input type="checkbox" id="autoLeadsQuickOnly" checked style="margin-top:0.2rem;">
+        <span><strong>Fast answer only</strong> — search + short assistant brief (skip opening pages and row extraction). Uncheck for full extract.</span>
+      </label>
       <button type="button" class="btn-primary" id="btnAutoLeads" style="background:#7c3aed;border-color:#7c3aed;">Find leads for me</button>
-      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">Uses Serper + Gemini + browser extraction; first run may take <strong>1–3 minutes</strong>. Add <code>SERPER_API_KEY</code> and <code>GEMINI_API_KEY</code> in server <code>.env</code>.</p>
+      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">With “Fast answer” on, expect roughly <strong>15–45 seconds</strong>. Full extract may take <strong>1–3 minutes</strong> (Serper + Gemini + browser). Keys live in server <code>.env</code> — same as your other discovery tools.</p>
     </div>
 
     <details class="strategy-card">
@@ -714,27 +728,44 @@
       var html = '<div class="lead-dashboard-inner">';
       html += '<p class="dashboard-kicker">Lead discovery run</p>';
       html += '<h2 class="dashboard-title">Your leads</h2>';
-      html += '<p class="dashboard-note">This view is only for this search — <strong>not</strong> the same grid as <a href="/my-sources.html">My sources</a> (that’s for saved monitors and scraping). Here we show a quick read — cards first, table optional.</p>';
+      html += '<p class="dashboard-note">This view is only for this search — <strong>not</strong> the same grid as <a href="/my-sources.html">My sources</a> (that’s for saved monitors and scraping). Read the <strong>Quick read</strong> first; cards and tables are extra detail.</p>';
+
+      if (data.quick_read && String(data.quick_read).trim()) {
+        html += '<div class="quick-read-block">';
+        html += '<h3>Quick read</h3>';
+        html += '<div class="quick-read-body">' + escapeHtml(String(data.quick_read)) + '</div>';
+        html += '</div>';
+      }
 
       if (summaryLine) {
         html += '<div class="lead-summary"><strong>What we searched for:</strong> ' + escapeHtml(summaryLine) + '</div>';
       }
 
-      if (data.note) {
-        html += '<p style="font-size:0.9rem;color:#b45309;margin:0 0 1rem 0;">' + escapeHtml(data.note) + '</p>';
-      }
-
       if (leads.length) {
+        if (data.note) {
+          html += '<p style="font-size:0.9rem;color:#b45309;margin:0 0 1rem 0;">' + escapeHtml(data.note) + '</p>';
+        }
         html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Records found <span class="lead-count-badge">' + leads.length + '</span></p>';
         html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Cards use your brief’s <strong>AI field plan</strong> when possible, then list <strong>readable columns</strong> from each row (owners, projects, amounts) — even when the API names don’t match our summary line.</p>';
         var fs = data.field_schema && typeof data.field_schema === 'object' && !Array.isArray(data.field_schema) ? data.field_schema : null;
         html += buildLeadCardsHtml(leads, fs);
         html += '<details class="lead-table-fallback"><summary>Table view (compact)</summary>' + buildLeadTableHtml(leads, fs) + '</details>';
       } else {
-        html += '<p style="color:#64748b;font-size:0.95rem;">No rows came back this time. Try refining your description or use the optional tools above to pick a specific data source.</p>';
+        html += '<div class="lead-empty-result" style="margin:0 0 1rem 0;padding:1rem 1.1rem;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc;">';
+        html += '<p style="margin:0 0 0.5rem 0;font-weight:600;color:#0f172a;font-size:1rem;">No rows extracted this run</p>';
+        html += '<p style="margin:0;font-size:0.9rem;color:#475569;line-height:1.5;">' +
+          escapeHtml(data.note || 'The pipeline searched and opened candidate sources, but no tabular rows made it into the response. Common causes: landing page only (no public API hit), auth-gated layer, or browser extract returned zero matches.') +
+          '</p>';
         if (data.preview_note) {
-          html += '<p style="font-size:0.85rem;color:#64748b;margin-top:0.5rem;">' + escapeHtml(data.preview_note) + '</p>';
+          var pn = String(data.preview_note).trim();
+          var dn = String(data.note || '').trim();
+          if (pn && pn !== dn) {
+            html += '<p style="margin:0.75rem 0 0 0;font-size:0.82rem;color:#64748b;line-height:1.45;border-top:1px dashed #cbd5e1;padding-top:0.75rem;">' +
+              '<strong style="color:#475569;">Discovery note:</strong> ' + escapeHtml(pn) + '</p>';
+          }
         }
+        html += '<p style="margin:0.75rem 0 0 0;font-size:0.82rem;color:#64748b;">Try a <strong>specific city or county</strong> plus permit type, use <strong>Optional</strong> tools to paste a dataset URL, or open a link under Sources and add it in My sources.</p>';
+        html += '</div>';
       }
 
       var sources = data.candidate_sources || [];
@@ -755,7 +786,16 @@
       }
 
       html += '<details class="lead-tech"><summary>Technical details (JSON)</summary><pre class="extract-out" style="max-height:320px;margin:0;">' +
-        escapeHtml(JSON.stringify({ intent: data.intent, field_schema: data.field_schema, leads: data.leads, candidate_sources: data.candidate_sources }, null, 2)) +
+        escapeHtml(JSON.stringify({
+          orchestration: data.orchestration,
+          agent_pipeline: data.agent_pipeline,
+          quick_only: data.quick_only,
+          quick_read: data.quick_read,
+          intent: data.intent,
+          field_schema: data.field_schema,
+          leads: data.leads,
+          candidate_sources: data.candidate_sources
+        }, null, 2)) +
         '</pre></details>';
       html += '</div>';
 
@@ -777,15 +817,17 @@
       }
       hideLeadDashboard();
       const btn = document.getElementById('btnAutoLeads');
+      const quickOnlyEl = document.getElementById('autoLeadsQuickOnly');
+      const quickOnly = quickOnlyEl && quickOnlyEl.checked;
       const prev = btn.textContent;
       btn.disabled = true;
-      btn.textContent = 'Searching & extracting… (1–3 min)';
+      btn.textContent = quickOnly ? 'Searching… (fast answer)' : 'Searching & extracting… (1–3 min)';
       try {
         const res = await fetch('/api/discover/auto-leads', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brief: brief, maxLeads: 15, maxSites: 3 })
+          body: JSON.stringify({ brief: brief, maxLeads: 15, maxSites: 3, quickOnly: quickOnly })
         });
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {

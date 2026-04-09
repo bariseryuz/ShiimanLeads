@@ -55,13 +55,13 @@ async function buildManifestFromBrief(brief) {
     'Return ONLY valid JSON with this exact shape:\n' +
     '{\n' +
     '  "field_schema": { "<snake_case_key>": "<one line: what to put in this field from the page>", ... },\n' +
-    '  "navigation_instructions": "<plain English: steps to reach the list/table/search results on THIS kind of site — e.g. accept cookies, open Data or Permits, run search, apply filters. Be specific about UI actions. Max 800 chars>",\n' +
+    '  "navigation_instructions": "<numbered steps, like a human analyst: first infer what kind of page this is (open data portal, agency permits section, ArcGIS hub, static brochure site). Then list ONLY logical actions in order — dismiss overlays/cookies if blocking, find Data/Permits/GIS/Search, use filters that match the brief, prefer reaching a table or API-backed list over random clicks. Do not invent login credentials or bypass paywalls. Max 900 chars>",\n' +
     '  "strict_match_rules": "<bullet-style text: criteria a row MUST satisfy to count as a match for this user (geo, permit type, dollar min, date range). Rows that only partially match must be excluded later. Max 600 chars>"\n' +
     '}\n' +
     'Rules:\n' +
     '- field_schema: 4–12 keys. Keys must be stable snake_case. Descriptions must match the user brief.\n' +
     '- Do NOT invent contact emails unless the user asked for contacts and the page type usually has them.\n' +
-    '- navigation_instructions: assume the browser is already on the site homepage or the URL provided; guide toward the dataset/table view.\n\n' +
+    '- navigation_instructions: write as ordered steps (1. 2. 3.). Context first: what site pattern, then path to tabular data. Prefer stable UI paths (main nav → department → permits/open data) over exploratory clicking.\n\n' +
     (ragContext ? `Retrieved domain knowledge (public data patterns — user brief still wins):\n${ragContext}\n\n` : '') +
     `User brief:\n${b.slice(0, 6000)}`;
 

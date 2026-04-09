@@ -125,7 +125,7 @@ router.post('/google', requirePaid, express.json(), withDiscoveryMonthlyLimit, a
 
 /**
  * POST /api/discover/auto-leads — Primary flow: brief only → search → extract → leads (no URL required).
- * Body: { brief, maxLeads?: 15, maxSites?: 2 }
+ * Body: { brief, maxLeads?: 15, maxSites?: 2, quickOnly?: true } — quickOnly skips verify/read (fast assistant brief + sources only).
  */
 router.post('/auto-leads', requirePaid, enforceSourceLimit, express.json(), withDiscoveryMonthlyLimit, async (req, res) => {
   try {
@@ -139,13 +139,15 @@ router.post('/auto-leads', requirePaid, enforceSourceLimit, express.json(), with
     }
     const maxLeads = Math.min(50, Math.max(1, parseInt(body.maxLeads, 10) || 15));
     const maxSites = Math.min(3, Math.max(1, parseInt(body.maxSites, 10) || 2));
+    const quickOnly = body.quickOnly === true;
 
     const out = await fetchLeadsFromBriefOnly({
       userId,
       brief,
       req,
       maxLeads,
-      maxSites
+      maxSites,
+      quickOnly
     });
     await incrementUsage(req.session.user.id, 'discovery', 1);
     res.json(out);

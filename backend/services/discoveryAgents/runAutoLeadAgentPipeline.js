@@ -12,6 +12,7 @@ const { runAgentFind } = require('./agentFind');
 const { runAgentVerifyPlan } = require('./agentVerifyShape');
 const { runAgentRead } = require('./agentRead');
 const { AGENT_FIND, AGENT_READ, AGENT_VERIFY } = require('./agentConstants');
+const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
 
 function dedupeLeads(rows, maxLeads) {
   const seen = new Set();
@@ -99,12 +100,64 @@ function getCompiledAutoLeadGraph() {
 }
 
 /**
- * @param {{ userId: number, brief: string, req: import('express').Request, maxLeads?: number, maxSites?: number }} opts
+ * @param {{
+ *   userId: number,
+ *   brief: string,
+ *   req: import('express').Request,
+ *   maxLeads?: number,
+ *   maxSites?: number,
+ *   quickOnly?: boolean
+ * }} opts
  */
 async function runAutoLeadAgentPipeline(opts) {
   const b = String(opts.brief || '').trim();
   const maxLeads = Math.min(50, Math.max(1, parseInt(opts.maxLeads, 10) || 15));
   const maxSites = Math.min(5, Math.max(1, parseInt(opts.maxSites, 10) || 3));
+  const quickOnly =
+    opts.quickOnly === true ||
+    String(process.env.AUTO_LEADS_QUICK_ONLY || '').toLowerCase() === 'true';
+
+  /** Find + conversational brief only — no verify/read (no browser row extract). */
+  if (quickOnly) {
+    logger.info(
+      `[agent-pipeline] quick_only — ${AGENT_FIND} + assistant prose (skip ${AGENT_VERIFY}/${AGENT_READ})`
+    );
+    const discovery = await runAgentFind(b);
+    const noUrls = !discovery.candidate_sources?.length;
+    const candidate_sources = noUrls ? [] : discovery.candidate_sources;
+    const quick_read = await buildAutoLeadQuickRead({
+      brief: b,
+      intent: discovery.intent,
+      candidate_sources,
+      leads: [],
+      urls_attempted: [],
+      noSearchHits: noUrls
+    });
+    return {
+      success: true,
+      mode: 'auto_leads',
+      orchestration: 'quick_only',
+      agent_pipeline: [AGENT_FIND, 'assistant_quick_read'],
+      quick_only: true,
+      ...(quick_read ? { quick_read } : {}),
+      intent: discovery.intent,
+      search_queries_used: discovery.search_queries_used,
+      search_queries_expanded: discovery.search_queries_expanded,
+      results_pooled: discovery.results_pooled,
+      candidate_sources,
+      urls_attempted: [],
+      leads: [],
+      field_schema: null,
+      strict_match_rules: null,
+      strict_filter_applied: false,
+      note: noUrls
+        ? discovery.preview_note ||
+          'No candidate URLs from search. Set SERPER_API_KEY and try a more specific location or record type.'
+        : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off “Fast answer” for full extraction.',
+      preview_note: discovery.preview_note,
+      disclaimer: discovery.disclaimer
+    };
+  }
 
   logger.info(
     `[agent-pipeline] LangGraph — ${AGENT_FIND} → ${AGENT_VERIFY} → ${AGENT_READ} | maxLeads=${maxLeads} maxSites=${maxSites}`
@@ -124,11 +177,21 @@ async function runAutoLeadAgentPipeline(opts) {
   const discovery = final.discovery;
 
   if (final.noUrls || !discovery?.candidate_sources?.length) {
+    const quick_read = await buildAutoLeadQuickRead({
+      brief: b,
+      intent: discovery.intent,
+      candidate_sources: [],
+      leads: [],
+      urls_attempted: [],
+      noSearchHits: true
+    });
     return {
       success: true,
       mode: 'auto_leads',
       orchestration: 'langgraph',
       agent_pipeline: [`${AGENT_FIND} (stopped: no URLs)`],
+      quick_only: false,
+      ...(quick_read ? { quick_read } : {}),
       intent: discovery.intent,
       search_queries_used: discovery.search_queries_used,
       search_queries_expanded: discovery.search_queries_expanded,
@@ -157,11 +220,22 @@ async function runAutoLeadAgentPipeline(opts) {
     ? 'Search ran but no rows were extracted. Try different wording, or use “Extract to my format” on a specific URL.'
     : null;
 
+  const quick_read = await buildAutoLeadQuickRead({
+    brief: b,
+    intent: discovery.intent,
+    candidate_sources: discovery.candidate_sources,
+    leads,
+    urls_attempted: urlsAttempted,
+    noSearchHits: false
+  });
+
   return {
     success: true,
     mode: 'auto_leads',
     orchestration: 'langgraph',
     agent_pipeline: [AGENT_FIND, `${AGENT_VERIFY} (plan+filter)`, AGENT_READ],
+    quick_only: false,
+    ...(quick_read ? { quick_read } : {}),
     intent: discovery.intent,
     search_queries_used: discovery.search_queries_used,
     search_queries_expanded: discovery.search_queries_expanded,

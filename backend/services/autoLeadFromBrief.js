@@ -8,7 +8,14 @@
 const { runAutoLeadAgentPipeline } = require('./discoveryAgents/runAutoLeadAgentPipeline');
 
 /**
- * @param {{ userId: number, brief: string, req: import('express').Request, maxLeads?: number, maxSites?: number }} opts
+ * @param {{
+ *   userId: number,
+ *   brief: string,
+ *   req: import('express').Request,
+ *   maxLeads?: number,
+ *   maxSites?: number,
+ *   quickOnly?: boolean
+ * }} opts
  */
 async function fetchLeadsFromBriefOnly(opts) {
   const b = String(opts.brief || '').trim();
