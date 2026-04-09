@@ -17,6 +17,21 @@ const TIMEOUT = 22000;
  */
 function parseSocrataResource(pageUrl) {
   try {
+    const raw = String(pageUrl || '');
+    const foundry = raw.match(
+      /dev\.socrata\.com\/foundry\/([^/?#\s]+)\/([0-9a-z]{4}-[0-9a-z]{4})/i
+    );
+    if (foundry) {
+      let dataHost = String(foundry[1] || '')
+        .trim()
+        .replace(/^https?:\/\//i, '')
+        .split('/')[0]
+        .toLowerCase();
+      if (dataHost) {
+        return { host: dataHost, resourceId: foundry[2] };
+      }
+    }
+
     const u = new URL(pageUrl);
     const host = u.hostname;
     let m = pageUrl.match(/\/dataset\/[^/]+\/([0-9a-z]{4}-[0-9a-z]{4})/i);

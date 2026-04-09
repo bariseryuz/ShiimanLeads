@@ -14,8 +14,9 @@ const { isAIAvailable, getEmbeddingModel } = require('../geminiClient');
 const { retryWithBackoff } = require('../../../utils/aiRetry');
 const scaleLimits = require('../../../config/scaleLimits');
 
-const CORPUS_PATH = path.join(__dirname, '../../../data/rag/corpus.jsonl');
-const CACHE_PATH = path.join(__dirname, '../../../data/rag/embeddings-cache.json');
+/** Bundled with source so Docker/git deploy includes it (backend/data/ is often gitignored). */
+const CORPUS_PATH = path.join(__dirname, 'corpus.jsonl');
+const CACHE_PATH = path.join(__dirname, 'embeddings-cache.json');
 
 function isRagEnabled() {
   return process.env.RAG_ENABLED !== 'false' && process.env.RAG_ENABLED !== '0';

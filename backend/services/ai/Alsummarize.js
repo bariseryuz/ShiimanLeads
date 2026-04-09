@@ -41,13 +41,26 @@ class AISummarizer {
     const leadJson = JSON.stringify(lead, null, 2);
 
     const templates = {
-      default: `Analyze and summarize the following lead in 2-3 sentences. Focus on key details like business type, contact info, and potential value.\n\nLead Data:\n${leadJson}`,
-      
-      business: `Provide a business analysis summary of this lead. Include: industry, company size (if available), business potential, and recommended next steps.\n\nLead Data:\n${leadJson}`,
-      
-      contact: `Create a contact profile summary for this lead. Include: name, role, company, and contact methods.\n\nLead Data:\n${leadJson}`,
-      
-      opportunity: `Assess the sales opportunity. Rate potential (High/Medium/Low) and suggest engagement strategy based on lead data.\n\nLead Data:\n${leadJson}`
+      default:
+        `Summarize this lead in plain English (like Google Gemini would): readable, specific, and short.\n` +
+        `Use 2–4 short paragraphs or a few tight bullets if that reads better. No JSON.\n` +
+        `Cover what matters for a salesperson: what happened, where, rough scale/value if present, and why it might matter.\n\n` +
+        `Lead data:\n${leadJson}`,
+
+      business:
+        `Give a business-focused summary of this lead in clear prose (no JSON).\n` +
+        `Include: industry signal, scale hints from the data, commercial potential, and 1–2 suggested next steps.\n\n` +
+        `Lead data:\n${leadJson}`,
+
+      contact:
+        `Write a concise contact-oriented profile in natural language (no JSON).\n` +
+        `Include names, roles, companies, and any contact channels visible in the data; say what is missing.\n\n` +
+        `Lead data:\n${leadJson}`,
+
+      opportunity:
+        `Assess the sales opportunity in readable prose (no JSON).\n` +
+        `Give an explicit High/Medium/Low style judgment in words, why, and a short engagement angle grounded in the fields below.\n\n` +
+        `Lead data:\n${leadJson}`
     };
 
     return templates[template] || templates.default;

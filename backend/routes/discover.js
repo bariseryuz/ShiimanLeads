@@ -13,6 +13,7 @@ const { runNlLeadIntentDiscovery } = require('../services/ai/nlLeadIntent');
 const { createUserSourceCore } = require('../services/createUserSourceCore');
 const { runExtractNowForUrl } = require('../services/discoverExtractRun');
 const { fetchLeadsFromBriefOnly } = require('../services/autoLeadFromBrief');
+const { inferMonitorSourceFromUrl } = require('../services/inferMonitorSourceFromUrl');
 const logger = require('../utils/logger');
 const { requirePaid, enforceSourceLimit } = require('../middleware/billing');
 const { assertMonthlyAllowance, incrementUsage } = require('../services/usageMeter');
@@ -250,6 +251,10 @@ router.post('/monitor', requirePaid, enforceSourceLimit, express.json(), async (
     if (!name || !url) {
       return res.status(400).json({ error: 'name and url are required' });
     }
+    const inferred = inferMonitorSourceFromUrl(String(url).trim());
+    logger.info(
+      `[discover/monitor] URL inference: ${inferred.mode} (${inferred.sourceData.discoveryInferredMode || inferred.mode})`
+    );
     const hints =
       (monitoringHints != null && String(monitoringHints).trim()
         ? String(monitoringHints).trim().slice(0, 1200)
@@ -259,9 +264,8 @@ router.post('/monitor', requirePaid, enforceSourceLimit, express.json(), async (
         : null);
     const sourceData = {
       name: String(name).slice(0, 200),
-      url: String(url).trim(),
-      method: 'playwright',
-      usePlaywright: true,
+      url: inferred.url,
+      ...inferred.sourceData,
       discoveryKeyword: keyword != null ? String(keyword).slice(0, 200) : null,
       fromDiscovery: true,
       ...(triggerLogic != null && String(triggerLogic).trim()

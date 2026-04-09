@@ -46,5 +46,5 @@ Thumbs.db
 # Misc
 .cache/
 
-# RAG (regenerated from corpus via Gemini embeddings API)
-backend/data/rag/embeddings-cache.json
+# RAG embedding cache (regenerated from corpus via Gemini)
+backend/services/ai/rag/embeddings-cache.json
