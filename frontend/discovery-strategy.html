@@ -283,6 +283,44 @@
       return '';
     }
 
+    /** GIS / internal fields — not shown to end clients as “lead” copy. */
+    function isInternalGisKey(k) {
+      var n = String(k).toLowerCase().replace(/\s+/g, '_');
+      if (/^(fdate|edate|resolution|permanent_identifier|globalid|objectid|fid|oid|gdb_|sqmi|acres)$/i.test(n)) return true;
+      if (/^shape_|^st_|^stlength|^starea|^objectid$/i.test(n)) return true;
+      if (/^(x|y|z|latitude|longitude|lat|lon|coord)/i.test(n) && n.length <= 12) return true;
+      return false;
+    }
+
+    function isClientUsefulValue(v) {
+      if (v == null || v === '') return false;
+      if (typeof v === 'object') return false;
+      var s = String(v).trim();
+      if (s.length < 2) return false;
+      if (/^point\s*\(/i.test(s)) return false;
+      if (/^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(s)) return false;
+      if (/^\d{11,15}$/.test(s)) {
+        var ms = parseInt(s, 10);
+        if (ms > 1e11 && ms < 2e12) return false;
+      }
+      if (typeof v === 'number' && Number.isFinite(v) && v === Math.floor(v) && v >= 0 && v < 1000 && String(s).length <= 4) {
+        return false;
+      }
+      return true;
+    }
+
+    function formatScalarForClient(k, v) {
+      if (v == null || typeof v === 'object') return '';
+      if (typeof v === 'number' && v > 1e11 && v < 2e12 && v === Math.floor(v)) {
+        try {
+          var d = new Date(v);
+          if (!isNaN(d.getTime())) return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        } catch (e) { /* ignore */ }
+      }
+      var s = String(v).trim();
+      return s.length > 350 ? s.slice(0, 347) + '…' : s;
+    }
+
     function normalizeLeadRow(row) {
       var flat = unwrapLeadRow(row);
       if (!flat || typeof flat !== 'object') return null;
@@ -290,12 +328,12 @@
 
       var id =
         pickFirstScalar(ci, [
-          'permit__', 'permitnum', 'permit_number', 'permit_no', 'permit_id', 'permit',
+          'permit__', 'permitnum', 'permit_number', 'permit_no', 'permit_id',
           'application_number', 'application_no', 'application_id', 'app_number', 'app_no',
           'case_number', 'case_no', 'record_number', 'record_no', 'file_number', 'filenumber',
           'reference_number', 'ref_no', 'refnumber', 'parcel_id', 'parcel_number', 'parcel',
           'tmk', 'tax_map_key', 'taxmapkey', 'tax_map', 'map_key',
-          'objectid', 'globalid', 'fid', 'oid', 'id'
+          'fid', 'oid', 'id', 'globalid', 'objectid'
         ]);
       if (id == null) {
         id = pickByKeyRegex(flat, [
@@ -304,7 +342,6 @@
           /(case|record|file).*no/i,
           /^parcel/i,
           /^tmk$/i,
-          /objectid/i,
           /^fid$/i
         ]);
       }
@@ -315,11 +352,15 @@
         pickFirstScalar(ci, [
           'address', 'originaladdress1', 'originaladdress', 'site_address', 'siteaddress',
           'addr1', 'addr_line1', 'address_line_1', 'full_address', 'fulladdress', 'addr_full',
-          'location', 'site_location', 'premise_address', 'property_address', 'situation',
+          'site_location', 'premise_address', 'property_address', 'situation',
           'streetaddress', 'street_address', 'street', 'mail_address', 'prop_address',
           'location_address', 'parcel_address', 'worksite_address'
         ]) || '';
-      if (!addr) addr = pickByKeyRegex(flat, [/address|location|site|street|premise|property.*addr|fulladdr/i]);
+      if (!addr) {
+        addr = pickByKeyRegex(flat, [/address|street|premise|property.*addr|fulladdr|mailing/i]);
+      }
+      if (!addr && isClientUsefulValue(ci.location)) addr = String(ci.location).trim();
+      if (addr && !isClientUsefulValue(addr)) addr = '';
 
       var city = pickFirstScalar(ci, ['city', 'originalcity', 'mail_city', 'cityname']) || '';
       if (!city) city = pickByKeyRegex(flat, [/^city$/i, /mail_city/i, /cityname/i]);
@@ -330,9 +371,23 @@
       var zip = pickFirstScalar(ci, ['zip', 'originalzip', 'postal', 'zipcode', 'postal_code', 'mail_zip']) || '';
       if (!zip) zip = pickByKeyRegex(flat, [/^zip$/i, /postal/i]);
 
-      var line1 = (addr && String(addr).trim()) ? String(addr).trim() : '—';
+      var orgLine =
+        pickFirstScalar(ci, [
+          'project_name', 'development_name', 'project_title', 'site_name', 'development',
+          'owner_name', 'contractor_name', 'applicant_name', 'business_name', 'company_name',
+          'organization', 'developer', 'dba', 'trade_name', 'parcel_name'
+        ]) || '';
+      if (!orgLine || !isClientUsefulValue(orgLine)) orgLine = '';
+
+      var line1 = (addr && String(addr).trim()) ? String(addr).trim() : '';
+      if (!line1 && orgLine) line1 = String(orgLine).trim();
+      if (!line1) line1 = '—';
+
       var line2 = [city, st].filter(Boolean).map(function (x) { return String(x).trim(); }).filter(Boolean).join(', ');
       if (zip) line2 = line2 ? (line2 + ' ' + zip) : String(zip);
+      if (orgLine && addr && String(orgLine).trim() !== String(addr).trim()) {
+        line2 = line2 ? (line2 + ' · ' + String(orgLine).trim()) : String(orgLine).trim();
+      }
 
       var costRaw = pickFirstScalar(ci, [
         'const_cost', 'estprojectcostdec', 'estprojectcost', 'est_cost', 'construction_cost',
@@ -352,34 +407,66 @@
         cost = Number.isFinite(n) ? ('$' + n.toLocaleString()) : String(costRaw);
       }
 
+      var owner = pickFirstScalar(ci, ['owner_name', 'property_owner', 'land_owner', 'owner']) || '';
+      var contractor = pickFirstScalar(ci, ['contractor_name', 'general_contractor', 'builder', 'contractor']) || '';
+      if (owner && !isClientUsefulValue(owner)) owner = '';
+      if (contractor && !isClientUsefulValue(contractor)) contractor = '';
+
       var typ =
         pickFirstScalar(ci, [
           'permit_type_description', 'permit_subtype_description', 'permittypemapped', 'permitclassmapped',
-          'description', 'permit_type', 'permit_type_desc', 'work_type', 'work_desc', 'class',
-          'use_type', 'activity', 'purpose', 'category', 'type', 'subtype', 'project_description'
+          'permit_type', 'permit_type_desc', 'work_type', 'work_desc', 'use_type', 'project_description',
+          'description', 'activity', 'purpose', 'subtype'
         ]) || '';
+      if (typ && !isClientUsefulValue(typ)) typ = '';
+      if (!typ) {
+        var cat = ci.category != null ? ci.category : ci.type;
+        if (cat != null && isClientUsefulValue(cat)) typ = String(cat).trim();
+      }
       if (!typ) typ = pickByKeyRegex(flat, [
-        /permit.*type|work.*type|class|description|activity|purpose|use_type|project.*desc/i
+        /permit.*type|work.*type|project.*desc|work.*desc|use_type/i
       ]);
+      if (typ && !isClientUsefulValue(typ)) typ = '';
+
+      var whoParts = [];
+      if (owner) whoParts.push('Owner: ' + String(owner).trim());
+      if (contractor && String(contractor).trim() !== String(owner || '').trim()) whoParts.push('Contractor: ' + String(contractor).trim());
+      if (whoParts.length) {
+        typ = typ && typ !== '—' ? (whoParts.join(' · ') + ' — ' + typ) : whoParts.join(' · ');
+      }
       if (!typ) typ = '—';
 
-      if (line1 === '—' && typ === '—') {
-        var bits = [];
-        var skipK = { shape: 1, geometry: 1, attributes: 1, properties: 1 };
+      if (line1 === '—' && (typ === '—' || typ.indexOf('Owner:') === -1)) {
+        var scored = [];
+        var priorityRe = [
+          [120, /contractor|owner|applicant|developer|business|company|organization/i],
+          [100, /project|development|parcel|permit|application|case|record/i],
+          [80, /address|street|location|city|zip|valuation|cost|fee|amount/i],
+          [40, /description|type|class|work|title|name/i]
+        ];
         for (var fk in flat) {
           if (!Object.prototype.hasOwnProperty.call(flat, fk)) continue;
-          var fkl = fk.toLowerCase();
-          if (skipK[fkl] || /^shape_|^st_/i.test(fk)) continue;
+          if (isInternalGisKey(fk)) continue;
           var fv = flat[fk];
-          if (fv == null || fv === '' || typeof fv === 'object') continue;
-          var fs = String(fv).trim();
-          if (!fs || fs.length > 400) continue;
-          bits.push(fk + ': ' + fs);
-          if (bits.length >= 4) break;
+          if (!isClientUsefulValue(fv)) continue;
+          var disp = formatScalarForClient(fk, fv);
+          if (!disp) continue;
+          var score = 0;
+          var fkl = String(fk).toLowerCase();
+          for (var pr = 0; pr < priorityRe.length; pr++) {
+            if (priorityRe[pr][1].test(fkl)) { score = priorityRe[pr][0]; break; }
+          }
+          scored.push({ score: score, label: fk, text: disp });
         }
-        if (bits.length) {
-          line1 = bits.slice(0, 2).join(' · ');
-          if (typ === '—') typ = bits.length > 2 ? bits.slice(2).join(' · ') : 'Additional fields';
+        scored.sort(function (a, b) { return b.score - a.score; });
+        if (scored.length) {
+          line1 = scored[0].label + ': ' + scored[0].text;
+          if (scored.length > 1 && typ === '—') {
+            typ = scored[1].label + ': ' + scored[1].text;
+            if (scored.length > 2) typ += ' · ' + scored[2].label + ': ' + scored[2].text;
+          } else if (scored.length > 1 && typ !== '—') {
+            typ += ' · ' + scored[1].label + ': ' + scored[1].text;
+          }
         }
       }
 
@@ -390,7 +477,7 @@
       if (!leads || !leads.length) {
         return '<p style="color:#64748b;font-size:0.9rem;margin:0;">No rows in this extract.</p>';
       }
-      var html = '<div class="lead-table-wrap"><table class="lead-table"><thead><tr><th>Record #</th><th>Location</th><th>Est. cost</th><th>Type / description</th></tr></thead><tbody>';
+      var html = '<div class="lead-table-wrap"><table class="lead-table"><thead><tr><th>Record #</th><th>Location</th><th>Est. value / cost</th><th>Project & contacts</th></tr></thead><tbody>';
       for (var i = 0; i < leads.length; i++) {
         var n = normalizeLeadRow(leads[i]);
         if (!n) continue;
@@ -416,7 +503,7 @@
           '<div class="lead-card__addr">' + escapeHtml(n.line1) + '</div>' +
           (n.line2 ? '<div class="lead-card__meta">' + escapeHtml(n.line2) + '</div>' : '') +
           '<div class="lead-card__row"><span class="lead-card__label">Est. cost</span><span>' + escapeHtml(n.cost) + '</span></div>' +
-          '<div class="lead-card__row"><span class="lead-card__label">Type</span><span>' +
+          '<div class="lead-card__row"><span class="lead-card__label">Project & contacts</span><span>' +
           escapeHtml(n.type.length > 220 ? n.type.slice(0, 217) + '…' : n.type) + '</span></div>' +
           '</div></article>';
       }
