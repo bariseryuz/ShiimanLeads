@@ -1,15 +1,16 @@
 /**
  * Multi-agent orchestration for POST /api/discover/auto-leads
  *
- * Implemented with @langchain/langgraph (StateGraph): find → verify → read → (if no rows) api_hunter.
- * Agent A = find (scout queries) | Agent C = verify (plan) | Agent B = read | api_hunter = stubborn JSON/Serper
+ * Implemented with @langchain/langgraph (StateGraph): find → read → verify (post-read).
+ * Agent A = find (scout queries) | Agent B = read | Agent C = verify (post-read quality gate).
+ * api_hunter is a stubborn JSON/Serper fallback between read and verify when rows are empty.
  *
  * Same API keys as before (GEMINI + SERPER); LangGraph manages flow, not credentials.
  */
 
 const logger = require('../../utils/logger');
 const { runAgentFind } = require('./agentFind');
-const { runAgentVerifyPlan } = require('./agentVerifyShape');
+const { runAgentVerifyPlan, runAgentVerifyFilterBatch } = require('./agentVerifyShape');
 const { runAgentRead } = require('./agentRead');
 const { AGENT_FIND, AGENT_READ, AGENT_VERIFY, AGENT_API_HUNTER } = require('./agentConstants');
 const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
@@ -34,7 +35,8 @@ function dedupeLeads(rows, maxLeads) {
 let compiledGraphPromise = null;
 
 /**
- * Build once: Find → (if URLs) Verify → Read → (if 0 rows) api_hunter → END; if no URLs Find → END.
+ * Build once: Find → (if URLs) Read → Verify; if Read=0 rows then api_hunter then Verify.
+ * If no URLs: Find → END.
  * Uses dynamic import because @langchain/langgraph is ESM-only.
  */
 function getCompiledAutoLeadGraph() {
@@ -49,8 +51,11 @@ function getCompiledAutoLeadGraph() {
         maxLeads: Annotation(),
         maxSites: Annotation(),
         discovery: Annotation(),
+        preManifest: Annotation(),
         manifest: Annotation(),
         collected: Annotation(),
+        verified: Annotation(),
+        strictFilterApplied: Annotation(),
         urlsAttempted: Annotation(),
         noUrls: Annotation(),
         hunterRan: Annotation()
@@ -63,26 +68,21 @@ function getCompiledAutoLeadGraph() {
         return { discovery, noUrls };
       }
 
-      async function nodeVerify(state) {
-        logger.info(`[langgraph] node ${AGENT_VERIFY} (plan)`);
-        const manifest = await runAgentVerifyPlan(state.brief);
-        return { manifest };
-      }
-
       async function nodeRead(state) {
         logger.info(`[langgraph] node ${AGENT_READ}`);
+        const preManifest = await runAgentVerifyPlan(state.brief);
         const { collected, urlsAttempted } = await runAgentRead({
           brief: state.brief,
           userId: state.userId,
           req: state.req,
-          manifest: state.manifest,
+          manifest: preManifest,
           candidates: state.discovery.candidate_sources,
           maxLeads: state.maxLeads,
           maxSites: state.maxSites,
           intent: state.discovery.intent
         });
         const rows = Array.isArray(collected) ? collected : [];
-        return { collected: rows, urlsAttempted, hunterRan: false };
+        return { preManifest, collected: rows, urlsAttempted, hunterRan: false };
       }
 
       async function nodeApiHunter(state) {
@@ -94,7 +94,7 @@ function getCompiledAutoLeadGraph() {
         const maxSites = Math.min(12, parseInt(state.maxSites, 10) + 5);
         const { collected, urlsAttempted } = await runAgentApiHunter({
           brief: state.brief,
-          manifest: state.manifest,
+          manifest: state.preManifest,
           candidates: state.discovery.candidate_sources,
           maxLeads: state.maxLeads,
           maxSites,
@@ -109,27 +109,46 @@ function getCompiledAutoLeadGraph() {
         };
       }
 
+      async function nodeVerify(state) {
+        logger.info(`[langgraph] node ${AGENT_VERIFY} (post-read filter/shape)`);
+        const manifest = state.preManifest || (await runAgentVerifyPlan(state.brief));
+        const rows = Array.isArray(state.collected) ? state.collected : [];
+        if (!rows.length) {
+          return { manifest, verified: [], strictFilterApplied: true };
+        }
+        const { leads: filtered, applied } = await runAgentVerifyFilterBatch(
+          state.brief,
+          manifest.strict_match_rules,
+          rows
+        );
+        return {
+          manifest,
+          verified: Array.isArray(filtered) ? filtered : [],
+          strictFilterApplied: !!applied
+        };
+      }
+
       const graph = new StateGraph(AutoLeadState)
         .addNode('find', nodeFind)
-        .addNode('verify', nodeVerify)
         .addNode('read', nodeRead)
         .addNode('api_hunter', nodeApiHunter)
+        .addNode('verify', nodeVerify)
         .addEdge(START, 'find')
         .addConditionalEdges(
           'find',
-          state => (state.noUrls ? 'end' : 'verify'),
-          { end: END, verify: 'verify' }
+          state => (state.noUrls ? 'end' : 'read'),
+          { end: END, read: 'read' }
         )
-        .addEdge('verify', 'read')
         .addConditionalEdges(
           'read',
           state => {
             const n = Array.isArray(state.collected) ? state.collected.length : 0;
-            return n > 0 ? 'end' : 'hunt';
+            return n > 0 ? 'verify' : 'hunt';
           },
-          { end: END, hunt: 'api_hunter' }
+          { verify: 'verify', hunt: 'api_hunter' }
         )
-        .addEdge('api_hunter', END);
+        .addEdge('api_hunter', 'verify')
+        .addEdge('verify', END);
 
       return graph.compile();
     })();
@@ -198,7 +217,7 @@ async function runAutoLeadAgentPipeline(opts) {
   }
 
   logger.info(
-    `[agent-pipeline] LangGraph — ${AGENT_FIND} → ${AGENT_VERIFY} → ${AGENT_READ} | maxLeads=${maxLeads} maxSites=${maxSites}`
+    `[agent-pipeline] LangGraph — ${AGENT_FIND} → ${AGENT_READ} → ${AGENT_VERIFY} | maxLeads=${maxLeads} maxSites=${maxSites}`
   );
 
   const graph = await getCompiledAutoLeadGraph();
@@ -248,12 +267,14 @@ async function runAutoLeadAgentPipeline(opts) {
     };
   }
 
-  const manifest = final.manifest;
-  const collected = Array.isArray(final.collected) ? final.collected : [];
+  const manifest = final.manifest || final.preManifest || { field_schema: null, strict_match_rules: null };
+  const collectedRaw = Array.isArray(final.collected) ? final.collected : [];
+  const verified = Array.isArray(final.verified) ? final.verified : [];
+  const strictFilterApplied = final.strictFilterApplied !== false;
   const urlsAttempted = Array.isArray(final.urlsAttempted) ? final.urlsAttempted : [];
   const hunterRan = !!final.hunterRan;
-
-  const leads = dedupeLeads(collected, maxLeads);
+  const useRawFallback = !verified.length && collectedRaw.length > 0;
+  const leads = dedupeLeads(useRawFallback ? collectedRaw : verified, maxLeads);
 
   let note = !leads.length && urlsAttempted.length
     ? 'Search ran but no rows were extracted. Try different wording, or use “Extract to my format” on a specific URL.'
@@ -261,6 +282,10 @@ async function runAutoLeadAgentPipeline(opts) {
   if (!leads.length && hunterRan) {
     note =
       'Read and API-Hunter exhausted embedded JSON/Socrata/ArcGIS probes for candidate URLs. Try a more specific portal link, or add the dataset as a JSON API source.';
+  }
+  if (useRawFallback) {
+    note =
+      'Rows were found, but strict verification had no exact matches. Showing best raw rows so your table is not empty.';
   }
 
   const quick_read = await buildAutoLeadQuickRead({
@@ -272,8 +297,9 @@ async function runAutoLeadAgentPipeline(opts) {
     noSearchHits: false
   });
 
-  const agent_pipeline = [AGENT_FIND, `${AGENT_VERIFY} (plan+filter)`, AGENT_READ];
+  const agent_pipeline = [AGENT_FIND, AGENT_READ];
   if (hunterRan) agent_pipeline.push(AGENT_API_HUNTER);
+  agent_pipeline.push(`${AGENT_VERIFY} (post-read filter/shape)`);
 
   let sales_intelligence = null;
   if (String(process.env.AUTO_LEADS_SALES_SHAPE || '').toLowerCase() === 'true' && leads.length) {
@@ -302,7 +328,9 @@ async function runAutoLeadAgentPipeline(opts) {
     leads,
     field_schema: manifest.field_schema,
     strict_match_rules: manifest.strict_match_rules,
-    strict_filter_applied: true,
+    strict_filter_applied: strictFilterApplied,
+    verified_match_count: verified.length,
+    raw_row_count: collectedRaw.length,
     note,
     preview_note: discovery.preview_note,
     disclaimer: discovery.disclaimer

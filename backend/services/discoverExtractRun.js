@@ -10,7 +10,7 @@ const { scrapeForUser } = require('../legacyScraper');
 const { dbAll } = require('../db');
 const { deleteUserSourceCascade } = require('./deleteUserSourceCascade');
 /**
- * @param {{ userId: number, brief: string, url: string, maxLeads: number, deleteAfter: boolean, req: import('express').Request, manifest?: object }} opts
+ * @param {{ userId: number, brief: string, url: string, maxLeads: number, deleteAfter: boolean, req: import('express').Request, manifest?: object, skipStrictFilter?: boolean }} opts
  */
 async function runExtractNowForUrl(opts) {
   const { userId, brief, url, maxLeads, deleteAfter, req } = opts;
@@ -83,16 +83,18 @@ async function runExtractNowForUrl(opts) {
     })
     .filter(obj => obj && typeof obj === 'object');
 
-  const { leads: filtered, applied: strictFilterApplied } = await filterLeadsToBrief(
-    brief,
-    manifest.strict_match_rules,
-    parsed
-  );
-  const leads = filtered.slice(0, maxLeads);
-  const note =
-    parsed.length > 0 && leads.length === 0 && strictFilterApplied
-      ? 'Strict filter matched no rows against your brief. Try a broader brief or verify the page shows qualifying records.'
-      : null;
+  let strictFilterApplied = false;
+  let leads = parsed.slice(0, maxLeads);
+  let note = null;
+  if (!opts.skipStrictFilter) {
+    const out = await filterLeadsToBrief(brief, manifest.strict_match_rules, parsed);
+    strictFilterApplied = !!out.applied;
+    leads = (out.leads || []).slice(0, maxLeads);
+    note =
+      parsed.length > 0 && leads.length === 0 && strictFilterApplied
+        ? 'Strict filter matched no rows against your brief. Try a broader brief or verify the page shows qualifying records.'
+        : null;
+  }
 
   if (deleteAfter) {
     await deleteUserSourceCascade(userId, sourceId);

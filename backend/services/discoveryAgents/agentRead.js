@@ -9,7 +9,6 @@ const { runExtractNowForUrl } = require('../discoverExtractRun');
 const { fetchOpenDataSampleRows } = require('../openDataDirectSample');
 const { discoverEmbeddedDatasetUrls } = require('../portalDatasetDiscovery');
 const { sortUrls } = require('../candidateUrlSort');
-const { runAgentVerifyFilterBatch } = require('./agentVerifyShape');
 const { AGENT_READ } = require('./agentConstants');
 
 function openDataFetchOpts(intent) {
@@ -98,17 +97,12 @@ async function runAgentRead(opts) {
         }
       }
       if (directRows && directRows.length) {
-        const { leads: filtered, applied } = await runAgentVerifyFilterBatch(
-          b,
-          manifest.strict_match_rules,
-          directRows
-        );
-        const slice = (filtered && filtered.length ? filtered : directRows).slice(0, perUrlBudget);
+        const slice = directRows.slice(0, perUrlBudget);
         for (const row of slice) {
           collected.push(row);
           if (collected.length >= maxLeads) break;
         }
-        logger.info(`[agent:${AGENT_READ}] open-data ${url.slice(0, 72)} → ${slice.length} rows (filter ${applied})`);
+        logger.info(`[agent:${AGENT_READ}] open-data ${url.slice(0, 72)} → ${slice.length} raw row(s)`);
         if (collected.length >= maxLeads) break;
         continue;
       }
@@ -121,17 +115,12 @@ async function runAgentRead(opts) {
         const n = Math.min(maxLeads - collected.length, 25, perUrlBudget);
         const arcRows = await tryArcgisSampleRows(url, Math.max(n, 5));
         if (arcRows && arcRows.length) {
-          const { leads: filtered, applied } = await runAgentVerifyFilterBatch(
-            b,
-            manifest.strict_match_rules,
-            arcRows
-          );
-          const slice = (filtered && filtered.length ? filtered : arcRows).slice(0, perUrlBudget);
+          const slice = arcRows.slice(0, perUrlBudget);
           for (const row of slice) {
             collected.push(row);
             if (collected.length >= maxLeads) break;
           }
-          logger.info(`[agent:${AGENT_READ}] ArcGIS ${url.slice(0, 80)} → ${slice.length} rows (filter ${applied})`);
+          logger.info(`[agent:${AGENT_READ}] ArcGIS ${url.slice(0, 80)} → ${slice.length} raw row(s)`);
         }
       } catch (e) {
         logger.warn(`[agent:${AGENT_READ}] ArcGIS failed ${url}: ${e.message}`);
@@ -152,7 +141,8 @@ async function runAgentRead(opts) {
         maxLeads: Math.min(perUrlBudget, maxLeads - collected.length),
         deleteAfter: true,
         req: opts.req,
-        manifest
+        manifest,
+        skipStrictFilter: true
       });
       for (const row of out.leads || []) {
         collected.push(row);
@@ -180,7 +170,8 @@ async function runAgentRead(opts) {
           maxLeads: Math.min(perUrlBudget, maxLeads - collected.length),
           deleteAfter: true,
           req: opts.req,
-          manifest
+          manifest,
+          skipStrictFilter: true
         });
         for (const row of out.leads || []) {
           collected.push(row);

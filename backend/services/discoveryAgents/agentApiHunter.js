@@ -9,7 +9,6 @@ const { tryArcgisSampleRows } = require('../ai/nlLeadIntent');
 const { fetchOpenDataSampleRows } = require('../openDataDirectSample');
 const { discoverEmbeddedDatasetUrls } = require('../portalDatasetDiscovery');
 const { sortUrls } = require('../candidateUrlSort');
-const { runAgentVerifyFilterBatch } = require('./agentVerifyShape');
 const { googleSearchOrganic, hasSerper, sleep } = require('../serperSearch');
 
 const PERMIT_SIGNAL_RE =
@@ -59,8 +58,6 @@ async function discoverApiUrlsViaSerper(host, geography) {
  * @returns {Promise<{ collected: object[], urlsAttempted: string[] }>}
  */
 async function runAgentApiHunter(opts) {
-  const brief = String(opts.brief || '').trim();
-  const manifest = opts.manifest;
   const candidates = opts.candidates || [];
   const maxLeads = opts.maxLeads;
   const maxSites = Math.min(12, Math.max(1, parseInt(opts.maxSites, 10) || 8));
@@ -112,10 +109,7 @@ async function runAgentApiHunter(opts) {
         }
       }
       if (!directRows?.length) continue;
-
-      const { leads: filtered } = await runAgentVerifyFilterBatch(brief, manifest.strict_match_rules, directRows);
-      let slice = filtered && filtered.length ? filtered : directRows;
-      slice = slice.slice(0, perUrlBudget);
+      let slice = directRows.slice(0, perUrlBudget);
 
       if (!slice.length && directRows.length) {
         const sig = directRows.filter(rowMatchesPermitSignals);
