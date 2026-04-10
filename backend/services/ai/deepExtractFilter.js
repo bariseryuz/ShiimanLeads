@@ -39,6 +39,8 @@ async function filterLeadsToBrief(brief, strictRules, rows) {
     'You are a strict filter. Given the user request and rules, decide which extracted rows qualify.\n' +
     'Return ONLY valid JSON: { "keep_indices": [0, 2, ...] } using the "i" index from the input.\n' +
     'Exclude rows that are duplicates, empty, off-topic, wrong geography, wrong record type, or below stated thresholds.\n' +
+    'For permits/licenses: prefer rows whose status is Issued, Active, Approved, or In Review when such a field exists; ' +
+    'deprioritize Expired, Withdrawn, Void, or Closed unless the user asked for historical records.\n' +
     'If NO row qualifies, return { "keep_indices": [] }.\n' +
     'If unsure about a row, exclude it.\n\n' +
     `USER REQUEST:\n${b}\n\nSTRICT RULES:\n${rules || '(none)'}\n\nROWS (JSON):\n${JSON.stringify(payload).slice(0, 24000)}`;

@@ -4,9 +4,8 @@
  * Picks the endpoint that actually returns tabular/list JSON (not just the first XHR).
  */
 
-const { chromium } = require('playwright');
+const { getChromium, getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./scraper/stealth');
 const logger = require('../utils/logger');
-const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./scraper/stealth');
 const { discoverArcGISEndpoint } = require('./scraper/arcgis');
 const { probeRowCount } = require('../engine/adapters/rest');
 const { getGeminiModel, isAIAvailable } = require('./ai/geminiClient');
@@ -496,7 +495,7 @@ async function discoverCandidateUrlsFromPage(pageUrl, timeoutMs = 20000) {
   const seen = new Set();
 
   try {
-    browser = await chromium.launch(getStealthLaunchOptions());
+    browser = await getChromium().launch(getStealthLaunchOptions());
     const context = await browser.newContext(getStealthContextOptions());
     const page = await context.newPage();
     await injectStealthScripts(page);

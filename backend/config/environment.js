@@ -55,6 +55,8 @@ module.exports = {
   // Multi-agent auto-leads: @langchain/langgraph orchestrates Find → Verify → Read; same GEMINI_API_KEY + SERPER_API_KEY (optional split keys for billing only).
   // AUTO_LEADS_QUICK_ONLY=true — server default: Find + assistant “quick read” prose only (skip verify/read / browser extract). Client can also send JSON { quickOnly: true }.
   // AUTO_LEADS_SALES_SHAPE=true — after rows are returned, optional Gemini pass to sales_intelligence.sales_rows (project, phase, why_lead). No Street View / guaranteed GC names.
+  // NL discovery: NL_INTENT_MAX_SERPER (default 10), NL_INTENT_MIN_POOL (default 8 → triggers fallback queries), NL_INTENT_FALLBACK_QUERIES (default 4).
+  // Playwright: PLAYWRIGHT_PROXY_LIST / PLAYWRIGHT_PROXY_SERVER — use US residential or geo-near portals when sites block DC IPs; getChromium() uses playwright-extra + stealth when installed.
   // RAG (lead-gen prompts): RAG_ENABLED (default on), RAG_TOP_K — see services/ai/rag/leadGenRag.js
   // Playwright (browser): also reads PLAYWRIGHT_PROXY_LIST, PLAYWRIGHT_PROXY_SERVER, HTTPS_PROXY, HTTP_PROXY in stealth.js
   PLAYWRIGHT_HEADLESS: process.env.PLAYWRIGHT_HEADLESS !== 'false',

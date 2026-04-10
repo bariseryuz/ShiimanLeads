@@ -3,9 +3,8 @@
  * Uses Playwright + screenshot + Gemini to extract data. Returns same shape as REST/ArcGIS.
  */
 
-const { chromium } = require('playwright');
 const { extractFromScreenshot } = require('../../services/ai');
-const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('../../services/scraper/stealth');
+const { getChromium, getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('../../services/scraper/stealth');
 const logger = require('../../utils/logger');
 
 /**
@@ -33,7 +32,7 @@ async function fetch(url, manifest) {
   try {
     logger.info(`[Engine AI Vision] Starting for: ${url}`);
 
-    browser = await chromium.launch(getStealthLaunchOptions());
+    browser = await getChromium().launch(getStealthLaunchOptions());
     const context = await browser.newContext(getStealthContextOptions());
     const page = await context.newPage();
     await injectStealthScripts(page);

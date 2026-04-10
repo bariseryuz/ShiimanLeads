@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const jp = require('jsonpath');
-const { chromium } = require('playwright');
+const { getChromium } = require('../services/scraper/stealth');
 const { dbAll, dbGet, dbRun } = require('../db');
 const logger = require('../utils/logger');
 
@@ -520,7 +520,7 @@ router.get('/:id/sample', async (req, res) => {
       
     } else if (sourceConfig.type === 'html') {
       // For HTML sources, use Playwright to get sample
-      const browser = await chromium.launch(getStealthLaunchOptions());
+      const browser = await getChromium().launch(getStealthLaunchOptions());
       const context = await browser.newContext(getStealthContextOptions());
       const page = await context.newPage();
       await injectStealthScripts(page);

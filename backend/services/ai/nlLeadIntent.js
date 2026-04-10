@@ -15,6 +15,7 @@ const { sortUrls } = require('../candidateUrlSort');
 const { retrieveLeadGenContext, isRagEnabled } = require('./rag/leadGenRag');
 const { expandHighSignalSearchQueries } = require('./searchQueryExpansion');
 const { buildScoutTemporalQueries } = require('./scoutTemporalQueries');
+const { buildFallbackDiscoveryQueries } = require('./discoveryFallbackSearch');
 
 function parseIntentJson(text) {
   let t = String(text || '').trim();
@@ -282,8 +283,8 @@ async function runNlLeadIntentDiscovery(brief) {
         .filter(q => q.length > 5)
     )
   ].slice(0, 10);
-  const maxSerper = Math.min(10, parseInt(process.env.NL_INTENT_MAX_SERPER || '8', 10) || 8);
-  const nq = Math.min(queries.length, maxSerper);
+  const maxSerper = Math.min(12, parseInt(process.env.NL_INTENT_MAX_SERPER || '10', 10) || 10);
+  let nq = Math.min(queries.length, maxSerper);
   const collected = [];
   for (let i = 0; i < nq; i++) {
     try {
@@ -295,7 +296,27 @@ async function runNlLeadIntentDiscovery(brief) {
     await sleep(400);
   }
 
-  const deduped = dedupeSearchResults(collected);
+  let deduped = dedupeSearchResults(collected);
+  const minPool = Math.min(8, parseInt(process.env.NL_INTENT_MIN_POOL || '8', 10) || 8);
+  if (deduped.length < minPool && hasSerper()) {
+    const extraQs = buildFallbackDiscoveryQueries(brief, intent).filter(
+      q => !queries.includes(q)
+    );
+    const budgetLeft = Math.max(0, maxSerper - nq);
+    const take = Math.min(extraQs.length, budgetLeft, parseInt(process.env.NL_INTENT_FALLBACK_QUERIES || '4', 10) || 4);
+    for (let j = 0; j < take; j++) {
+      try {
+        const rows = await googleSearchOrganic(extraQs[j], { num: 10 });
+        rows.forEach(r => collected.push({ ...r, sourceQuery: extraQs[j] }));
+        logger.info(`[nlLeadIntent] fallback Serper query: ${extraQs[j].slice(0, 72)}…`);
+      } catch (e) {
+        logger.warn(`[nlLeadIntent] fallback Serper failed: ${e.message}`);
+      }
+      await sleep(400);
+    }
+    deduped = dedupeSearchResults(collected);
+  }
+
   const pool = deduped.slice(0, 30);
 
   let pickedUrls = await pickBestSourceUrls(pool, intent);

@@ -66,6 +66,10 @@ async function runAgentApiHunter(opts) {
   const maxSites = Math.min(12, Math.max(1, parseInt(opts.maxSites, 10) || 8));
   const intent = opts.intent && typeof opts.intent === 'object' ? opts.intent : {};
   const geo = String(intent.geography || '').trim();
+  const odcOpts = {};
+  if (intent.min_project_value_usd != null && Number.isFinite(Number(intent.min_project_value_usd))) {
+    odcOpts.minValuationUsd = Number(intent.min_project_value_usd);
+  }
 
   const collected = [];
   const urlsAttempted = [];
@@ -99,7 +103,7 @@ async function runAgentApiHunter(opts) {
       if (collected.length >= maxLeads) break;
       urlsAttempted.push(innerUrl);
 
-      let directRows = await fetchOpenDataSampleRows(innerUrl, Math.min(perUrlBudget, 28));
+      let directRows = await fetchOpenDataSampleRows(innerUrl, Math.min(perUrlBudget, 28), odcOpts);
       if (!directRows?.length && /featureserver|mapserver/i.test(innerUrl)) {
         try {
           directRows = await tryArcgisSampleRows(innerUrl, Math.min(perUrlBudget, 28));

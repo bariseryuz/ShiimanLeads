@@ -12,6 +12,15 @@ const { sortUrls } = require('../candidateUrlSort');
 const { runAgentVerifyFilterBatch } = require('./agentVerifyShape');
 const { AGENT_READ } = require('./agentConstants');
 
+function openDataFetchOpts(intent) {
+  const i = intent && typeof intent === 'object' ? intent : {};
+  const o = {};
+  if (i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))) {
+    o.minValuationUsd = Number(i.min_project_value_usd);
+  }
+  return o;
+}
+
 function isCatalogStubUrl(url) {
   try {
     const p = new URL(String(url)).pathname.toLowerCase();
@@ -31,7 +40,8 @@ function isCatalogStubUrl(url) {
  *   manifest: object,
  *   candidates: Array<{ url: string, title?: string }>,
  *   maxLeads: number,
- *   maxSites: number
+ *   maxSites: number,
+ *   intent?: object
  * }} opts
  * @returns {Promise<{ collected: object[], urlsAttempted: string[] }>}
  */
@@ -41,6 +51,8 @@ async function runAgentRead(opts) {
   const candidates = opts.candidates || [];
   const maxLeads = opts.maxLeads;
   const maxSites = opts.maxSites;
+  const intent = opts.intent && typeof opts.intent === 'object' ? opts.intent : {};
+  const odcOpts = openDataFetchOpts(intent);
 
   const collected = [];
   const urlsAttempted = [];
@@ -57,11 +69,11 @@ async function runAgentRead(opts) {
     try {
       const n = Math.min(maxLeads - collected.length, 25, perUrlBudget);
       const need = Math.max(n, 5);
-      let directRows = await fetchOpenDataSampleRows(url, need);
+      let directRows = await fetchOpenDataSampleRows(url, need, odcOpts);
       if (!directRows?.length) {
         const inner = sortUrls(await discoverEmbeddedDatasetUrls(url));
         for (const innerUrl of inner) {
-          directRows = await fetchOpenDataSampleRows(innerUrl, need);
+          directRows = await fetchOpenDataSampleRows(innerUrl, need, odcOpts);
           if (directRows?.length) {
             urlsAttempted.push(innerUrl);
             logger.info(`[agent:${AGENT_READ}] portal expand → ${innerUrl.slice(0, 90)}`);

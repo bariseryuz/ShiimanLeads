@@ -19,31 +19,45 @@ async function setupApiInterceptor(page) {
       const url = response.url();
       const status = response.status();
       
-      // Capture successful API responses
-      if (status === 200 && (
+      // XHR/Fetch: government portals often return JSON without a perfect Content-Type
+      if (status !== 200) return;
+      const looksApi =
         url.includes('GetIssuedPermit') ||
         url.includes('/query') ||
         url.includes('/api/') ||
-        url.includes('FeatureServer')
-      )) {
-        logger.info(`   📡 Captured API response: ${url.substring(url.lastIndexOf('/'))}`);
-        
-        try {
-          const contentType = response.headers()['content-type'] || '';
-          
-          if (contentType.includes('application/json')) {
-            const data = await response.json();
-            capturedResponses.push({
-              url: url,
-              status: status,
-              data: data,
-              timestamp: new Date()
-            });
-            logger.info(`   ✅ Extracted JSON: ${Object.keys(data).join(', ')}`);
+        url.includes('FeatureServer') ||
+        url.includes('MapServer') ||
+        /\/resource\/[0-9a-z]{4}-[0-9a-z]{4}/i.test(url) ||
+        /[?&]f=json\b/i.test(url) ||
+        /\.json(\?|$)/i.test(url.split('?')[0]);
+      if (!looksApi) return;
+
+      logger.debug(`   📡 API-shaped response: ${url.substring(Math.max(0, url.length - 96))}`);
+
+      try {
+        const contentType = (response.headers()['content-type'] || '').toLowerCase();
+        let data = null;
+        if (contentType.includes('json') || contentType.includes('javascript')) {
+          data = await response.json();
+        } else {
+          const text = await response.text();
+          try {
+            data = JSON.parse(text);
+          } catch {
+            return;
           }
-        } catch (parseErr) {
-          logger.warn(`   ⚠️ Could not parse response as JSON: ${parseErr.message}`);
         }
+        if (data && typeof data === 'object') {
+          capturedResponses.push({
+            url: url,
+            status: status,
+            data: data,
+            timestamp: new Date()
+          });
+          logger.info(`   ✅ Interceptor JSON keys: ${Array.isArray(data) ? `array(${data.length})` : Object.keys(data).slice(0, 8).join(', ')}`);
+        }
+      } catch (parseErr) {
+        logger.warn(`   ⚠️ Could not parse API response: ${parseErr.message}`);
       }
     } catch (err) {
       // Silently ignore response capture errors
@@ -71,14 +85,20 @@ async function waitForApiResponse(page, urlPattern, timeout = 120000) {
       { timeout }
     );
     
-    const contentType = response.headers()['content-type'] || '';
-    if (contentType.includes('application/json')) {
-      const data = await response.json();
-      logger.info(`   ✅ Intercepted API response from: ${urlPattern}`);
+    const contentType = (response.headers()['content-type'] || '').toLowerCase();
+    try {
+      if (contentType.includes('json') || contentType.includes('javascript')) {
+        const data = await response.json();
+        logger.info(`   ✅ Intercepted API response from: ${urlPattern}`);
+        return data;
+      }
+      const text = await response.text();
+      const data = JSON.parse(text);
+      logger.info(`   ✅ Intercepted JSON (nonstandard Content-Type) from: ${urlPattern}`);
       return data;
+    } catch {
+      return null;
     }
-    
-    return null;
   } catch (err) {
     logger.warn(`   ⏱️ Timeout waiting for API response: ${urlPattern}`);
     return null;

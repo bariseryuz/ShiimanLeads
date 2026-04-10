@@ -78,7 +78,8 @@ function getCompiledAutoLeadGraph() {
           manifest: state.manifest,
           candidates: state.discovery.candidate_sources,
           maxLeads: state.maxLeads,
-          maxSites: state.maxSites
+          maxSites: state.maxSites,
+          intent: state.discovery.intent
         });
         const rows = Array.isArray(collected) ? collected : [];
         return { collected: rows, urlsAttempted, hunterRan: false };

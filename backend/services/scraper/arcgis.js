@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { chromium } = require('playwright');
+const { getChromium } = require('./stealth');
 const { getStealthLaunchOptions, getStealthContextOptions, injectStealthScripts } = require('./stealth');
 
 const DEFAULT_HEADERS = {
@@ -78,7 +78,7 @@ function ensureArcGISParams(url) {
 }
 
 async function extractArcGISApiInfo(hubUrl, logger, navigationInstructions = []) {
-  const browser = await chromium.launch(getStealthLaunchOptions());
+  const browser = await getChromium().launch(getStealthLaunchOptions());
   const context = await browser.newContext(getStealthContextOptions());
   const page = await context.newPage();
   await injectStealthScripts(page);

@@ -73,6 +73,53 @@ async function fetchSocrataSample(host, resourceId, limit) {
   return res.data.slice(0, limit);
 }
 
+/** Common Socrata valuation / job-value field names — try SoQL $where when user wants commercial floor (e.g. > $299k). */
+const SOCRATA_VALUE_FIELDS = [
+  'valuation',
+  'permit_valuation',
+  'est_valuation',
+  'estimated_cost',
+  'job_value',
+  'total_valuation',
+  'declared_valuation',
+  'construction_value',
+  'project_value'
+];
+
+/**
+ * @param {string} host
+ * @param {string} resourceId
+ * @param {number} limit
+ * @param {number} minUsd
+ * @returns {Promise<object[]|null>}
+ */
+async function fetchSocrataSampleMinValuation(host, resourceId, limit, minUsd) {
+  const base = `https://${host}`;
+  const api = `${base.replace(/\/$/, '')}/resource/${resourceId}.json`;
+  const n = Number(minUsd);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  for (const field of SOCRATA_VALUE_FIELDS) {
+    try {
+      const res = await axios.get(api, {
+        params: {
+          $limit: limit,
+          $where: `${field} > ${Math.floor(n)}`
+        },
+        timeout: TIMEOUT,
+        validateStatus: s => s === 200,
+        ...getGlobalAxiosProxyOpts()
+      });
+      if (Array.isArray(res.data) && res.data.length) {
+        logger.info(`[openDataDirect] Socrata $where ${field} > ${n} → ${res.data.length} rows`);
+        return res.data.slice(0, limit);
+      }
+    } catch (e) {
+      logger.debug(`[openDataDirect] Socrata where ${field}: ${e.message}`);
+    }
+  }
+  return null;
+}
+
 /**
  * Item JSON → service URL → layer → /query
  */
@@ -139,16 +186,21 @@ function tryParseItemIdFromUrl(pageUrl) {
 /**
  * @param {string} pageUrl
  * @param {number} maxRows
+ * @param {{ minValuationUsd?: number }} [opts]
  * @returns {Promise<object[]|null>}
  */
-async function fetchOpenDataSampleRows(pageUrl, maxRows = 15) {
+async function fetchOpenDataSampleRows(pageUrl, maxRows = 15, opts = {}) {
   const limit = Math.min(Math.max(maxRows, 1), 50);
   const url = String(pageUrl || '').trim();
+  const minVal = opts && opts.minValuationUsd != null ? Number(opts.minValuationUsd) : null;
 
   const soc = parseSocrataResource(url);
   if (soc) {
     try {
-      const rows = await fetchSocrataSample(soc.host, soc.resourceId, limit);
+      let rows = await fetchSocrataSample(soc.host, soc.resourceId, limit);
+      if ((!rows || !rows.length) && minVal != null && Number.isFinite(minVal) && minVal > 0) {
+        rows = await fetchSocrataSampleMinValuation(soc.host, soc.resourceId, limit, minVal);
+      }
       if (rows?.length) {
         logger.info(`[openDataDirect] Socrata ${soc.resourceId} → ${rows.length} rows`);
         return rows;
@@ -176,5 +228,6 @@ module.exports = {
   parseSocrataResource,
   parseHubDatasetItemId,
   tryParseItemIdFromUrl,
-  fetchRowsFromArcgisItemId
+  fetchRowsFromArcgisItemId,
+  fetchSocrataSampleMinValuation
 };

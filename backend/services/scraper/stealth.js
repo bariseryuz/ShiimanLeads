@@ -5,6 +5,45 @@
 
 const logger = require('../../utils/logger');
 
+/**
+ * Prefer playwright-extra + stealth plugin when installed (package.json optional deps).
+ * Falls back to stock Playwright chromium.
+ * Residential / geo-matched proxies: set PLAYWRIGHT_PROXY_LIST or PLAYWRIGHT_PROXY_SERVER (US endpoints recommended for .gov).
+ */
+function getChromium() {
+  try {
+    const { chromium } = require('playwright-extra');
+    const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+    chromium.use(StealthPlugin());
+    return chromium;
+  } catch (e) {
+    logger.debug(`getChromium: using stock Playwright (${e.message})`);
+    return require('playwright').chromium;
+  }
+}
+
+/** US state → IANA timezone for browser context (reduces obvious mismatches on local portals). */
+const STATE_TZ = {
+  HI: 'Pacific/Honolulu',
+  TX: 'America/Chicago',
+  CA: 'America/Los_Angeles',
+  NY: 'America/New_York',
+  FL: 'America/New_York',
+  IL: 'America/Chicago',
+  WA: 'America/Los_Angeles'
+};
+
+/**
+ * @param {string} [stateCode] - two-letter US state
+ * @returns {string}
+ */
+function timezoneIdForState(stateCode) {
+  const st = String(stateCode || '')
+    .toUpperCase()
+    .slice(0, 2);
+  return STATE_TZ[st] || 'America/New_York';
+}
+
 /** Round-robin index for PLAYWRIGHT_PROXY_LIST */
 let proxyRoundRobin = 0;
 
@@ -108,11 +147,11 @@ function getStealthLaunchOptions() {
  * Get stealth context options
  * @returns {Object} Browser context options
  */
-function getStealthContextOptions() {
+function getStealthContextOptions(stateCode) {
   return {
     viewport: { width: 1440, height: 900 },
     locale: 'en-US',
-    timezoneId: 'America/New_York',
+    timezoneId: timezoneIdForState(stateCode),
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     extraHTTPHeaders: {
       'Accept-Language': 'en-US,en;q=0.9',
@@ -198,11 +237,10 @@ async function injectStealthScripts(page) {
 
 /**
  * Setup stealth browser with all protections
- * @param {Object} chromium - Playwright chromium object
  * @returns {Promise<Object>} { browser, context, page }
  */
-async function createStealthBrowser(chromium) {
-  const browser = await chromium.launch(getStealthLaunchOptions());
+async function createStealthBrowser() {
+  const browser = await getChromium().launch(getStealthLaunchOptions());
   const context = await browser.newContext(getStealthContextOptions());
   const page = await context.newPage();
   await injectStealthScripts(page);
@@ -210,11 +248,13 @@ async function createStealthBrowser(chromium) {
 }
 
 module.exports = {
+  getChromium,
   getStealthLaunchOptions,
   getStealthContextOptions,
   injectStealthScripts,
   createStealthBrowser,
   getNextProxyForLaunch: getProxyForLaunch,
   getProxyForLaunch,
-  parseProxyListFromEnv
+  parseProxyListFromEnv,
+  timezoneIdForState
 };

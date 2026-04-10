@@ -35,8 +35,8 @@ function createStructuredCaptureState() {
   return {
     batches: [],
     responseCount: 0,
-    maxResponses: 48,
-    maxBodyChars: 400_000
+    maxResponses: 64,
+    maxBodyChars: 500_000
   };
 }
 
@@ -45,6 +45,18 @@ function createStructuredCaptureState() {
  * @param {import('playwright').Page} page
  * @param {ReturnType<typeof createStructuredCaptureState>} state
  */
+function looksLikeJsonEndpointUrl(url) {
+  const u = String(url || '').toLowerCase();
+  return (
+    /\.json(\?|$)/i.test(u) ||
+    /\/resource\/[0-9a-z]{4}-[0-9a-z]{4}/i.test(u) ||
+    /[?&]f=json\b/i.test(u) ||
+    /featureserver\/\d+\/\d+\/query/i.test(u) ||
+    /\/query\?/i.test(u) ||
+    /\/api\/v[0-9]\//i.test(u)
+  );
+}
+
 function attachStructuredJsonListener(page, state) {
   page.on('response', async response => {
     if (state.responseCount >= state.maxResponses) return;
@@ -54,7 +66,14 @@ function attachStructuredJsonListener(page, state) {
       const status = response.status();
       if (status < 200 || status >= 300) return;
       const ct = (response.headers()['content-type'] || '').toLowerCase();
-      if (!ct.includes('json') && !ct.includes('javascript')) return;
+      const maybeJson =
+        ct.includes('json') ||
+        ct.includes('javascript') ||
+        ct.includes('geo+json') ||
+        (ct.includes('text/plain') && looksLikeJsonEndpointUrl(url)) ||
+        looksLikeJsonEndpointUrl(url);
+
+      if (!maybeJson) return;
 
       state.responseCount++;
       const text = await response.text();
@@ -160,10 +179,19 @@ function extractJsonLdInPage() {
 }
 
 /**
- * Heuristic: largest table with header row.
+ * Heuristic: largest table with header row (includes tables inside open shadow roots — ArcGIS / modern portals).
  */
 function extractLargestTableInPage() {
-  const tables = Array.from(document.querySelectorAll('table'));
+  function collectTables(root) {
+    const out = [];
+    if (!root || !root.querySelectorAll) return out;
+    root.querySelectorAll('table').forEach(t => out.push(t));
+    root.querySelectorAll('*').forEach(el => {
+      if (el.shadowRoot) out.push(...collectTables(el.shadowRoot));
+    });
+    return out;
+  }
+  const tables = collectTables(document);
   let best = null;
   let bestScore = 0;
   for (const t of tables) {

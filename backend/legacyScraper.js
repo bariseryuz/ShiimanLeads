@@ -7,7 +7,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const fs = require('fs');
-const { chromium } = require('playwright');
+const { getChromium } = require('./services/scraper/stealth');
 const axios = require('axios');
 const logger = require('./utils/logger');
 
@@ -291,7 +291,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
             
             try {
               // Launch browser briefly to accept cookies
-              const browser = await chromium.launch(getStealthLaunchOptions());
+              const browser = await getChromium().launch(getStealthLaunchOptions());
               const context = await browser.newContext(getStealthContextOptions());
               const arcGISpage = await context.newPage();
               await injectStealthScripts(arcGISpage);
@@ -496,7 +496,7 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
         if (source.forcePlaywrightOnly) {
           logger.info(`🎭 Force Playwright Only mode - bypassing JSON API`);
         }
-        const browser = await chromium.launch(getStealthLaunchOptions());
+        const browser = await getChromium().launch(getStealthLaunchOptions());
         const context = await browser.newContext(getStealthContextOptions());
         const page = await context.newPage();
         await injectStealthScripts(page);
@@ -518,7 +518,8 @@ async function scrapeForUser(userId, userSources, extractionLimits) {
           
           logger.info(`🌐 Navigating to: ${pageUrl}`);
           await page.goto(pageUrl, { waitUntil: 'commit', timeout: 90000 });
-          
+          await page.waitForLoadState('networkidle', { timeout: 25000 }).catch(() => {});
+
           // Wait for any table data to exist
           await page.locator('tr, li, .item, h3').first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
           await page.waitForTimeout(5000);
