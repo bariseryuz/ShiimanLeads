@@ -212,15 +212,56 @@ function filterUnhelpfulSearchLinks(rows) {
   });
 }
 
+function looksDataLikeUrl(url) {
+  const u = String(url || '').toLowerCase();
+  return (
+    /featureserver\/\d+|\/mapserver\//i.test(u) ||
+    /\/resource\/[0-9a-z]{4}-[0-9a-z]{4}/i.test(u) ||
+    /\/dataset\/[^/]+\/[0-9a-z]{4}-[0-9a-z]{4}/i.test(u) ||
+    /hub\.arcgis\.com\/datasets\//i.test(u) ||
+    /\/open-?data\//i.test(u) ||
+    /\/data\//i.test(u) ||
+    /[?&]f=json\b/i.test(u) ||
+    /\.json(\?|$)/i.test(u)
+  );
+}
+
+function looksArticleLikeResult(row) {
+  const link = String(row?.link || '').toLowerCase();
+  const title = String(row?.title || '').toLowerCase();
+  const snippet = String(row?.snippet || '').toLowerCase();
+  const blogHost =
+    /blog\./i.test(link) ||
+    /medium\.com|substack\.com|wordpress\.com|wixsite|blogspot/i.test(link);
+  const articlePath =
+    /\/(blog|news|insights|article|story|guide|opinion|press-release)\//i.test(link) ||
+    /-(guide|tips|best-practices|news)$/i.test(link.replace(/[/?#].*$/, ''));
+  const nonDataLanguage =
+    /(guide|how to|cost per sq ft|what is|top \d+|best \d+)/i.test(title) ||
+    /(guide|how to|sponsored|advertisement)/i.test(snippet);
+
+  return blogHost || articlePath || nonDataLanguage;
+}
+
+function prioritizeDataLikePool(rows) {
+  const clean = filterUnhelpfulSearchLinks(rows);
+  const dataLike = clean.filter(r => looksDataLikeUrl(r.link));
+  const maybePortal = clean.filter(r => !looksArticleLikeResult(r));
+  if (dataLike.length) return dataLike;
+  if (maybePortal.length) return maybePortal;
+  return clean;
+}
+
 async function pickBestSourceUrls(organicPool, intent) {
-  const pool = filterUnhelpfulSearchLinks(organicPool);
+  const pool = prioritizeDataLikePool(organicPool);
   if (!pool.length || !isAIAvailable()) return [];
   try {
     const model = getGeminiModel('discovery');
     const pack =
       'Pick up to 5 URLs most likely to yield ROW-LEVEL public records (permits, licenses, bids, violations).\n' +
       'Prefer: ArcGIS FeatureServer or MapServer layer URLs, Socrata, open-data APIs — NOT generic department homepages unless no better link exists.\n' +
-      'Never pick PDF or image URLs. Prefer links whose path includes FeatureServer, MapServer, "data", "permits", or hub.arcgis.com datasets.\n' +
+      'Never pick PDF/image/blog/news/guide URLs unless there are no portal/data URLs left.\n' +
+      'Prefer links whose path includes FeatureServer, MapServer, "data", "permits", resource/{id}, or hub.arcgis.com datasets.\n' +
       `Intent: ${JSON.stringify(intent)}\n\n` +
       'Candidates (title, link, snippet):\n' +
       JSON.stringify(
@@ -318,17 +359,18 @@ async function runNlLeadIntentDiscovery(brief) {
   }
 
   const pool = deduped.slice(0, 30);
+  const prioritizedPool = prioritizeDataLikePool(pool);
 
-  let pickedUrls = await pickBestSourceUrls(pool, intent);
+  let pickedUrls = await pickBestSourceUrls(prioritizedPool, intent);
   if (!pickedUrls.length) {
-    pickedUrls = pool
+    pickedUrls = prioritizedPool
       .filter(r => looksLikeArcGisDataUrl(r.link) || /\/mapserver\//i.test(String(r.link || '')))
       .map(r => r.link)
       .slice(0, 3);
   }
-  // Last resort: any organic HTTPS links so brief-only flows can still try browser extraction
+  // Last resort: still avoid obvious article/blog pages.
   if (!pickedUrls.length && pool.length) {
-    pickedUrls = pool
+    pickedUrls = prioritizedPool
       .map(r => r.link)
       .filter(u => typeof u === 'string' && /^https?:\/\//i.test(u))
       .slice(0, 5);
@@ -337,7 +379,7 @@ async function runNlLeadIntentDiscovery(brief) {
   pickedUrls = sortUrls(pickedUrls);
 
   const candidate_sources = pickedUrls.map(url => {
-    const row = pool.find(r => r.link === url);
+    const row = prioritizedPool.find(r => r.link === url) || pool.find(r => r.link === url);
     return {
       title: row?.title || 'Source',
       url,

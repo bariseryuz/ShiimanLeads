@@ -11,6 +11,67 @@ const { replaceDynamicDates } = require('../scraper/helpers');
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
+ * Best-effort click for flaky gov/data portals:
+ * 1) regular click
+ * 2) scroll into view + click
+ * 3) force click
+ * 4) page.evaluate click by selector or text fallback
+ */
+async function resilientClick(page, selector, timeoutMs = 10000) {
+  const sel = String(selector || '').trim();
+  if (!sel) throw new Error('Missing click selector');
+  const loc = page.locator(sel).first();
+
+  try {
+    await loc.click({ timeout: timeoutMs });
+    return { ok: true, method: 'click' };
+  } catch {
+    /* fallback */
+  }
+
+  try {
+    await loc.scrollIntoViewIfNeeded({ timeout: 4000 }).catch(() => {});
+    await loc.click({ timeout: 6000 });
+    return { ok: true, method: 'scroll+click' };
+  } catch {
+    /* fallback */
+  }
+
+  try {
+    await loc.click({ timeout: 4000, force: true });
+    return { ok: true, method: 'force-click' };
+  } catch {
+    /* fallback */
+  }
+
+  const jsClicked = await page.evaluate((raw) => {
+    const s = String(raw || '').trim();
+    if (!s) return false;
+    try {
+      const node = document.querySelector(s);
+      if (node && typeof node.click === 'function') {
+        node.click();
+        return true;
+      }
+    } catch {
+      /* ignore selector parse failure */
+    }
+    const txt = s.replace(/^(text=|button:has-text\(|a:has-text\(|['"])/i, '').replace(/[)"']+$/g, '').trim();
+    if (!txt) return false;
+    const all = Array.from(document.querySelectorAll('button, a, [role="button"], input[type="submit"]'));
+    const hit = all.find(el => String(el.textContent || '').trim().toLowerCase().includes(txt.toLowerCase()));
+    if (hit && typeof hit.click === 'function') {
+      hit.click();
+      return true;
+    }
+    return false;
+  }, sel);
+
+  if (jsClicked) return { ok: true, method: 'js-click' };
+  return { ok: false, method: 'failed' };
+}
+
+/**
  * Step 1: Ask Gemini to convert natural language instructions into JSON actions
  */
 async function parseNavigationSteps(instructions, pageUrl, screenshot) {
@@ -150,8 +211,14 @@ async function executeAction(page, action) {
   try {
     switch (action.type) {
       case 'click':
-        // Smart Click: Find element, scroll to it, and click
-        await page.locator(action.selector).first().click({ timeout: 10000 });
+        // Resilient click: retry with multiple fallback strategies.
+        {
+          const out = await resilientClick(page, action.selector, 10000);
+          if (!out.ok) {
+            throw new Error(`click failed for selector "${action.selector}" after fallback attempts`);
+          }
+          logger.info(`   ✅ Clicked using ${out.method}`);
+        }
         await page.waitForTimeout(1500);
         return { success: true };
 
@@ -200,10 +267,15 @@ async function navigateAutonomously(page, instructions) {
     if (!actions || actions.length === 0) return { success: false, shouldExtract: true };
 
     let finalShouldExtract = false;
+    let failCount = 0;
     for (const action of actions) {
       const result = await executeAction(page, action);
       if (result.shouldExtract) finalShouldExtract = true;
-      if (!result.success && action.type !== 'wait') break;
+      if (!result.success && action.type !== 'wait') {
+        failCount += 1;
+        // Don't abort on first failed click; gov portals can hide one control but still be extractable.
+        if (failCount >= 2) break;
+      }
     }
 
     return { success: true, shouldExtract: finalShouldExtract };
