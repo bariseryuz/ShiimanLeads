@@ -10,10 +10,12 @@
 
 const logger = require('../../utils/logger');
 const { runAgentFind } = require('./agentFind');
+const { runAgentFindFast } = require('./agentFindFast');
 const { runAgentVerifyPlan, runAgentVerifyFilterBatch } = require('./agentVerifyShape');
 const { runAgentRead } = require('./agentRead');
 const { AGENT_FIND, AGENT_READ, AGENT_VERIFY, AGENT_API_HUNTER } = require('./agentConstants');
 const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
+const { buildAutoLeadQuickLeads } = require('./autoLeadQuickLeads');
 const { runAgentApiHunter } = require('./agentApiHunter');
 const { enrichSalesIntelligenceTable } = require('./salesIntelligenceEnrichment');
 
@@ -179,14 +181,17 @@ async function runAutoLeadAgentPipeline(opts) {
     logger.info(
       `[agent-pipeline] quick_only — ${AGENT_FIND} + assistant prose (skip ${AGENT_VERIFY}/${AGENT_READ})`
     );
-    const discovery = await runAgentFind(b);
+    const discovery = await runAgentFindFast(b);
     const noUrls = !discovery.candidate_sources?.length;
     const candidate_sources = noUrls ? [] : discovery.candidate_sources;
+    const quickLeads = noUrls
+      ? []
+      : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
     const quick_read = await buildAutoLeadQuickRead({
       brief: b,
       intent: discovery.intent,
       candidate_sources,
-      leads: [],
+      leads: quickLeads,
       urls_attempted: [],
       noSearchHits: noUrls
     });
@@ -203,8 +208,15 @@ async function runAutoLeadAgentPipeline(opts) {
       results_pooled: discovery.results_pooled,
       candidate_sources,
       urls_attempted: [],
-      leads: [],
-      field_schema: null,
+      leads: quickLeads,
+      field_schema: quickLeads.length
+        ? {
+            lead_title: 'Opportunity label',
+            location: 'Inferred geography',
+            why_opportunity: 'Why this looks promising from search snippets',
+            source_url: 'Public source URL'
+          }
+        : null,
       strict_match_rules: null,
       strict_filter_applied: false,
       note: noUrls
