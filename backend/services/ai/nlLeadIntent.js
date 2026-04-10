@@ -14,6 +14,7 @@ const { fetchOpenDataSampleRows } = require('../openDataDirectSample');
 const { sortUrls } = require('../candidateUrlSort');
 const { retrieveLeadGenContext, isRagEnabled } = require('./rag/leadGenRag');
 const { expandHighSignalSearchQueries } = require('./searchQueryExpansion');
+const { buildScoutTemporalQueries } = require('./scoutTemporalQueries');
 
 function parseIntentJson(text) {
   let t = String(text || '').trim();
@@ -266,6 +267,7 @@ async function runNlLeadIntentDiscovery(brief) {
   }
 
   const baseQueries = buildSerperQueries(intent);
+  const scoutQueries = buildScoutTemporalQueries(intent);
   let expanded = [];
   try {
     const ex = await expandHighSignalSearchQueries(brief, intent);
@@ -275,7 +277,7 @@ async function runNlLeadIntentDiscovery(brief) {
   }
   const queries = [
     ...new Set(
-      [...expanded, ...baseQueries]
+      [...scoutQueries, ...expanded, ...baseQueries]
         .map(q => String(q || '').trim())
         .filter(q => q.length > 5)
     )

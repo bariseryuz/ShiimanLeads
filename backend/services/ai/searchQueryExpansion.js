@@ -53,6 +53,8 @@ async function expandHighSignalSearchQueries(brief, intent) {
     'You are a B2B construction and public-records lead specialist.\n' +
     'Given the user brief and structured intent, output 5 DISTINCT Google search queries that maximize the chance of finding ' +
     'ROW-LEVEL public data: building permits, open-data portals, ArcGIS FeatureServer / MapServer, Socrata, agency project or permit lists.\n' +
+    'Include at least one query aimed at PROJECT TIMING signals when relevant (e.g. topping out, crane watch, pipeline, large commercial permit bands) — ' +
+    'B2B window/glazing/shade leads often track 6–12 months behind shell completion.\n' +
     'Avoid vague blog-only queries. Prefer queries that include: jurisdiction name, permit or project type, ' +
     '"open data" OR "GIS" OR "FeatureServer" OR "data portal", and when the brief implies large projects, ' +
     'signals like valuation bands, new construction, commercial, multifamily, or (if relevant) major development names or master plans.\n' +

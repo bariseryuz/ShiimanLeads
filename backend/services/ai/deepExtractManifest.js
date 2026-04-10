@@ -61,7 +61,10 @@ async function buildManifestFromBrief(brief) {
     'Rules:\n' +
     '- field_schema: 4–12 keys. Keys must be stable snake_case. Descriptions must match the user brief.\n' +
     '- Do NOT invent contact emails unless the user asked for contacts and the page type usually has them.\n' +
-    '- navigation_instructions: write as ordered steps (1. 2. 3.). Context first: what site pattern, then path to tabular data. Prefer stable UI paths (main nav → department → permits/open data) over exploratory clicking.\n\n' +
+    '- navigation_instructions: write as ordered steps (1. 2. 3.). Context first: what site pattern, then path to tabular data. ' +
+    'For government data portals: prefer finding Search Permits, Open Data, GIS, API, Socrata, or ArcGIS Hub links over scraping marketing homepage text; ' +
+    'if the page is a catalog, look for embedded dataset or JSON/API links before generic body text.\n' +
+    '- strict_match_rules: when the brief implies fenestration, glazing, shades, or curtain wall, require permit/description text to align with those trades when such fields exist.\n\n' +
     (ragContext ? `Retrieved domain knowledge (public data patterns — user brief still wins):\n${ragContext}\n\n` : '') +
     `User brief:\n${b.slice(0, 6000)}`;
 

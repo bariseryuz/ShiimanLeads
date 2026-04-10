@@ -1,8 +1,8 @@
 /**
  * Multi-agent orchestration for POST /api/discover/auto-leads
  *
- * Implemented with @langchain/langgraph (StateGraph): three nodes + conditional routing.
- * Agent A = find | Agent C = verify (plan) | Agent B = read
+ * Implemented with @langchain/langgraph (StateGraph): find → verify → read → (if no rows) api_hunter.
+ * Agent A = find (scout queries) | Agent C = verify (plan) | Agent B = read | api_hunter = stubborn JSON/Serper
  *
  * Same API keys as before (GEMINI + SERPER); LangGraph manages flow, not credentials.
  */
@@ -11,8 +11,10 @@ const logger = require('../../utils/logger');
 const { runAgentFind } = require('./agentFind');
 const { runAgentVerifyPlan } = require('./agentVerifyShape');
 const { runAgentRead } = require('./agentRead');
-const { AGENT_FIND, AGENT_READ, AGENT_VERIFY } = require('./agentConstants');
+const { AGENT_FIND, AGENT_READ, AGENT_VERIFY, AGENT_API_HUNTER } = require('./agentConstants');
 const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
+const { runAgentApiHunter } = require('./agentApiHunter');
+const { enrichSalesIntelligenceTable } = require('./salesIntelligenceEnrichment');
 
 function dedupeLeads(rows, maxLeads) {
   const seen = new Set();
@@ -32,7 +34,7 @@ function dedupeLeads(rows, maxLeads) {
 let compiledGraphPromise = null;
 
 /**
- * Build once: Find → (if URLs) Verify → Read → END; if no URLs Find → END.
+ * Build once: Find → (if URLs) Verify → Read → (if 0 rows) api_hunter → END; if no URLs Find → END.
  * Uses dynamic import because @langchain/langgraph is ESM-only.
  */
 function getCompiledAutoLeadGraph() {
@@ -50,7 +52,8 @@ function getCompiledAutoLeadGraph() {
         manifest: Annotation(),
         collected: Annotation(),
         urlsAttempted: Annotation(),
-        noUrls: Annotation()
+        noUrls: Annotation(),
+        hunterRan: Annotation()
       });
 
       async function nodeFind(state) {
@@ -77,13 +80,39 @@ function getCompiledAutoLeadGraph() {
           maxLeads: state.maxLeads,
           maxSites: state.maxSites
         });
-        return { collected, urlsAttempted };
+        const rows = Array.isArray(collected) ? collected : [];
+        return { collected: rows, urlsAttempted, hunterRan: false };
+      }
+
+      async function nodeApiHunter(state) {
+        const rows = Array.isArray(state.collected) ? state.collected : [];
+        if (rows.length) {
+          return {};
+        }
+        logger.info(`[langgraph] node ${AGENT_API_HUNTER} (stubborn JSON / Serper)`);
+        const maxSites = Math.min(12, parseInt(state.maxSites, 10) + 5);
+        const { collected, urlsAttempted } = await runAgentApiHunter({
+          brief: state.brief,
+          manifest: state.manifest,
+          candidates: state.discovery.candidate_sources,
+          maxLeads: state.maxLeads,
+          maxSites,
+          intent: state.discovery.intent
+        });
+        const prev = Array.isArray(state.urlsAttempted) ? state.urlsAttempted : [];
+        const merged = [...prev, ...(urlsAttempted || [])];
+        return {
+          collected: Array.isArray(collected) ? collected : [],
+          urlsAttempted: merged,
+          hunterRan: true
+        };
       }
 
       const graph = new StateGraph(AutoLeadState)
         .addNode('find', nodeFind)
         .addNode('verify', nodeVerify)
         .addNode('read', nodeRead)
+        .addNode('api_hunter', nodeApiHunter)
         .addEdge(START, 'find')
         .addConditionalEdges(
           'find',
@@ -91,7 +120,15 @@ function getCompiledAutoLeadGraph() {
           { end: END, verify: 'verify' }
         )
         .addEdge('verify', 'read')
-        .addEdge('read', END);
+        .addConditionalEdges(
+          'read',
+          state => {
+            const n = Array.isArray(state.collected) ? state.collected.length : 0;
+            return n > 0 ? 'end' : 'hunt';
+          },
+          { end: END, hunt: 'api_hunter' }
+        )
+        .addEdge('api_hunter', END);
 
       return graph.compile();
     })();
@@ -213,12 +250,17 @@ async function runAutoLeadAgentPipeline(opts) {
   const manifest = final.manifest;
   const collected = Array.isArray(final.collected) ? final.collected : [];
   const urlsAttempted = Array.isArray(final.urlsAttempted) ? final.urlsAttempted : [];
+  const hunterRan = !!final.hunterRan;
 
   const leads = dedupeLeads(collected, maxLeads);
 
-  const note = !leads.length && urlsAttempted.length
+  let note = !leads.length && urlsAttempted.length
     ? 'Search ran but no rows were extracted. Try different wording, or use “Extract to my format” on a specific URL.'
     : null;
+  if (!leads.length && hunterRan) {
+    note =
+      'Read and API-Hunter exhausted embedded JSON/Socrata/ArcGIS probes for candidate URLs. Try a more specific portal link, or add the dataset as a JSON API source.';
+  }
 
   const quick_read = await buildAutoLeadQuickRead({
     brief: b,
@@ -229,13 +271,27 @@ async function runAutoLeadAgentPipeline(opts) {
     noSearchHits: false
   });
 
+  const agent_pipeline = [AGENT_FIND, `${AGENT_VERIFY} (plan+filter)`, AGENT_READ];
+  if (hunterRan) agent_pipeline.push(AGENT_API_HUNTER);
+
+  let sales_intelligence = null;
+  if (String(process.env.AUTO_LEADS_SALES_SHAPE || '').toLowerCase() === 'true' && leads.length) {
+    try {
+      const si = await enrichSalesIntelligenceTable({ brief: b, intent: discovery.intent, leads });
+      if (si?.sales_rows?.length) sales_intelligence = si;
+    } catch (e) {
+      logger.warn(`runAutoLeadAgentPipeline sales shape: ${e.message}`);
+    }
+  }
+
   return {
     success: true,
     mode: 'auto_leads',
     orchestration: 'langgraph',
-    agent_pipeline: [AGENT_FIND, `${AGENT_VERIFY} (plan+filter)`, AGENT_READ],
+    agent_pipeline,
     quick_only: false,
     ...(quick_read ? { quick_read } : {}),
+    ...(sales_intelligence ? { sales_intelligence } : {}),
     intent: discovery.intent,
     search_queries_used: discovery.search_queries_used,
     search_queries_expanded: discovery.search_queries_expanded,
