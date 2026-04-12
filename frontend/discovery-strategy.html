@@ -58,16 +58,48 @@
     .lead-dashboard-inner .dashboard-note {
       font-size: 0.85rem; color: #64748b; margin: 0 0 1rem 0; line-height: 1.5; padding: 0.65rem 0.85rem; background: #fff; border-radius: 8px; border: 1px dashed #cbd5e1;
     }
-    .lead-cards-grid {
-      display: grid; gap: 0.85rem;
-      grid-template-columns: 1fr;
+    .lead-slider-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
     }
-    @media (min-width: 640px) {
-      .lead-cards-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+    .lead-slider-nav {
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+      border-radius: 999px;
+      width: 30px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      flex: 0 0 auto;
+      font-size: 0.95rem;
+      line-height: 1;
+    }
+    .lead-slider-nav:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .lead-slider-track {
+      display: flex;
+      gap: 0.85rem;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      padding: 0.15rem 0.1rem 0.4rem;
+      width: 100%;
+      scrollbar-width: thin;
+    }
+    .lead-slide {
+      flex: 0 0 min(360px, 92%);
+      scroll-snap-align: start;
     }
     .lead-card {
       background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 1rem 1rem 0.85rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      height: 100%;
     }
     .lead-card__head { font-size: 0.75rem; font-weight: 600; color: #64748b; margin-bottom: 0.5rem; }
     .lead-card__id { color: #0f172a; font-weight: 700; }
@@ -94,6 +126,32 @@
     }
     .lead-card__dl dd { margin: 0 0 0.35rem 0; font-size: 0.82rem; color: #0f172a; line-height: 1.4; word-break: break-word; }
     .lead-card__empty-note { font-size: 0.78rem; color: #94a3b8; font-style: italic; margin: 0.25rem 0 0.5rem 0; }
+    .lead-card__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-top: 0.8rem;
+      padding-top: 0.65rem;
+      border-top: 1px dashed #e2e8f0;
+    }
+    .lead-card__btn {
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #0f172a;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.32rem 0.62rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .lead-card__btn:hover { background: #e2e8f0; }
+    .lead-card__btn--primary {
+      border-color: #60a5fa;
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .lead-card__btn--primary:hover { background: #dbeafe; }
     .quick-read-block {
       margin: 0 0 1.25rem 0;
       padding: 1.1rem 1.15rem;
@@ -104,6 +162,15 @@
     }
     .quick-read-block h3 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #5b21b6; font-weight: 600; }
     .quick-read-body { margin: 0; font-size: 0.95rem; color: #1e293b; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    #btnAutoLeads {
+      background: #d1d5db;
+      color: #111827;
+      border: 1px solid #9ca3af;
+    }
+    #btnAutoLeads:hover {
+      background: #9ca3af;
+      color: #111827;
+    }
     @media (max-width: 980px) {
       .desktop-nav { gap: 0.5rem !important; }
       .nav-links { gap: 0.9rem !important; }
@@ -130,7 +197,7 @@
           <a href="/" style="color: #000000; font-weight: 500;"><img src="icons/home.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Home</a>
           <a href="/client-portal.html" style="color: #000000; font-weight: 500;"><img src="icons/dashboard.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Dashboard</a>
           <a href="/my-sources.html" style="color: #000000; font-weight: 500;"><img src="icons/sources.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Sources</a>
-          <a href="/discovery-strategy.html" style="color: #0066cc; font-weight: 600;"><img src="icons/search.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;" onerror="this.style.display='none'"> AI Discovery</a>
+          <a href="/discovery-strategy.html" style="color: #0066cc; font-weight: 600;"><img src="icons/search.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;" onerror="this.style.display='none'"> AI Lead Generator</a>
         </div>
 
         <div class="profile-dropdown-container" style="display: flex; align-items: center; gap: 0.5rem; position: relative; cursor: pointer;" onclick="toggleProfileDropdown(event)">
@@ -222,7 +289,6 @@
 
     <section id="leadDashboard" class="lead-dashboard-section" style="display:none;" aria-label="Lead run results"></section>
 
-    <p style="text-align:center;margin-top:1.5rem;"><a href="/profile.html">← Profile</a> · <a href="/my-sources.html">My sources</a> (ongoing monitoring)</p>
   </div>
 
   <script>
@@ -501,6 +567,24 @@
       return out;
     }
 
+    function extractLeadSourceUrl(flat) {
+      if (!flat || typeof flat !== 'object') return '';
+      var ci = ciKeyMap(flat);
+      var url = pickFirstScalar(ci, [
+        'source_url', 'sourceurl', 'url', 'link', 'href', 'monitor_url', 'resource_url', 'dataset_url'
+      ]);
+      if (!url) {
+        for (var k in flat) {
+          if (!Object.prototype.hasOwnProperty.call(flat, k)) continue;
+          var v = flat[k];
+          if (typeof v !== 'string') continue;
+          if (/^https?:\/\//i.test(v)) { url = v; break; }
+        }
+      }
+      var s = String(url || '').trim();
+      return /^https?:\/\//i.test(s) ? s : '';
+    }
+
     function buildSingleLeadCardHtml(row, fieldSchema) {
       var flat = unwrapLeadRow(row);
       if (!flat) return '';
@@ -556,6 +640,15 @@
         html += '<dl class="lead-card__dl">' + detHtml + '</dl>';
       } else {
         html += '<p class="lead-card__empty-note">No human-readable fields in this sample (often a map/GIS layer). Try a more specific source or wording.</p>';
+      }
+
+      var srcUrl = extractLeadSourceUrl(flat);
+      if (srcUrl) {
+        var leadTitle = (flat.lead_title || flat.title || n.type || n.line1 || 'Discovered source');
+        html += '<div class="lead-card__actions">' +
+          '<button type="button" class="lead-card__btn lead-card__btn--primary" data-save-lead-url="' + escapeAttr(srcUrl) + '" data-save-lead-title="' + escapeAttr(String(leadTitle).slice(0, 140)) + '">Save source</button>' +
+          '<a class="lead-card__btn" href="' + escapeAttr(srcUrl) + '" target="_blank" rel="noopener">Open source</a>' +
+          '</div>';
       }
 
       html += '</div></article>';
@@ -762,12 +855,47 @@
       if (!leads || !leads.length) {
         return '<p style="color:#64748b;font-size:0.9rem;margin:0;">No rows in this extract.</p>';
       }
-      var html = '<div class="lead-cards-grid">';
+      var html = '<div class="lead-slider-wrap">' +
+        '<button type="button" class="lead-slider-nav" data-slide-dir="-1" aria-label="Previous lead">&#9664;</button>' +
+        '<div class="lead-slider-track" id="leadSliderTrack">';
       for (var i = 0; i < leads.length; i++) {
-        html += buildSingleLeadCardHtml(leads[i], fieldSchema);
+        html += '<div class="lead-slide">' + buildSingleLeadCardHtml(leads[i], fieldSchema) + '</div>';
       }
-      html += '</div>';
+      html += '</div>' +
+        '<button type="button" class="lead-slider-nav" data-slide-dir="1" aria-label="Next lead">&#9654;</button>' +
+        '</div>';
       return html;
+    }
+
+    async function saveLeadSource(url, title) {
+      var clean = String(url || '').trim();
+      if (!/^https?:\/\//i.test(clean)) {
+        alert('No valid source URL found for this card.');
+        return;
+      }
+      try {
+        var res = await fetch('/api/discover/monitor', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: String(title || 'Discovered source').slice(0, 200),
+            url: clean,
+            keyword: 'Saved from AI Lead Generator',
+            triggerLogic: 'Saved from lead card',
+            suggestedFrequency: 'daily',
+            signalCategory: 'permits'
+          })
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+          alert(data.error || 'Could not save this source');
+          return;
+        }
+        alert(data.message || 'Saved. You can manage it under My sources.');
+      } catch (e) {
+        alert(e.message || 'Network error while saving source');
+      }
     }
 
     function renderAutoLeads(data) {
@@ -859,6 +987,22 @@
       html += '</div>';
 
       dash.innerHTML = html;
+      var slider = dash.querySelector('#leadSliderTrack');
+      if (slider) {
+        dash.querySelectorAll('button[data-slide-dir]').forEach(function (b) {
+          b.onclick = function () {
+            var dir = parseInt(b.getAttribute('data-slide-dir'), 10) || 0;
+            slider.scrollBy({ left: dir * Math.max(280, Math.floor(slider.clientWidth * 0.82)), behavior: 'smooth' });
+          };
+        });
+      }
+      dash.querySelectorAll('button[data-save-lead-url]').forEach(function (b) {
+        b.onclick = function () {
+          var u = b.getAttribute('data-save-lead-url') || '';
+          var t = b.getAttribute('data-save-lead-title') || 'Discovered source';
+          saveLeadSource(u, t);
+        };
+      });
       dash.style.display = 'block';
       dash.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
