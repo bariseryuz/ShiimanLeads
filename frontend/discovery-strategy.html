@@ -104,9 +104,68 @@
     }
     .quick-read-block h3 { margin: 0 0 0.5rem 0; font-size: 1rem; color: #5b21b6; font-weight: 600; }
     .quick-read-body { margin: 0; font-size: 0.95rem; color: #1e293b; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+    @media (max-width: 980px) {
+      .desktop-nav { gap: 0.5rem !important; }
+      .nav-links { gap: 0.9rem !important; }
+      .nav-links a { font-size: 0.78rem !important; }
+      #userName { display: none; }
+    }
+    @media (max-width: 700px) {
+      .nav-links a img { display: none; }
+      .nav-links { gap: 0.6rem !important; }
+      .strategy-wrap { margin-top: 86px; }
+    }
   </style>
 </head>
 <body>
+  <!-- Top Navigation Bar -->
+  <nav class="navbar" style="background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+    <div class="nav-container">
+      <a href="/" style="text-decoration: none;">
+        <span class="brand-name" style="font-weight: 700; color: #000000; font-size: 1.125rem;">Shiiman Leads</span>
+      </a>
+
+      <div class="desktop-nav" style="display: flex; align-items: center; gap: 1rem;">
+        <div class="nav-links">
+          <a href="/" style="color: #000000; font-weight: 500;"><img src="icons/home.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Home</a>
+          <a href="/client-portal.html" style="color: #000000; font-weight: 500;"><img src="icons/dashboard.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Dashboard</a>
+          <a href="/my-sources.html" style="color: #000000; font-weight: 500;"><img src="icons/sources.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;"> Sources</a>
+          <a href="/discovery-strategy.html" style="color: #0066cc; font-weight: 600;"><img src="icons/search.svg" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;" onerror="this.style.display='none'"> AI Discovery</a>
+        </div>
+
+        <div class="profile-dropdown-container" style="display: flex; align-items: center; gap: 0.5rem; position: relative; cursor: pointer;" onclick="toggleProfileDropdown(event)">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #0066cc, #8b5cf6); display: flex; align-items: center; justify-content: center; color: white; font-weight: 600; font-size: 0.875rem;" id="userAvatar">
+            U
+          </div>
+          <span style="font-weight: 600; color: #000000; font-size: 0.813rem;" id="userName">Loading...</span>
+          <svg style="width: 16px; height: 16px; color: #000000;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+          </svg>
+
+          <div class="profile-dropdown-menu" id="profileDropdown" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 0.5rem; background: rgba(0, 0, 0, 0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.1); min-width: 220px; z-index: 1000; overflow: hidden;">
+            <div style="padding: 0.75rem 1rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+              <div style="font-weight: 600; color: #ffffff; font-size: 0.875rem;" id="dropdownUserName">Loading...</div>
+              <div style="color: rgba(255,255,255,0.6); font-size: 0.75rem;" id="dropdownUserEmail">email@example.com</div>
+            </div>
+            <a href="/profile.html" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; color: rgba(255,255,255,0.9); text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">
+              <img src="icons/user.svg" style="width: 16px; height: 16px; filter: brightness(0) invert(1);">
+              <span style="font-size: 0.875rem;">Profile</span>
+            </a>
+            <a href="/admin-dashboard.html" id="adminDashboardLink" style="display: none; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; color: rgba(255,255,255,0.9); text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='transparent'">
+              <img src="icons/admin.svg" style="width: 16px; height: 16px; filter: brightness(0) invert(1);" onerror="this.style.display='none'">
+              <span style="font-size: 0.875rem;">⚡ Admin</span>
+            </a>
+            <div style="border-top: 1px solid rgba(255,255,255,0.1); margin: 0.25rem 0;"></div>
+            <a href="#" onclick="logout(); return false;" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem; color: #ff6b6b; text-decoration: none; transition: all 0.2s;" onmouseover="this.style.background='rgba(220,38,38,0.2)'" onmouseout="this.style.background='transparent'">
+              <img src="icons/logout.svg" style="width: 16px; height: 16px; filter: brightness(0) saturate(100%) invert(59%) sepia(73%) saturate(2441%) hue-rotate(330deg) brightness(101%) contrast(103%);">
+              <span style="font-size: 0.875rem; font-weight: 500;">Sign Out</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
   <div class="strategy-wrap">
     <div class="strategy-card">
       <h1>Get leads</h1>
@@ -1134,8 +1193,59 @@
       }
     }
 
+    function toggleProfileDropdown(event) {
+      event.stopPropagation();
+      var dropdown = document.getElementById('profileDropdown');
+      if (!dropdown) return;
+      dropdown.style.display = dropdown.style.display === 'none' || !dropdown.style.display ? 'block' : 'none';
+    }
+
+    function closeProfileDropdown() {
+      var dropdown = document.getElementById('profileDropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    }
+
+    async function logout() {
+      try {
+        await fetch('/logout', { method: 'POST', credentials: 'include' });
+      } catch (e) {
+        /* ignore */
+      }
+      window.location.href = '/login.html';
+    }
+
+    document.addEventListener('click', function () {
+      closeProfileDropdown();
+    });
+
     fetch('/api/me', { credentials: 'include' }).then(function (r) {
-      if (r.status === 401) window.location.href = '/login.html';
+      if (r.status === 401) {
+        window.location.href = '/login.html';
+        return null;
+      }
+      return r.json();
+    }).then(function (data) {
+      if (!data || !data.user) return;
+      var user = data.user;
+      var username = String(user.username || user.name || 'User');
+      var email = String(user.email || '');
+      var first = username.trim().charAt(0).toUpperCase() || 'U';
+
+      var userNameEl = document.getElementById('userName');
+      var avatarEl = document.getElementById('userAvatar');
+      var dName = document.getElementById('dropdownUserName');
+      var dEmail = document.getElementById('dropdownUserEmail');
+      var adminLink = document.getElementById('adminDashboardLink');
+
+      if (userNameEl) userNameEl.textContent = username;
+      if (avatarEl) avatarEl.textContent = first;
+      if (dName) dName.textContent = username;
+      if (dEmail) dEmail.textContent = email || 'No email';
+      if (adminLink && (user.role === 'admin' || user.role === 'superadmin')) {
+        adminLink.style.display = 'flex';
+      }
+    }).catch(function () {
+      window.location.href = '/login.html';
     });
   </script>
 </body>
