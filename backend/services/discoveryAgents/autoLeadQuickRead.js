@@ -43,7 +43,7 @@ async function buildAutoLeadQuickRead(input) {
   const prompt =
     'Write a short, conversational reply (2–4 brief paragraphs).\n' +
     '- Start naturally (e.g. acknowledge the place and what they sell / track).\n' +
-    '- Explain where the opportunity usually shows up for this kind of request (permits, open data, major projects) without inventing fake project names, dollar amounts, or contacts.\n' +
+    '- Explain where the opportunity usually shows up for this kind of request based on intent (industry pages, company sites, hiring signals, permits, datasets, tenders, announcements, etc.) without inventing fake names, dollar amounts, or contacts.\n' +
     '- If sources were found, frame them as good places to dig; if no clear opportunities came back yet, say that plainly and suggest a better next search — without sounding like a system error.\n' +
     '- Keep it scannable; no JSON, no bullet walls unless 3–4 bullets help.\n' +
     '- Do not promise emails or guaranteed wins.';

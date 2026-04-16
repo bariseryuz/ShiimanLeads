@@ -37,13 +37,18 @@ function fallbackIntentFromBrief(brief) {
     ? parseInt(countDigitMatch[1], 10)
     : (countWordMatch ? NUMBER_WORDS[String(countWordMatch[1]).toLowerCase()] : null);
   const st = b.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY|DC)\b/i);
+  const triggerHint = /permit|construction|project|bid|development/i.test(b)
+    ? 'building permit'
+    : (/agency|client|customer|company|software|saas|lead gen|prospect/i.test(b)
+      ? 'buyer intent signal'
+      : 'business signal');
   return {
     lead_count: Math.min(25, Math.max(1, requestedLeadCount || 3)),
     geography: st ? `United States (${String(st[1]).toUpperCase()})` : 'United States',
     geography_kind: st ? 'state' : 'unknown',
     state_code: st ? String(st[1]).toUpperCase() : '',
     asset_or_use: '',
-    trigger_or_record: /permit/i.test(b) ? 'building permit' : 'construction record',
+    trigger_or_record: triggerHint,
     min_project_value_usd: minVal,
     wants_contact_info: /contact|owner|contractor|gc|manager|people/i.test(b),
     keywords_for_search: []
@@ -54,8 +59,8 @@ function buildFastQueries(brief) {
   const b = String(brief || '').trim().replace(/\s+/g, ' ');
   if (!b) return [];
   return [
-    `${b} permits OR construction projects OR open data`,
-    `${b} site:gov permits OR data portal`
+    `${b} potential clients OR opportunities OR signals`,
+    `${b} site:gov OR site:org OR site:com`
   ].map(q => q.slice(0, 220));
 }
 
@@ -75,10 +80,10 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
 
   const targeted = (nonTechnical
     ? [
-        [geo, vertical || 'commercial', 'new construction project', valToken].filter(Boolean).join(' '),
-        [geo, trigger, 'site:.gov permit search'].filter(Boolean).join(' '),
-        [geo, 'building permits', 'active projects', 'contractor'].filter(Boolean).join(' '),
-        [geo, 'construction pipeline', 'development project list'].filter(Boolean).join(' ')
+        [geo, vertical || 'business', trigger, 'potential clients', valToken].filter(Boolean).join(' '),
+        [geo, trigger, 'buyer intent', 'decision maker'].filter(Boolean).join(' '),
+        [geo, 'companies', 'hiring', 'agency', 'vendor'].filter(Boolean).join(' '),
+        [geo, 'new opportunities', 'lead list', 'qualified prospects'].filter(Boolean).join(' ')
       ]
     : [
         [geo, vertical, trigger, valToken, 'open data API FeatureServer Socrata'].filter(Boolean).join(' '),
@@ -114,7 +119,7 @@ function isLowSignalArticle(link, title) {
 
 function hasProjectSignal(result, brief) {
   const blob = `${String(result?.title || '')} ${String(result?.snippet || '')} ${String(result?.link || '')}`.toLowerCase();
-  const baseSignals = /\b(project|construction|permit|development|building|contractor|owner|applicant|gc|architect|bid|proposal|issued|active)\b/;
+  const baseSignals = /\b(project|construction|permit|development|building|contractor|owner|applicant|gc|architect|bid|proposal|issued|active|client|customer|company|agency|vendor|buyer|decision maker|prospect|hiring|rfp|request for proposal)\b/;
   if (baseSignals.test(blob)) return true;
   const b = String(brief || '').toLowerCase();
   const tokens = b.split(/[^a-z0-9]+/).filter(x => x.length > 3).slice(0, 8);
