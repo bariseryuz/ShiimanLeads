@@ -5,7 +5,32 @@
 
 const { hasSerper, googleSearchOrganic, dedupeSearchResults, normalizeUrlKey } = require('../serperSearch');
 const { sortCandidateSources } = require('../candidateUrlSort');
-const { parseBriefWithGemini, buildSerperQueries } = require('../ai/nlLeadIntent');
+const { parseBriefWithGemini, buildSerperQueries, buildMachineParameters } = require('../ai/nlLeadIntent');
+
+function fallbackIntentFromBrief(brief) {
+  const b = String(brief || '').trim();
+  const minMatch = b.match(/(?:over|above|>=?)\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(k|m|million))?/i);
+  let minVal = null;
+  if (minMatch) {
+    const raw = parseFloat(String(minMatch[1] || '').replace(/,/g, ''));
+    const unit = String(minMatch[2] || '').toLowerCase();
+    if (Number.isFinite(raw)) {
+      minVal = /m|million/.test(unit) ? raw * 1000000 : /k/.test(unit) ? raw * 1000 : raw;
+    }
+  }
+  const st = b.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY|DC)\b/i);
+  return {
+    lead_count: 3,
+    geography: st ? `United States (${String(st[1]).toUpperCase()})` : 'United States',
+    geography_kind: st ? 'state' : 'unknown',
+    state_code: st ? String(st[1]).toUpperCase() : '',
+    asset_or_use: '',
+    trigger_or_record: /permit/i.test(b) ? 'building permit' : 'construction record',
+    min_project_value_usd: minVal,
+    wants_contact_info: /contact|owner|contractor|gc|manager|people/i.test(b),
+    keywords_for_search: []
+  };
+}
 
 function buildFastQueries(brief) {
   const b = String(brief || '').trim().replace(/\s+/g, ' ');
@@ -55,14 +80,15 @@ async function runAgentFindFast(brief) {
   let intent = null;
   try {
     intent = await parseBriefWithGemini(brief);
-  } catch {
-    intent = null;
+  } catch (e) {
+    intent = fallbackIntentFromBrief(brief);
   }
+  const machineParameters = buildMachineParameters(intent);
   const queries = buildFastQueriesFromIntent(intent, brief);
   if (!hasSerper() || !queries.length) {
     return {
       intent: { mode: 'fast', ...(intent || {}) },
-      machine_parameters: intent || null,
+      machine_parameters: machineParameters,
       search_queries_used: [],
       results_pooled: 0,
       candidate_sources: [],
@@ -99,7 +125,7 @@ async function runAgentFindFast(brief) {
 
   return {
     intent: { mode: 'fast', ...(intent || {}) },
-    machine_parameters: intent || null,
+    machine_parameters: machineParameters,
     search_queries_used: queries.slice(0, Math.min(maxCalls, queries.length)),
     results_pooled: deduped.length,
     candidate_sources,

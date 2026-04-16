@@ -30,6 +30,46 @@ function parseIntentJson(text) {
   }
 }
 
+function inferVertical(assetOrUse) {
+  const a = String(assetOrUse || '').toLowerCase();
+  if (!a) return 'unknown';
+  if (/commercial|office|retail|industrial|hospital|hotel|resort|mixed-use|warehouse/.test(a)) return 'commercial';
+  if (/residential|multifamily|single family|condo|apartment|housing/.test(a)) return 'residential';
+  if (/public|government|municipal|school|university|campus/.test(a)) return 'public';
+  return 'other';
+}
+
+/**
+ * Canonical machine parameters object used BEFORE search.
+ * Converts human brief intent into strict constraints for discovery/extraction.
+ */
+function buildMachineParameters(intent) {
+  const i = intent && typeof intent === 'object' ? intent : {};
+  return {
+    geography: {
+      text: String(i.geography || '').trim() || 'United States',
+      kind: String(i.geography_kind || 'unknown'),
+      state_code: String(i.state_code || '').trim().toUpperCase().slice(0, 2)
+    },
+    vertical: {
+      raw: String(i.asset_or_use || '').trim(),
+      normalized: inferVertical(i.asset_or_use)
+    },
+    record_type: String(i.trigger_or_record || 'building permit').trim() || 'building permit',
+    constraints: {
+      min_value_usd:
+        i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))
+          ? Number(i.min_project_value_usd)
+          : null,
+      wants_contact_info: !!i.wants_contact_info
+    },
+    lead_count: Math.min(25, Math.max(1, parseInt(i.lead_count, 10) || 3)),
+    keywords: Array.isArray(i.keywords_for_search)
+      ? i.keywords_for_search.map(k => String(k || '').trim()).filter(Boolean).slice(0, 8)
+      : []
+  };
+}
+
 /**
  * @param {string} brief - User sentence e.g. "3 hot leads, new multifamily permits in CA over $300k"
  */
@@ -64,6 +104,11 @@ async function parseBriefWithGemini(brief) {
     '  "wants_contact_info": <boolean>,\n' +
     '  "keywords_for_search": ["3-6 short phrases for Google queries"]\n' +
     '}\n\n' +
+    'Few-shot examples:\n' +
+    'Input: "Hawaii, shades, permits over $1M"\n' +
+    'Output: {"lead_count":3,"geography":"Hawaii","geography_kind":"state","state_code":"HI","asset_or_use":"commercial","trigger_or_record":"building permit","min_project_value_usd":1000000,"wants_contact_info":true,"keywords_for_search":["hawaii commercial permits","window shades permit","honolulu open data permits"]}\n' +
+    'Input: "Find Miami office renovation permits above 300k"\n' +
+    'Output: {"lead_count":3,"geography":"Miami, Florida","geography_kind":"city","state_code":"FL","asset_or_use":"commercial office","trigger_or_record":"renovation permit","min_project_value_usd":300000,"wants_contact_info":false,"keywords_for_search":["miami renovation permits","florida office tenant improvement permits","miami permit data portal"]}\n\n' +
     (ragContext
       ? `Retrieved domain knowledge (tune geography, keywords, and record types — user message still wins):\n${ragContext}\n\n`
       : '') +
@@ -293,10 +338,12 @@ async function pickBestSourceUrls(organicPool, intent) {
  */
 async function runNlLeadIntentDiscovery(brief) {
   const intent = await parseBriefWithGemini(brief);
+  const machine_parameters = buildMachineParameters(intent);
 
   if (!hasSerper()) {
     return {
       intent,
+      machine_parameters,
       search_queries_used: [],
       results_pooled: 0,
       candidate_sources: [],
@@ -417,6 +464,7 @@ async function runNlLeadIntentDiscovery(brief) {
 
   return {
     intent,
+    machine_parameters,
     search_queries_used: queries.slice(0, nq),
     search_queries_expanded: expanded.length ? expanded : undefined,
     results_pooled: pool.length,
@@ -430,6 +478,7 @@ async function runNlLeadIntentDiscovery(brief) {
 
 module.exports = {
   parseBriefWithGemini,
+  buildMachineParameters,
   runNlLeadIntentDiscovery,
   buildSerperQueries,
   tryArcgisSampleRows
