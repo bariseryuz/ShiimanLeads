@@ -5,6 +5,7 @@
 
 const { hasSerper, googleSearchOrganic, dedupeSearchResults, normalizeUrlKey } = require('../serperSearch');
 const { sortCandidateSources } = require('../candidateUrlSort');
+const { parseBriefWithGemini, buildSerperQueries } = require('../ai/nlLeadIntent');
 
 function buildFastQueries(brief) {
   const b = String(brief || '').trim().replace(/\s+/g, ' ');
@@ -13,6 +14,30 @@ function buildFastQueries(brief) {
     `${b} permits OR construction projects OR open data`,
     `${b} site:gov permits OR data portal`
   ].map(q => q.slice(0, 220));
+}
+
+function buildFastQueriesFromIntent(intent, brief) {
+  const i = intent && typeof intent === 'object' ? intent : {};
+  const geo = String(i.geography || '').trim();
+  const trigger = String(i.trigger_or_record || 'building permit').trim();
+  const vertical = String(i.asset_or_use || '').trim();
+  const minVal = i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))
+    ? Math.floor(Number(i.min_project_value_usd))
+    : null;
+  const valToken = minVal ? `>${minVal}` : '';
+  const intentQueries = buildSerperQueries(i)
+    .map(q => String(q || '').trim())
+    .filter(q => q.length > 4);
+
+  const targeted = [
+    [geo, vertical, trigger, valToken, 'open data API FeatureServer Socrata'].filter(Boolean).join(' '),
+    [geo, trigger, 'site:gov data portal json'].filter(Boolean).join(' ')
+  ]
+    .map(q => q.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const rawFallback = buildFastQueries(brief);
+  return [...new Set([...targeted, ...intentQueries, ...rawFallback])].slice(0, 4).map(q => q.slice(0, 220));
 }
 
 function isLowSignalArticle(link, title) {
@@ -27,10 +52,17 @@ function isLowSignalArticle(link, title) {
 }
 
 async function runAgentFindFast(brief) {
-  const queries = buildFastQueries(brief);
+  let intent = null;
+  try {
+    intent = await parseBriefWithGemini(brief);
+  } catch {
+    intent = null;
+  }
+  const queries = buildFastQueriesFromIntent(intent, brief);
   if (!hasSerper() || !queries.length) {
     return {
-      intent: { mode: 'fast' },
+      intent: { mode: 'fast', ...(intent || {}) },
+      machine_parameters: intent || null,
       search_queries_used: [],
       results_pooled: 0,
       candidate_sources: [],
@@ -66,7 +98,8 @@ async function runAgentFindFast(brief) {
   );
 
   return {
-    intent: { mode: 'fast' },
+    intent: { mode: 'fast', ...(intent || {}) },
+    machine_parameters: intent || null,
     search_queries_used: queries.slice(0, Math.min(maxCalls, queries.length)),
     results_pooled: deduped.length,
     candidate_sources,
