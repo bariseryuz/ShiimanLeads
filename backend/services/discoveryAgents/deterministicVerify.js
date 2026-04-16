@@ -75,6 +75,12 @@ const NON_PHYSICAL_PATTERNS = [
   /\bSuite\s\d+\b/i,
   /\bSte\.?\s?\d+\b/i
 ];
+const PLACEHOLDER_VALUE_RE =
+  /^(not publicly(?: stated)?|unknown|n\/?a|na|null|undefined|none|-|\.+|not found(?: yet)?|missing|not available|tbd|to be determined|unavailable|no data)$/i;
+const GENERIC_NON_COMPANY_RE =
+  /\b(project manager|decision maker|buyer|owner rep|contact|lead|opportunity|construction manager)\b/i;
+const ADDRESS_SIGNAL_RE =
+  /\b(st|street|ave|avenue|blvd|boulevard|rd|road|dr|drive|ln|lane|way|ct|court|pl|place|hwy|highway|pkwy|parkway|trl|trail)\b/i;
 
 function isNonPhysicalAddress(address) {
   const a = String(address || '').trim();
@@ -142,22 +148,30 @@ function checkClientEssentials(row) {
       const v = row[k];
       if (v == null || v === '') continue;
       const s = String(v).trim();
-      if (!s || /^(not publicly|unknown|n\/?a|null|undefined|none|-|\.+)$/i.test(s)) continue;
+      if (!s || PLACEHOLDER_VALUE_RE.test(s)) continue;
       return s;
     }
     return '';
   };
 
-  const address = get(['address', 'site_address', 'project_address', 'location']);
-  let company = get(['key_contact_or_firm', 'company_name', 'owner_name', 'contractor_name', 'applicant_name', 'developer']);
+  const address = get(['address', 'site_address', 'project_address', 'property_address', 'worksite_address']);
+  let company = get(['company_name', 'owner_name', 'contractor_name', 'applicant_name', 'developer', 'business_name']);
+  const keyContact = get(['key_contact_or_firm']);
+  if (!company && keyContact && !GENERIC_NON_COMPANY_RE.test(keyContact) && !PLACEHOLDER_VALUE_RE.test(keyContact)) {
+    company = keyContact;
+  }
   if (/\b(socrata|arcgis|esri|tyler\s*tech|opendata\s*soft|accela)\b/i.test(company)) {
     company = '';
   }
   const detail = get(['project_snapshot', 'why_opportunity', 'project_name', 'lead_title', 'description']);
 
   const hasDetail = detail && detail.split(/\s+/).filter(Boolean).length >= 3;
+  const actionableAddress = !!address && (/\d/.test(address) || ADDRESS_SIGNAL_RE.test(address));
   if (!address || !company) {
     return { pass: false, reason: 'Missing client essentials (address and company are both required)' };
+  }
+  if (!actionableAddress) {
+    return { pass: false, reason: 'Address is too vague/non-actionable (needs site-level street detail)' };
   }
   if (isNonPhysicalAddress(address)) {
     return { pass: true, soft_flag: true, reason: 'Address appears non-physical (PO Box/registered-agent style); enrichment fallback required' };
@@ -168,12 +182,12 @@ function checkClientEssentials(row) {
 
 function pickPrimaryAddress(row) {
   if (!row || typeof row !== 'object') return '';
-  const keys = ['address', 'site_address', 'project_address', 'location'];
+  const keys = ['address', 'site_address', 'project_address', 'property_address', 'worksite_address'];
   for (const k of keys) {
     const v = row[k];
     if (v == null || v === '') continue;
     const s = String(v).trim();
-    if (!s || /^(not publicly|unknown|n\/?a|null|undefined|none|-|\.+)$/i.test(s)) continue;
+    if (!s || PLACEHOLDER_VALUE_RE.test(s)) continue;
     return s;
   }
   return '';
@@ -183,7 +197,7 @@ function checkFieldCompleteness(row) {
   if (!row || typeof row !== 'object') return { pass: false, reason: 'Row is null/empty', populated: 0 };
 
   let populated = 0;
-  const NOT_USEFUL = /^(not publicly|unknown|n\/?a|null|undefined|none|-|\.+)$/i;
+  const NOT_USEFUL = PLACEHOLDER_VALUE_RE;
   const GIS_KEYS = /^(objectid|globalid|fid|oid|shape_|st_area|st_length|x|y|z|latitude|longitude|lat|lon)/i;
 
   for (const [k, v] of Object.entries(row)) {
