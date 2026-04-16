@@ -211,10 +211,21 @@ async function runAutoLeadAgentPipeline(opts) {
       leads: quickLeads,
       field_schema: quickLeads.length
         ? {
-            lead_title: 'Opportunity label',
-            location: 'Inferred geography',
-            why_opportunity: 'Why this looks promising from search snippets',
-            source_url: 'Public source URL'
+            lead_title: 'Short outreach-friendly label',
+            project_name: 'Project, permit stream, or dataset name',
+            location: 'City/county/state for targeting',
+            address: 'Site address when explicitly available',
+            permit_or_record_id: 'Permit, case, or record number if shown',
+            status_or_phase: 'Stage such as issued, active, in review, or planned',
+            estimated_value_usd: 'Published valuation/cost/budget if available',
+            key_contact_or_firm: 'Owner/applicant/contractor/company mention',
+            why_opportunity: 'Business reason this source likely contains target leads',
+            evidence: 'Direct snippet evidence supporting this lead',
+            recommended_next_step: 'Practical action for outreach qualification',
+            source_title: 'Source page title',
+            source_url: 'Public source URL',
+            missing_fields: 'Important missing data to confirm in full extract',
+            data_completeness: 'high | medium | low confidence from available evidence'
           }
         : null,
       strict_match_rules: null,

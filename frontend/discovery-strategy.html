@@ -631,6 +631,7 @@
 
       var id =
         pickFirstScalar(ci, [
+          'permit_or_record_id',
           'permit__', 'permitnum', 'permit_number', 'permit_no', 'permit_id',
           'application_number', 'application_no', 'application_id', 'app_number', 'app_no',
           'case_number', 'case_no', 'record_number', 'record_no', 'file_number', 'filenumber',
@@ -653,6 +654,7 @@
 
       var addr =
         pickFirstScalar(ci, [
+          'address',
           'address', 'originaladdress1', 'originaladdress', 'site_address', 'siteaddress',
           'addr1', 'addr_line1', 'address_line_1', 'full_address', 'fulladdress', 'addr_full',
           'site_location', 'premise_address', 'property_address', 'situation',
@@ -676,6 +678,7 @@
 
       var orgLine =
         pickFirstScalar(ci, [
+          'project_name', 'source_title',
           'project_name', 'development_name', 'project_title', 'site_name', 'development',
           'owner_name', 'contractor_name', 'applicant_name', 'applicant', 'business_name', 'company_name',
           'organization', 'developer', 'dba', 'trade_name', 'parcel_name', 'contact_name', 'full_name'
@@ -693,6 +696,7 @@
       }
 
       var costRaw = pickFirstScalar(ci, [
+        'estimated_value_usd',
         'const_cost', 'estprojectcostdec', 'estprojectcost', 'est_cost', 'construction_cost',
         'project_value', 'total_valuation', 'valuation', 'declared_value', 'job_value',
         'building_value', 'permit_valuation', 'total_val', 'est_val', 'improvement_value',
@@ -719,6 +723,7 @@
 
       var typ =
         pickFirstScalar(ci, [
+          'status_or_phase', 'why_opportunity',
           'permit_type_description', 'permit_subtype_description', 'permittypemapped', 'permitclassmapped',
           'permit_type', 'permit_type_desc', 'work_type', 'work_desc', 'use_type', 'project_description',
           'description', 'activity', 'purpose', 'subtype'
