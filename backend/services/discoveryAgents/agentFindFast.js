@@ -94,6 +94,20 @@ function buildBuyerIntentProfile(brief, intent) {
   };
 }
 
+function classifySearchMode(brief, intent) {
+  const b = String(brief || '').toLowerCase();
+  const trigger = String(intent?.trigger_or_record || '').toLowerCase();
+  const asset = String(intent?.asset_or_use || '').toLowerCase();
+  const recordLike = /\b(permit|permits|construction|project|development|bid|rfp|issued|inspection|license|violation|planning|zoning)\b/.test(
+    `${b} ${trigger} ${asset}`
+  );
+  const sellingLike = /\b(i sell|we sell|i offer|we offer|lead gen|lead generation|appointment setting|cold email|outreach|clients for)\b/.test(
+    b
+  );
+  if (recordLike && !sellingLike) return 'record_hunt';
+  return 'buyer_intent';
+}
+
 function fallbackIntentFromBrief(brief) {
   const b = String(brief || '').trim();
   const NUMBER_WORDS = {
@@ -154,6 +168,7 @@ function buildFastQueries(brief) {
 function buildFastQueriesFromIntent(intent, brief, opts = {}) {
   const nonTechnical = opts.nonTechnical === true;
   const buyerProfile = opts.buyerProfile || null;
+  const searchMode = String(opts.searchMode || '');
   const i = intent && typeof intent === 'object' ? intent : {};
   const geo = String(i.geography || '').trim();
   const trigger = String(i.trigger_or_record || 'building permit').trim();
@@ -167,20 +182,28 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
     .filter(q => q.length > 4);
 
   const targeted = (nonTechnical
-    ? [
-        [geo, vertical || 'business', trigger, 'potential clients', valToken].filter(Boolean).join(' '),
-        [geo, trigger, 'buyer intent', 'decision maker'].filter(Boolean).join(' '),
-        [geo, 'companies', 'hiring', 'agency', 'vendor'].filter(Boolean).join(' '),
-        [geo, 'new opportunities', 'lead list', 'qualified prospects'].filter(Boolean).join(' '),
-        ...(buyerProfile
-          ? [
-              [geo, buyerProfile.offer, 'target companies', buyerProfile.companyTypes[0] || 'business'].filter(Boolean).join(' '),
-              [geo, buyerProfile.companyTypes[1] || 'company', buyerProfile.demandSignals[0] || 'needs leads'].filter(Boolean).join(' '),
-              [geo, buyerProfile.queryStems[0] || 'companies that need lead generation'].filter(Boolean).join(' '),
-              [geo, buyerProfile.queryStems[1] || 'buyer intent', buyerProfile.siteTargets[0] ? `site:${buyerProfile.siteTargets[0]}` : ''].filter(Boolean).join(' ')
-            ]
-          : [])
-      ]
+    ? (searchMode === 'record_hunt'
+      ? [
+          [geo, vertical || 'commercial', trigger, 'issued', 'new records', valToken].filter(Boolean).join(' '),
+          [geo, trigger, 'open data', 'site:gov'].filter(Boolean).join(' '),
+          [geo, 'DOB permits', 'multifamily', 'site:gov OR site:nyc.gov'].filter(Boolean).join(' '),
+          [geo, 'building permit database', 'project address', 'valuation'].filter(Boolean).join(' '),
+          [geo, 'developer project announcement', vertical || 'multifamily'].filter(Boolean).join(' ')
+        ]
+      : [
+          [geo, vertical || 'business', trigger, 'potential clients', valToken].filter(Boolean).join(' '),
+          [geo, trigger, 'buyer intent', 'decision maker'].filter(Boolean).join(' '),
+          [geo, 'companies', 'hiring', 'agency', 'vendor'].filter(Boolean).join(' '),
+          [geo, 'new opportunities', 'lead list', 'qualified prospects'].filter(Boolean).join(' '),
+          ...(buyerProfile
+            ? [
+                [geo, buyerProfile.offer, 'target companies', buyerProfile.companyTypes[0] || 'business'].filter(Boolean).join(' '),
+                [geo, buyerProfile.companyTypes[1] || 'company', buyerProfile.demandSignals[0] || 'needs leads'].filter(Boolean).join(' '),
+                [geo, buyerProfile.queryStems[0] || 'companies that need lead generation'].filter(Boolean).join(' '),
+                [geo, buyerProfile.queryStems[1] || 'buyer intent', buyerProfile.siteTargets[0] ? `site:${buyerProfile.siteTargets[0]}` : ''].filter(Boolean).join(' ')
+              ]
+            : [])
+        ])
     : [
         [geo, vertical, trigger, valToken, 'open data API FeatureServer Socrata'].filter(Boolean).join(' '),
         [geo, trigger, 'site:gov data portal json'].filter(Boolean).join(' '),
@@ -244,6 +267,11 @@ function scoreResultForBuyerIntent(result, brief, buyerProfile) {
   return score;
 }
 
+function isOffTopicForRecordHunt(result) {
+  const blob = `${String(result?.title || '')} ${String(result?.snippet || '')} ${String(result?.link || '')}`.toLowerCase();
+  return /\b(staffing|employment agency|recruitment agency|temporary staffing|jobs board|job posting|headhunter)\b/.test(blob);
+}
+
 async function runAgentFindFast(brief, opts = {}) {
   const nonTechnical = opts.nonTechnical === true;
   let intent = null;
@@ -252,9 +280,10 @@ async function runAgentFindFast(brief, opts = {}) {
   } catch (e) {
     intent = fallbackIntentFromBrief(brief);
   }
+  const searchMode = classifySearchMode(brief, intent);
   const buyerProfile = nonTechnical ? buildBuyerIntentProfile(brief, intent) : null;
   const machineParameters = buildMachineParameters(intent);
-  const queries = buildFastQueriesFromIntent(intent, brief, { nonTechnical, buyerProfile });
+  const queries = buildFastQueriesFromIntent(intent, brief, { nonTechnical, buyerProfile, searchMode });
   if (!hasSerper() || !queries.length) {
     return {
       intent: { mode: 'fast', ...(intent || {}) },
@@ -282,9 +311,12 @@ async function runAgentFindFast(brief, opts = {}) {
     }
   }
 
-  const deduped = dedupeSearchResults(all)
+  let deduped = dedupeSearchResults(all)
     .filter(r => /^https?:\/\//i.test(String(r.link || '')))
     .filter(r => !isLowSignalArticle(r.link, r.title));
+  if (searchMode === 'record_hunt') {
+    deduped = deduped.filter(r => !isOffTopicForRecordHunt(r));
+  }
   const prioritized = nonTechnical
     ? deduped
         .map(r => ({ ...r, _score: scoreResultForBuyerIntent(r, brief, buyerProfile) }))
