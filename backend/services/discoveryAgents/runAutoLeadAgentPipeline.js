@@ -181,8 +181,11 @@ async function runAutoLeadAgentPipeline(opts) {
   const maxLeads = Math.min(50, Math.max(1, parseInt(opts.maxLeads, 10) || 15));
   const maxSites = Math.min(5, Math.max(1, parseInt(opts.maxSites, 10) || 3));
   const quickOnly =
-    opts.quickOnly === true ||
-    String(process.env.AUTO_LEADS_QUICK_ONLY || '').toLowerCase() === 'true';
+    opts.quickOnly === true
+      ? true
+      : (opts.quickOnly === false
+        ? false
+        : String(process.env.AUTO_LEADS_QUICK_ONLY || '').toLowerCase() === 'true');
 
   // ═══════════════════════════════════════════════════════════════════════
   // QUICK-ONLY MODE — find + snippet leads + 3-layer verify (no browser)

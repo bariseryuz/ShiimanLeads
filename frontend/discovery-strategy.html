@@ -243,12 +243,8 @@
         <label for="leadBrief">What leads do you want?</label>
         <textarea id="leadBrief" placeholder="Example: Recent commercial building permits in Travis County TX over $250k — I need project address, valuation, and applicant name if shown." style="min-height:120px;"></textarea>
       </div>
-      <label style="display:flex;align-items:flex-start;gap:0.5rem;margin:0 0 0.75rem 0;font-size:0.88rem;color:#334155;cursor:pointer;max-width:42rem;">
-        <input type="checkbox" id="autoLeadsQuickOnly" checked style="margin-top:0.2rem;">
-        <span><strong>Fast answer only</strong> — search + short assistant brief (skip opening pages and row extraction). Uncheck for full extract.</span>
-      </label>
       <button type="button" class="btn btn-secondary" id="btnAutoLeads">Find leads for me</button>
-      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">With “Fast answer” on, expect roughly <strong>15–45 seconds</strong>. Full extract may take <strong>1–3 minutes</strong>.</p>
+      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">Assistant mode is automatic: quick search-style answers first, and deeper extraction when your prompt asks for full details.</p>
     </div>
 
     <div class="strategy-card" style="padding-top:0.5rem;">
@@ -946,6 +942,31 @@
       return 15;
     }
 
+    function wantsDeepExtract(brief) {
+      var b = String(brief || '').toLowerCase();
+      if (!b) return false;
+      var strongDetailSignals = [
+        /extra details?/,
+        /full details?/,
+        /deep details?/,
+        /extract/,
+        /exact address/,
+        /permit number/,
+        /valuation/,
+        /how many floors?/,
+        /who is the (owner|contractor|developer|architect)/,
+        /decision maker/,
+        /key people/,
+        /contact info/,
+        /phone|email/,
+        /full report/
+      ];
+      for (var i = 0; i < strongDetailSignals.length; i++) {
+        if (strongDetailSignals[i].test(b)) return true;
+      }
+      return false;
+    }
+
     function renderAutoLeads(data) {
       var dash = document.getElementById('leadDashboard');
       var strategyOut = document.getElementById('results');
@@ -1056,11 +1077,10 @@
       }
       hideLeadDashboard();
       const btn = document.getElementById('btnAutoLeads');
-      const quickOnlyEl = document.getElementById('autoLeadsQuickOnly');
-      const quickOnly = quickOnlyEl && quickOnlyEl.checked;
+      const quickOnly = !wantsDeepExtract(brief);
       const prev = btn.textContent;
       btn.disabled = true;
-      btn.textContent = quickOnly ? 'Searching… (fast answer)' : 'Searching & extracting… (1–3 min)';
+      btn.textContent = quickOnly ? 'Searching…' : 'Searching with deeper extraction…';
       try {
         const res = await fetch('/api/discover/auto-leads', {
           method: 'POST',
