@@ -648,6 +648,13 @@
         if (!v || !isClientUsefulValue(v)) return '';
         return String(v).trim();
       }
+      function looksLikeAddressText(v) {
+        var s = String(v || '').trim();
+        if (!s || s === '—') return false;
+        if (/^(lead_?id|record_?id|id)\s*:/i.test(s)) return false;
+        if (/^missing$/i.test(s)) return false;
+        return /\d/.test(s) || /\b(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place|hwy|highway)\b/i.test(s);
+      }
 
       var html = '<article class="lead-card">' +
         '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span></div>' +
@@ -658,7 +665,9 @@
         '<div class="lead-card__row"><span class="lead-card__label">Summary</span><span>' +
         escapeHtml(n.type.length > 240 ? n.type.slice(0, 237) + '…' : n.type) + '</span></div>';
 
-      var mustAddress = firstUseful(['address', 'site_address', 'project_address', 'location']) || n.line1;
+      var mustAddress = firstUseful(['address', 'site_address', 'project_address', 'location']);
+      if (!looksLikeAddressText(mustAddress) && looksLikeAddressText(n.line1)) mustAddress = n.line1;
+      if (!looksLikeAddressText(mustAddress)) mustAddress = '';
       var mustCompany = firstUseful(['company_name', 'key_contact_or_firm', 'owner_name', 'contractor_name', 'applicant_name', 'developer', 'business_name']);
       var mustProject = firstUseful(['project_snapshot', 'project_name', 'lead_title', 'why_opportunity', 'description']);
       var keyPeople = Array.isArray(flat.key_people)
@@ -1221,7 +1230,8 @@
         var data = first.data;
         var leads = Array.isArray(data && data.leads) ? data.leads : [];
         var hasCandidates = Array.isArray(data && data.candidate_sources) && data.candidate_sources.length > 0;
-        var needsDeepFallback = quickOnly && hasCandidates && leads.length === 0;
+        var deepFallbackEnabled = false;
+        var needsDeepFallback = deepFallbackEnabled && quickOnly && hasCandidates && leads.length === 0;
         pushSearchProgress('6) Verifying lead quality and removing weak matches');
         if (needsDeepFallback) {
           pushSearchProgress('7) Not enough details yet — running deeper extraction');

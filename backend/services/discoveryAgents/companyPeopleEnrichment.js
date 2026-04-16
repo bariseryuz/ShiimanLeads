@@ -3,6 +3,20 @@ const { hasSerper, googleSearchOrganic } = require('../serperSearch');
 const { getGeminiModel, isAIAvailable } = require('../ai/geminiClient');
 const { isNonPhysicalAddress } = require('./deterministicVerify');
 
+const PLACEHOLDER_RE = /^(missing|unknown|not found(?: yet)?|n\/?a|na|null|undefined|none|not publicly(?: stated)?|unavailable|tbd)$/i;
+
+function isUsefulValue(v) {
+  const s = String(v || '').trim();
+  return !!s && !PLACEHOLDER_RE.test(s);
+}
+
+function isLikelyAddress(v) {
+  const s = String(v || '').trim();
+  if (!isUsefulValue(s)) return false;
+  if (/^(lead_?id|record_?id|id)\s*:/i.test(s)) return false;
+  return /\d/.test(s) || /\b(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pl|place|hwy|highway)\b/i.test(s);
+}
+
 function parseJson(text) {
   let t = String(text || '').trim();
   t = t.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '');
@@ -150,9 +164,9 @@ async function enrichLeadsWithCompanyPeople({ brief, intent, leads, maxLeads = 5
     if (!e) continue;
     out[i] = {
       ...out[i],
-      ...(e.company_name ? { company_name: e.company_name } : {}),
+      ...(isUsefulValue(e.company_name) ? { company_name: e.company_name } : {}),
       ...(e.company_summary ? { company_summary: e.company_summary } : {}),
-      ...(e.physical_site_address
+      ...(isLikelyAddress(e.physical_site_address)
         ? {
             address: e.physical_site_address,
             needs_site_verification: false,

@@ -209,7 +209,8 @@ async function runAutoLeadAgentPipeline(opts) {
           targetLeads: desiredQuickLeads,
           intent: discovery.intent
         });
-    if (!rawQuickLeads.length && !noUrls) {
+    const quickRecoveryEnabled = String(process.env.AUTO_LEADS_QUICK_RECOVERY || '').toLowerCase() === 'true';
+    if (!rawQuickLeads.length && !noUrls && quickRecoveryEnabled) {
       const recoveryBrief = `${b} broader local project leads`;
       const recovery = await runAgentFindFast(recoveryBrief, { nonTechnical: true }).catch(() => null);
       if (recovery?.candidate_sources?.length) {
@@ -233,23 +234,7 @@ async function runAutoLeadAgentPipeline(opts) {
     let quickLeads = detVerified.length
       ? await adversarialRecheck(b, detVerified, { threshold: 70 })
       : [];
-    const usingExploratoryFallback = !quickLeads.length && Array.isArray(rawQuickLeads) && rawQuickLeads.length > 0;
-    if (usingExploratoryFallback) {
-      // Chat-style fallback: keep best source-derived opportunities instead of empty state.
-      quickLeads = rawQuickLeads.slice(0, desiredQuickLeads).map((r, idx) => ({
-        ...r,
-        _verification: {
-          confidence: 35,
-          confidence_label: 'low',
-          checks: ['exploratory_source_signal'],
-          hard_fails: [],
-          passed: false,
-          exploratory: true,
-          hide_card: false,
-          rank: idx + 1
-        }
-      }));
-    }
+    const usingExploratoryFallback = false;
 
     // Always-on enrichment layer (company + key people)
     let enrichedQuickLeads = quickLeads;
