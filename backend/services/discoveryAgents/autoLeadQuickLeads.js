@@ -22,8 +22,10 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
     return {
       lead_title: String(s?.title || `Opportunity ${i + 1}`).slice(0, 180),
       project_name: String(s?.title || `Opportunity ${i + 1}`).slice(0, 180),
+      project_snapshot: 'Project details need verification from source',
       location: 'Unknown',
       address: 'Not publicly stated',
+      company_name: 'Not publicly stated',
       permit_or_record_id: 'Not publicly stated',
       status_or_phase: 'Not publicly stated',
       estimated_value_usd: 'Not publicly stated',
@@ -44,8 +46,10 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
 
   const model = getGeminiModel('discovery');
   const prompt =
-    'Return ONLY JSON with this shape: {"leads":[{"lead_title":"","project_name":"","location":"","address":"","permit_or_record_id":"","status_or_phase":"","estimated_value_usd":"","key_contact_or_firm":"","why_opportunity":"","evidence":"","recommended_next_step":"","source_title":"","source_url":"","missing_fields":"","data_completeness":""}]}\n' +
+    'Return ONLY JSON with this shape: {"leads":[{"lead_title":"","project_name":"","project_snapshot":"","location":"","address":"","company_name":"","permit_or_record_id":"","status_or_phase":"","estimated_value_usd":"","key_contact_or_firm":"","why_opportunity":"","evidence":"","recommended_next_step":"","source_title":"","source_url":"","missing_fields":"","data_completeness":""}]}\n' +
     'Create exactly 3 concise but client-ready opportunities from these source snippets.\n' +
+    'project_snapshot must be a short 4-12 word summary of the specific project.\n' +
+    'Try to include a real company_name from the snippet/title/domain context when possible.\n' +
     'Do not invent exact budgets, permit IDs, contacts, addresses, or status values if not present.\n' +
     'If a value is not explicitly present, use "Not publicly stated".\n' +
     'data_completeness must be one of: high, medium, low.\n' +
@@ -70,8 +74,10 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
         return {
           lead_title: String(x.lead_title || x.project_name || '').trim().slice(0, 180) || 'Opportunity',
           project_name: String(x.project_name || x.lead_title || '').trim().slice(0, 180) || 'Opportunity',
+          project_snapshot: String(x.project_snapshot || x.why_opportunity || x.project_name || '').trim().slice(0, 120) || 'Project details need verification from source',
           location: String(x.location || 'Unknown').trim().slice(0, 140),
           address: String(x.address || 'Not publicly stated').trim().slice(0, 220),
+          company_name: String(x.company_name || x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180),
           permit_or_record_id: String(x.permit_or_record_id || 'Not publicly stated').trim().slice(0, 120),
           status_or_phase: String(x.status_or_phase || 'Not publicly stated').trim().slice(0, 120),
           estimated_value_usd: String(x.estimated_value_usd || 'Not publicly stated').trim().slice(0, 120),

@@ -103,6 +103,7 @@
     }
     .lead-card__head { font-size: 0.75rem; font-weight: 600; color: #64748b; margin-bottom: 0.5rem; }
     .lead-card__id { color: #0f172a; font-weight: 700; }
+    .lead-card__confidence { display: inline-block; margin-left: 0.5rem; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.68rem; font-weight: 700; color: #fff; letter-spacing: 0.02em; vertical-align: middle; }
     .lead-card__addr { font-size: 0.95rem; font-weight: 600; color: #0f172a; line-height: 1.35; }
     .lead-card__meta { font-size: 0.82rem; color: #64748b; margin: 0.25rem 0 0.65rem; }
     .lead-card__row { display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; font-size: 0.82rem; padding: 0.35rem 0; border-top: 1px solid #f1f5f9; }
@@ -560,9 +561,24 @@
       var n = normalizeLeadRow(row);
       if (!n) n = { id: '—', line1: '—', line2: '', cost: '—', type: '—' };
       var usedNorm = {};
+      var ci = ciKeyMap(flat);
+      function firstUseful(keys) {
+        var v = pickFirstScalar(ci, keys);
+        if (!v || !isClientUsefulValue(v)) return '';
+        return String(v).trim();
+      }
+
+      var verification = flat._verification || row._verification || null;
+      var confScore = verification ? (verification.confidence || 0) : null;
+      var confLabel = verification ? (verification.confidence_label || '') : '';
+      var confColor = confLabel === 'high' ? '#16a34a' : confLabel === 'medium' ? '#d97706' : confLabel === 'low' ? '#dc2626' : '#6b7280';
+      var confBadge = confScore != null
+        ? '<span class="lead-card__confidence" style="background:' + confColor + ';" title="Verification confidence: ' + confScore + '/100 (' + escapeAttr(confLabel) + ')">' + confScore + '% ' + escapeHtml(confLabel) + '</span>'
+        : '';
+      var adversarialNote = verification && verification.adversarial_passed ? ' <span style="color:#16a34a;font-size:0.72rem;" title="Passed adversarial audit">&#10003; audited</span>' : '';
 
       var html = '<article class="lead-card">' +
-        '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span></div>' +
+        '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span>' + confBadge + adversarialNote + '</div>' +
         '<div class="lead-card__body">' +
         '<div class="lead-card__addr">' + escapeHtml(n.line1) + '</div>' +
         (n.line2 ? '<div class="lead-card__meta">' + escapeHtml(n.line2) + '</div>' : '') +
@@ -570,10 +586,25 @@
         '<div class="lead-card__row"><span class="lead-card__label">Summary</span><span>' +
         escapeHtml(n.type.length > 240 ? n.type.slice(0, 237) + '…' : n.type) + '</span></div>';
 
+      var mustAddress = firstUseful(['address', 'site_address', 'project_address', 'location']) || n.line1;
+      var mustCompany = firstUseful(['company_name', 'key_contact_or_firm', 'owner_name', 'contractor_name', 'applicant_name', 'developer', 'business_name']);
+      var mustProject = firstUseful(['project_snapshot', 'project_name', 'lead_title', 'why_opportunity', 'description']);
+      if (mustProject) {
+        var words = mustProject.split(/\s+/).filter(Boolean);
+        if (words.length > 12) mustProject = words.slice(0, 12).join(' ') + '…';
+      }
+      html += '<p class="lead-card__schema-title" style="margin-top:0.65rem;">Must-have details</p>';
+      html += '<dl class="lead-card__dl">' +
+        '<dt>Address</dt><dd>' + escapeHtml(mustAddress || 'Missing') + '</dd>' +
+        '<dt>Company</dt><dd>' + escapeHtml(mustCompany || 'Missing') + '</dd>' +
+        '<dt>Project (few words)</dt><dd>' + escapeHtml(mustProject || 'Missing') + '</dd>' +
+        '</dl>';
+
       var schema = fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema) ? fieldSchema : null;
       var schemaKeys = schema ? Object.keys(schema) : [];
+      var extraDetailsHtml = '';
       if (schemaKeys.length) {
-        html += '<p class="lead-card__schema-title">From your brief (AI field plan)</p>';
+        extraDetailsHtml += '<p class="lead-card__schema-title">From your brief (AI field plan)</p>';
         var schemaDl = '';
         var anySchema = false;
         for (var si = 0; si < schemaKeys.length; si++) {
@@ -593,23 +624,24 @@
           }
         }
         if (anySchema) {
-          html += '<dl class="lead-card__dl">' + schemaDl + '</dl>';
+          extraDetailsHtml += '<dl class="lead-card__dl">' + schemaDl + '</dl>';
         } else {
-          html += '<p class="lead-card__empty-note">These rows don’t yet include values under the names your brief asked for — see “Readable columns” below.</p>';
+          extraDetailsHtml += '<p class="lead-card__empty-note">These rows don’t yet include values under the names your brief asked for.</p>';
         }
       }
 
-      html += '<p class="lead-card__schema-title" style="margin-top:0.65rem;">Readable columns</p>';
+      extraDetailsHtml += '<p class="lead-card__schema-title" style="margin-top:0.65rem;">Readable columns</p>';
       var details = collectLeadDetailRows(flat, { usedNorm: usedNorm, limit: 10 });
       if (details.length) {
         var detHtml = '';
         for (var di = 0; di < details.length; di++) {
           detHtml += '<dt>' + escapeHtml(details[di].label) + '</dt><dd>' + escapeHtml(details[di].text) + '</dd>';
         }
-        html += '<dl class="lead-card__dl">' + detHtml + '</dl>';
+        extraDetailsHtml += '<dl class="lead-card__dl">' + detHtml + '</dl>';
       } else {
-        html += '<p class="lead-card__empty-note">No human-readable fields in this sample (often a map/GIS layer). Try a more specific source or wording.</p>';
+        extraDetailsHtml += '<p class="lead-card__empty-note">No extra readable fields in this sample.</p>';
       }
+      html += '<details style="margin-top:0.55rem;"><summary style="cursor:pointer;color:#475569;font-size:0.78rem;">Show all extracted fields</summary>' + extraDetailsHtml + '</details>';
 
       var srcUrl = extractLeadSourceUrl(flat);
       if (srcUrl) {
@@ -723,7 +755,7 @@
 
       var typ =
         pickFirstScalar(ci, [
-          'status_or_phase', 'why_opportunity',
+          'status_or_phase', 'project_snapshot', 'why_opportunity',
           'permit_type_description', 'permit_subtype_description', 'permittypemapped', 'permitclassmapped',
           'permit_type', 'permit_type_desc', 'work_type', 'work_desc', 'use_type', 'project_description',
           'description', 'activity', 'purpose', 'subtype'
@@ -907,7 +939,7 @@
           html += '<p style="font-size:0.9rem;color:#b45309;margin:0 0 1rem 0;">' + escapeHtml(data.note) + '</p>';
         }
         html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Records found <span class="lead-count-badge">' + leads.length + '</span></p>';
-        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Cards use your brief’s <strong>AI field plan</strong> when possible, then list <strong>readable columns</strong> from each row (owners, projects, amounts) — even when the API names don’t match our summary line.</p>';
+        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Each card now shows <strong>must-have details first</strong>: address, company, and a short project summary. Extra fields are collapsed under “Show all extracted fields”.</p>';
         var fs = data.field_schema && typeof data.field_schema === 'object' && !Array.isArray(data.field_schema) ? data.field_schema : null;
         html += buildLeadCardsHtml(leads, fs);
         html += '<details class="lead-table-fallback"><summary>Table view (compact)</summary>' + buildLeadTableHtml(leads, fs) + '</details>';
@@ -940,6 +972,18 @@
           html += '<li><a href="' + escapeAttr(u) + '" target="_blank" rel="noopener" title="' + escapeAttr(u) + '">' + escapeHtml(t.length > 60 ? t.slice(0, 57) + '…' : t) + '</a></li>';
         }
         html += '</ul>';
+      }
+
+      var vStats = data.verification_stats;
+      if (vStats && typeof vStats === 'object') {
+        html += '<div style="margin:1rem 0 0;padding:0.75rem 1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;font-size:0.82rem;color:#15803d;line-height:1.5;">';
+        html += '<strong>Verification (3-layer)</strong>: ';
+        html += vStats.verified_count + '/' + vStats.total_input + ' passed';
+        if (vStats.avg_confidence) html += ' &middot; avg confidence <strong>' + vStats.avg_confidence + '%</strong>';
+        if (vStats.high_confidence_count) html += ' &middot; <strong>' + vStats.high_confidence_count + '</strong> high-confidence';
+        if (vStats.rejected_count) html += ' &middot; ' + vStats.rejected_count + ' rejected';
+        html += '<br><span style="font-size:0.75rem;color:#166534;">Checks: ' + escapeHtml((vStats.checks_applied || []).join(', ')) + '</span>';
+        html += '</div>';
       }
 
       if (data.disclaimer) {

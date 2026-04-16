@@ -19,8 +19,10 @@ function isLowSignalArticle(link, title) {
   const u = String(link || '').toLowerCase();
   const t = String(title || '').toLowerCase();
   if (/medium\.com|substack\.com|wordpress|blogspot|wixsite/.test(u)) return true;
+  if (/\.pdf($|\?)/.test(u)) return true;
+  if (/\/(report|whitepaper|ebook|brochure)\//.test(u)) return true;
   if (/\/(blog|news|article|guide|insight|press-release)\//.test(u)) return true;
-  if (/(guide|cost per sq ft|how to|tips)/.test(t)) return true;
+  if (/(guide|cost per sq ft|how to|tips|market report|quarterly report|pipeline report)/.test(t)) return true;
   return false;
 }
 

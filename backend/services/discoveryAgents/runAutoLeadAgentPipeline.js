@@ -5,6 +5,11 @@
  * Agent A = find (scout queries) | Agent B = read | Agent C = verify (post-read quality gate).
  * api_hunter is a stubborn JSON/Serper fallback between read and verify when rows are empty.
  *
+ * Verification pipeline (3 layers):
+ *   1. AI filter (Gemini strict match)
+ *   2. Deterministic verify (geography, value threshold, status, field completeness)
+ *   3. Adversarial recheck (second AI pass challenges borderline leads)
+ *
  * Same API keys as before (GEMINI + SERPER); LangGraph manages flow, not credentials.
  */
 
@@ -18,6 +23,8 @@ const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
 const { buildAutoLeadQuickLeads } = require('./autoLeadQuickLeads');
 const { runAgentApiHunter } = require('./agentApiHunter');
 const { enrichSalesIntelligenceTable } = require('./salesIntelligenceEnrichment');
+const { runDeterministicVerify, verifyQuickLeads } = require('./deterministicVerify');
+const { adversarialRecheck } = require('./adversarialRecheck');
 
 function dedupeLeads(rows, maxLeads) {
   const seen = new Set();
@@ -176,7 +183,9 @@ async function runAutoLeadAgentPipeline(opts) {
     opts.quickOnly === true ||
     String(process.env.AUTO_LEADS_QUICK_ONLY || '').toLowerCase() === 'true';
 
-  /** Find + conversational brief only — no verify/read (no browser row extract). */
+  // ═══════════════════════════════════════════════════════════════════════
+  // QUICK-ONLY MODE — find + snippet leads + 3-layer verify (no browser)
+  // ═══════════════════════════════════════════════════════════════════════
   if (quickOnly) {
     logger.info(
       `[agent-pipeline] quick_only — ${AGENT_FIND} + assistant prose (skip ${AGENT_VERIFY}/${AGENT_READ})`
@@ -184,9 +193,19 @@ async function runAutoLeadAgentPipeline(opts) {
     const discovery = await runAgentFindFast(b);
     const noUrls = !discovery.candidate_sources?.length;
     const candidate_sources = noUrls ? [] : discovery.candidate_sources;
-    const quickLeads = noUrls
+    const rawQuickLeads = noUrls
       ? []
       : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
+
+    // Layer 2: deterministic checks on quick leads
+    const { verified: detVerified, stats: detStats } =
+      verifyQuickLeads(rawQuickLeads, { intent: discovery.intent });
+
+    // Layer 3: adversarial recheck on borderline quick leads
+    const quickLeads = detVerified.length
+      ? await adversarialRecheck(b, detVerified, { threshold: 70 })
+      : rawQuickLeads;
+
     const quick_read = await buildAutoLeadQuickRead({
       brief: b,
       intent: discovery.intent,
@@ -199,7 +218,7 @@ async function runAutoLeadAgentPipeline(opts) {
       success: true,
       mode: 'auto_leads',
       orchestration: 'quick_only',
-      agent_pipeline: [AGENT_FIND, 'assistant_quick_read'],
+      agent_pipeline: [AGENT_FIND, 'assistant_quick_read', 'deterministic_verify', 'adversarial_recheck'],
       quick_only: true,
       ...(quick_read ? { quick_read } : {}),
       intent: discovery.intent,
@@ -209,12 +228,15 @@ async function runAutoLeadAgentPipeline(opts) {
       candidate_sources,
       urls_attempted: [],
       leads: quickLeads,
+      verification_stats: detStats,
       field_schema: quickLeads.length
         ? {
             lead_title: 'Short outreach-friendly label',
             project_name: 'Project, permit stream, or dataset name',
+            project_snapshot: '4-12 words about the specific project',
             location: 'City/county/state for targeting',
             address: 'Site address when explicitly available',
+            company_name: 'Company/owner/contractor name for outreach',
             permit_or_record_id: 'Permit, case, or record number if shown',
             status_or_phase: 'Stage such as issued, active, in review, or planned',
             estimated_value_usd: 'Published valuation/cost/budget if available',
@@ -233,12 +255,15 @@ async function runAutoLeadAgentPipeline(opts) {
       note: noUrls
         ? discovery.preview_note ||
           'No candidate URLs from search. Set SERPER_API_KEY and try a more specific location or record type.'
-        : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off “Fast answer” for full extraction.',
+        : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off "Fast answer" for full extraction.',
       preview_note: discovery.preview_note,
       disclaimer: discovery.disclaimer
     };
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // FULL MODE — LangGraph: find → read → AI verify → deterministic → adversarial
+  // ═══════════════════════════════════════════════════════════════════════
   logger.info(
     `[agent-pipeline] LangGraph — ${AGENT_FIND} → ${AGENT_READ} → ${AGENT_VERIFY} | maxLeads=${maxLeads} maxSites=${maxSites}`
   );
@@ -292,23 +317,45 @@ async function runAutoLeadAgentPipeline(opts) {
 
   const manifest = final.manifest || final.preManifest || { field_schema: null, strict_match_rules: null };
   const collectedRaw = Array.isArray(final.collected) ? final.collected : [];
-  const verified = Array.isArray(final.verified) ? final.verified : [];
+  const aiVerified = Array.isArray(final.verified) ? final.verified : [];
   const strictFilterApplied = final.strictFilterApplied !== false;
   const urlsAttempted = Array.isArray(final.urlsAttempted) ? final.urlsAttempted : [];
   const hunterRan = !!final.hunterRan;
-  const useRawFallback = !verified.length && collectedRaw.length > 0;
-  const leads = dedupeLeads(useRawFallback ? collectedRaw : verified, maxLeads);
+
+  // ── Layer 2: Deterministic verification on AI-filtered leads ──
+  const detInput = aiVerified.length ? aiVerified : collectedRaw;
+  const useRawFallback = !aiVerified.length && collectedRaw.length > 0;
+  const { verified: detVerified, rejected: detRejected, stats: detStats } =
+    runDeterministicVerify(detInput, {
+      intent: discovery.intent,
+      strict: !useRawFallback
+    });
+
+  // ── Layer 3: Adversarial recheck for borderline leads ──
+  let finalVerified = detVerified;
+  if (detVerified.length) {
+    try {
+      finalVerified = await adversarialRecheck(b, detVerified, { threshold: 85 });
+    } catch (e) {
+      logger.warn(`adversarialRecheck: ${e.message}`);
+    }
+  }
+
+  const leads = dedupeLeads(finalVerified.length ? finalVerified : detInput, maxLeads);
 
   let note = !leads.length && urlsAttempted.length
-    ? 'Search ran but no rows were extracted. Try different wording, or use “Extract to my format” on a specific URL.'
+    ? 'Search ran but no rows were extracted. Try different wording, or use "Extract to my format" on a specific URL.'
     : null;
   if (!leads.length && hunterRan) {
     note =
       'Read and API-Hunter exhausted embedded JSON/Socrata/ArcGIS probes for candidate URLs. Try a more specific portal link, or add the dataset as a JSON API source.';
   }
-  if (useRawFallback) {
+  if (useRawFallback && !finalVerified.length) {
     note =
-      'Rows were found, but strict verification had no exact matches. Showing best raw rows so your table is not empty.';
+      'Rows were found, but all verification layers (AI + deterministic + adversarial) had no exact matches. Showing best raw rows with low confidence scores.';
+  } else if (useRawFallback && finalVerified.length) {
+    note =
+      'AI strict filter had no exact matches but deterministic + adversarial checks validated some rows.';
   }
 
   const quick_read = await buildAutoLeadQuickRead({
@@ -322,7 +369,9 @@ async function runAutoLeadAgentPipeline(opts) {
 
   const agent_pipeline = [AGENT_FIND, AGENT_READ];
   if (hunterRan) agent_pipeline.push(AGENT_API_HUNTER);
-  agent_pipeline.push(`${AGENT_VERIFY} (post-read filter/shape)`);
+  agent_pipeline.push(`${AGENT_VERIFY} (AI filter)`);
+  agent_pipeline.push('deterministic_verify');
+  agent_pipeline.push('adversarial_recheck');
 
   let sales_intelligence = null;
   if (String(process.env.AUTO_LEADS_SALES_SHAPE || '').toLowerCase() === 'true' && leads.length) {
@@ -352,8 +401,11 @@ async function runAutoLeadAgentPipeline(opts) {
     field_schema: manifest.field_schema,
     strict_match_rules: manifest.strict_match_rules,
     strict_filter_applied: strictFilterApplied,
-    verified_match_count: verified.length,
+    verification_stats: detStats,
+    verified_match_count: finalVerified.length,
     raw_row_count: collectedRaw.length,
+    ai_verified_count: aiVerified.length,
+    deterministic_rejected_count: detRejected.length,
     note,
     preview_note: discovery.preview_note,
     disclaimer: discovery.disclaimer
