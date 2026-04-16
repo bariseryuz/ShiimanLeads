@@ -172,6 +172,53 @@
       background: #9ca3af;
       color: #111827;
     }
+    .auto-lead-progress {
+      margin-top: 0.7rem;
+      border: 1px solid #dbeafe;
+      background: #f8fbff;
+      border-radius: 10px;
+      padding: 0.7rem 0.8rem;
+    }
+    .auto-lead-progress__title {
+      margin: 0 0 0.4rem 0;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #1d4ed8;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .auto-lead-progress__log {
+      display: flex;
+      flex-direction: column;
+      gap: 0.32rem;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .auto-lead-progress__row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.45rem;
+      font-size: 0.82rem;
+      color: #334155;
+      line-height: 1.35;
+    }
+    .auto-lead-progress__dot {
+      width: 1.05rem;
+      text-align: center;
+      color: #64748b;
+      font-weight: 700;
+      flex: 0 0 1.05rem;
+    }
+    .auto-lead-progress__row.is-active .auto-lead-progress__dot,
+    .auto-lead-progress__row.is-active .auto-lead-progress__text {
+      color: #1d4ed8;
+    }
+    .auto-lead-progress__row.is-done .auto-lead-progress__dot {
+      color: #15803d;
+    }
+    .auto-lead-progress__row.is-fail .auto-lead-progress__dot {
+      color: #b91c1c;
+    }
     @media (max-width: 980px) {
       .desktop-nav { gap: 0.5rem !important; }
       .nav-links { gap: 0.9rem !important; }
@@ -249,6 +296,10 @@
 
     <div class="strategy-card" style="padding-top:0.5rem;">
       <div id="err" class="err" style="display:none;"></div>
+      <div id="autoLeadProgress" class="auto-lead-progress" style="display:none;" aria-live="polite">
+        <p class="auto-lead-progress__title">Search progress</p>
+        <div id="autoLeadProgressLog" class="auto-lead-progress__log"></div>
+      </div>
     </div>
 
     <div id="results" style="display:none;"></div>
@@ -274,6 +325,40 @@
         d.innerHTML = '';
         d.style.display = 'none';
       }
+    }
+
+    function clearSearchProgress() {
+      var box = document.getElementById('autoLeadProgress');
+      var log = document.getElementById('autoLeadProgressLog');
+      if (!box || !log) return;
+      log.innerHTML = '';
+      box.style.display = 'none';
+    }
+
+    function pushSearchProgress(text, state) {
+      var box = document.getElementById('autoLeadProgress');
+      var log = document.getElementById('autoLeadProgressLog');
+      if (!box || !log) return;
+      var prev = log.querySelector('.auto-lead-progress__row.is-active');
+      if (prev) {
+        prev.classList.remove('is-active');
+        prev.classList.add('is-done');
+        var prevDot = prev.querySelector('.auto-lead-progress__dot');
+        if (prevDot) prevDot.textContent = '✓';
+      }
+      var row = document.createElement('div');
+      row.className = 'auto-lead-progress__row' + (state ? (' ' + state) : ' is-active');
+      var dot = document.createElement('span');
+      dot.className = 'auto-lead-progress__dot';
+      dot.textContent = state === 'is-done' ? '✓' : (state === 'is-fail' ? '!' : '•');
+      var msg = document.createElement('span');
+      msg.className = 'auto-lead-progress__text';
+      msg.textContent = text;
+      row.appendChild(dot);
+      row.appendChild(msg);
+      log.appendChild(row);
+      box.style.display = 'block';
+      log.scrollTop = log.scrollHeight;
     }
 
     let lastContext = { product: '', customer: '', events: '' };
@@ -1068,6 +1153,7 @@
       const brief = buildNlBrief();
       const err = document.getElementById('err');
       const out = document.getElementById('results');
+      var progressTimer = null;
       err.style.display = 'none';
       out.style.display = 'none';
       if (brief.length < 12) {
@@ -1076,12 +1162,27 @@
         return;
       }
       hideLeadDashboard();
+      clearSearchProgress();
       const btn = document.getElementById('btnAutoLeads');
       const quickOnly = !wantsDeepExtract(brief);
       const prev = btn.textContent;
       btn.disabled = true;
       btn.textContent = quickOnly ? 'Reading sources…' : 'Deep extraction in progress…';
       try {
+        pushSearchProgress('1) Understanding your request and search filters');
+        pushSearchProgress('2) Planning targeted web queries');
+        const inFlightSteps = quickOnly
+          ? [
+              '3) Searching trusted web sources',
+              '4) Opening source pages',
+              '5) Reading content and extracting candidate opportunities'
+            ]
+          : [
+              '3) Searching sources and preparing deeper extraction',
+              '4) Opening pages and collecting richer details',
+              '5) Running full extraction checks'
+            ];
+
         async function callAutoLeads(modeQuickOnly) {
           const res = await fetch('/api/discover/auto-leads', {
             method: 'POST',
@@ -1098,8 +1199,21 @@
           return { res: res, data: data };
         }
 
+        var stepIdx = 0;
+        pushSearchProgress(inFlightSteps[stepIdx++]);
+        progressTimer = setInterval(function () {
+          if (stepIdx < inFlightSteps.length) {
+            pushSearchProgress(inFlightSteps[stepIdx++]);
+          }
+        }, 1300);
+
         var first = await callAutoLeads(quickOnly);
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
         if (!first.res.ok) {
+          pushSearchProgress('Search failed. Please retry.', 'is-fail');
           err.textContent = first.data.error || first.res.statusText || 'Request failed';
           err.style.display = 'block';
           return;
@@ -1108,18 +1222,31 @@
         var leads = Array.isArray(data && data.leads) ? data.leads : [];
         var hasCandidates = Array.isArray(data && data.candidate_sources) && data.candidate_sources.length > 0;
         var needsDeepFallback = quickOnly && hasCandidates && leads.length === 0;
+        pushSearchProgress('6) Verifying lead quality and removing weak matches');
         if (needsDeepFallback) {
+          pushSearchProgress('7) Not enough details yet — running deeper extraction');
           btn.textContent = 'Checking deeper sources…';
           var second = await callAutoLeads(false);
           if (second.res.ok) {
             data = second.data;
+            pushSearchProgress('8) Deeper extraction completed');
+          } else {
+            pushSearchProgress('8) Deeper extraction failed, keeping first pass results', 'is-fail');
           }
         }
+        var finalLeadCount = Array.isArray(data && data.leads) ? data.leads.length : 0;
+        pushSearchProgress('9) Finalized results (' + finalLeadCount + ' leads ready)', 'is-done');
         renderAutoLeads(data);
       } catch (e) {
+        if (progressTimer) {
+          clearInterval(progressTimer);
+          progressTimer = null;
+        }
+        pushSearchProgress('Search stopped due to a network/runtime error', 'is-fail');
         err.textContent = e.message || 'Network error';
         err.style.display = 'block';
       } finally {
+        if (progressTimer) clearInterval(progressTimer);
         btn.disabled = false;
         btn.textContent = prev;
       }
