@@ -1,5 +1,6 @@
 /**
- * Optional "Agent C" — map raw permit/API rows into a sales-style table (project, phase, why now).
+ * Agent C — map raw permit/API rows into a sales-style table (project, phase, why now),
+ * including timing prediction + sales advice.
  * Does NOT call Google Street View or guarantee named GCs; names only when present in row text.
  * Enable with AUTO_LEADS_SALES_SHAPE=true
  */
@@ -35,12 +36,15 @@ async function enrichSalesIntelligenceTable(opts) {
   const slice = leads.slice(0, 25);
   const prompt =
     'You shape public-record rows for a field sales trip. Return ONLY valid JSON:\n' +
-    '{"sales_rows":[{"project_name":"...","location":"...","phase":"...","key_contact_gc":"...","why_its_a_lead":"..."}]}\n' +
+    '{"sales_rows":[{"project_name":"...","location":"...","phase":"...","contact_month_recommendation":"...","key_contact_gc":"...","why_its_a_lead":"...","reasoning_summary":"...","strategy_advice":"..."}]}\n' +
     'Rules:\n' +
     '- project_name / location: from row fields when possible; otherwise infer short neutral labels from text.\n' +
     '- key_contact_gc: use a company or person ONLY if clearly present in the row JSON; otherwise "Not in source".\n' +
     '- phase: e.g. topping out, dry-in, interior build-out, permitting — infer cautiously from dates/descriptions.\n' +
+    '- contact_month_recommendation: provide a month/year recommendation for first outreach based on permit timing + valuation (or "Now" if already in active phase).\n' +
     '- why_its_a_lead: 1–2 sentences tied to the user brief (window treatments, glazing, shades, etc.) without inventing dollar amounts or contracts.\n' +
+    '- reasoning_summary: one concise sentence on why this is a strong opportunity (timing + scope + fit).\n' +
+    '- strategy_advice: one concrete first outreach sentence the salesperson can use, explicitly mentioning phase/timing.\n' +
     '- Do not claim Street View or site visits were performed.\n\n' +
     `User brief:\n${brief.slice(0, 3000)}\n\nIntent:\n${JSON.stringify(intent).slice(0, 2000)}\n\nRows (JSON):\n${JSON.stringify(slice).slice(0, 28000)}`;
 
@@ -59,8 +63,11 @@ async function enrichSalesIntelligenceTable(opts) {
         project_name: String(r.project_name || '—').slice(0, 200),
         location: String(r.location || '—').slice(0, 300),
         phase: String(r.phase || '—').slice(0, 120),
+        contact_month_recommendation: String(r.contact_month_recommendation || 'Now').slice(0, 80),
         key_contact_gc: String(r.key_contact_gc || 'Not in source').slice(0, 200),
-        why_its_a_lead: String(r.why_its_a_lead || '').slice(0, 600)
+        why_its_a_lead: String(r.why_its_a_lead || '').slice(0, 600),
+        reasoning_summary: String(r.reasoning_summary || '').slice(0, 320),
+        strategy_advice: String(r.strategy_advice || '').slice(0, 320)
       }))
       .slice(0, 25);
     return cleaned.length ? { sales_rows: cleaned } : null;

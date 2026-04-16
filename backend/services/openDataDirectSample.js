@@ -10,6 +10,14 @@ const { ensureArcGISFeatureLayerQueryUrl } = require('../engine/adapters/rest');
 const { getGlobalAxiosProxyOpts } = require('../engine/axiosProxy');
 
 const TIMEOUT = 22000;
+const SOCRATA_DATE_FIELDS = [
+  'registration_date',
+  'filed_date',
+  'created_date',
+  'issue_date',
+  'permit_issued_date',
+  'updated_at'
+];
 
 /**
  * @param {string} pageUrl
@@ -60,17 +68,35 @@ function parseHubDatasetItemId(pageUrl) {
   return { itemId: m[1], layerIndex: m[2] != null ? parseInt(m[2], 10) : 0 };
 }
 
-async function fetchSocrataSample(host, resourceId, limit) {
+async function fetchSocrataSample(host, resourceId, limit, opts = {}) {
   const base = `https://${host}`;
   const api = `${base.replace(/\/$/, '')}/resource/${resourceId}.json`;
-  const res = await axios.get(api, {
-    params: { $limit: limit },
-    timeout: TIMEOUT,
-    validateStatus: s => s === 200,
-    ...getGlobalAxiosProxyOpts()
-  });
-  if (!Array.isArray(res.data)) return null;
-  return res.data.slice(0, limit);
+  const searchText = String(opts.searchText || '').trim();
+  const latestFirst = opts.latestFirst !== false;
+  const baseParams = {
+    $limit: limit
+  };
+  if (searchText) baseParams.$q = searchText.slice(0, 80);
+
+  const orderCandidates = latestFirst ? [...SOCRATA_DATE_FIELDS, null] : [null];
+  for (const orderField of orderCandidates) {
+    try {
+      const params = { ...baseParams };
+      if (orderField) params.$order = `${orderField} DESC`;
+      const res = await axios.get(api, {
+        params,
+        timeout: TIMEOUT,
+        validateStatus: s => s === 200,
+        ...getGlobalAxiosProxyOpts()
+      });
+      if (Array.isArray(res.data) && res.data.length) {
+        return res.data.slice(0, limit);
+      }
+    } catch (e) {
+      logger.debug(`[openDataDirect] Socrata sample order ${String(orderField || 'none')}: ${e.message}`);
+    }
+  }
+  return null;
 }
 
 /** Common Socrata valuation / job-value field names — try SoQL $where when user wants commercial floor (e.g. > $299k). */
@@ -93,28 +119,38 @@ const SOCRATA_VALUE_FIELDS = [
  * @param {number} minUsd
  * @returns {Promise<object[]|null>}
  */
-async function fetchSocrataSampleMinValuation(host, resourceId, limit, minUsd) {
+async function fetchSocrataSampleMinValuation(host, resourceId, limit, minUsd, opts = {}) {
   const base = `https://${host}`;
   const api = `${base.replace(/\/$/, '')}/resource/${resourceId}.json`;
   const n = Number(minUsd);
+  const searchText = String(opts.searchText || '').trim();
+  const latestFirst = opts.latestFirst !== false;
   if (!Number.isFinite(n) || n <= 0) return null;
+  const orderCandidates = latestFirst ? SOCRATA_DATE_FIELDS : [null];
   for (const field of SOCRATA_VALUE_FIELDS) {
-    try {
-      const res = await axios.get(api, {
-        params: {
+    for (const orderField of orderCandidates) {
+      try {
+        const params = {
           $limit: limit,
           $where: `${field} > ${Math.floor(n)}`
-        },
-        timeout: TIMEOUT,
-        validateStatus: s => s === 200,
-        ...getGlobalAxiosProxyOpts()
-      });
-      if (Array.isArray(res.data) && res.data.length) {
-        logger.info(`[openDataDirect] Socrata $where ${field} > ${n} → ${res.data.length} rows`);
-        return res.data.slice(0, limit);
+        };
+        if (searchText) params.$q = searchText.slice(0, 80);
+        if (orderField) params.$order = `${orderField} DESC`;
+        const res = await axios.get(api, {
+          params,
+          timeout: TIMEOUT,
+          validateStatus: s => s === 200,
+          ...getGlobalAxiosProxyOpts()
+        });
+        if (Array.isArray(res.data) && res.data.length) {
+          logger.info(
+            `[openDataDirect] Socrata $where ${field} > ${n}${searchText ? ` + $q "${searchText.slice(0, 30)}"` : ''} → ${res.data.length} rows`
+          );
+          return res.data.slice(0, limit);
+        }
+      } catch (e) {
+        logger.debug(`[openDataDirect] Socrata where ${field} / order ${String(orderField || 'none')}: ${e.message}`);
       }
-    } catch (e) {
-      logger.debug(`[openDataDirect] Socrata where ${field}: ${e.message}`);
     }
   }
   return null;
@@ -186,20 +222,31 @@ function tryParseItemIdFromUrl(pageUrl) {
 /**
  * @param {string} pageUrl
  * @param {number} maxRows
- * @param {{ minValuationUsd?: number }} [opts]
+ * @param {{ minValuationUsd?: number, searchText?: string, latestFirst?: boolean }} [opts]
  * @returns {Promise<object[]|null>}
  */
 async function fetchOpenDataSampleRows(pageUrl, maxRows = 15, opts = {}) {
   const limit = Math.min(Math.max(maxRows, 1), 50);
   const url = String(pageUrl || '').trim();
   const minVal = opts && opts.minValuationUsd != null ? Number(opts.minValuationUsd) : null;
+  const searchText = String(opts?.searchText || '').trim();
+  const latestFirst = opts?.latestFirst !== false;
 
   const soc = parseSocrataResource(url);
   if (soc) {
     try {
       let rows = await fetchSocrataSample(soc.host, soc.resourceId, limit);
       if ((!rows || !rows.length) && minVal != null && Number.isFinite(minVal) && minVal > 0) {
-        rows = await fetchSocrataSampleMinValuation(soc.host, soc.resourceId, limit, minVal);
+        rows = await fetchSocrataSampleMinValuation(soc.host, soc.resourceId, limit, minVal, {
+          searchText,
+          latestFirst
+        });
+      }
+      if ((!rows || !rows.length) && (searchText || latestFirst)) {
+        rows = await fetchSocrataSample(soc.host, soc.resourceId, limit, {
+          searchText,
+          latestFirst
+        });
       }
       if (rows?.length) {
         logger.info(`[openDataDirect] Socrata ${soc.resourceId} → ${rows.length} rows`);

@@ -575,6 +575,11 @@
       var confBadge = confScore != null
         ? '<span class="lead-card__confidence" style="background:' + confColor + ';" title="Verification confidence: ' + confScore + '/100 (' + escapeAttr(confLabel) + ')">' + confScore + '% ' + escapeHtml(confLabel) + '</span>'
         : '';
+      var confTier = 'Experimental';
+      if (confScore != null && confScore >= 90) confTier = 'High confidence (direct + verified)';
+      else if (confScore != null && confScore >= 70) confTier = 'Strong lead (needs minor verification)';
+      else if (confScore != null && confScore >= 50) confTier = 'Moderate lead (review address/phase)';
+      else if (confScore != null) confTier = 'Experimental (search-derived)';
       var adversarialNote = verification && verification.adversarial_passed ? ' <span style="color:#16a34a;font-size:0.72rem;" title="Passed adversarial audit">&#10003; audited</span>' : '';
 
       var html = '<article class="lead-card">' +
@@ -601,6 +606,20 @@
             .slice(0, 2)
             .join(' · ')
         : '';
+      var sourceAuthority = '';
+      var sourceUrlForAuthority = extractLeadSourceUrl(flat);
+      if (sourceUrlForAuthority) {
+        try {
+          var hu = new URL(sourceUrlForAuthority);
+          sourceAuthority = hu.hostname.replace(/^www\./i, '') + ' (Live API)';
+        } catch (e) {
+          sourceAuthority = '';
+        }
+      }
+      var reasoningSummary = firstUseful(['reasoning_summary', 'why_opportunity']);
+      var strategyAdvice = firstUseful(['strategy_advice', 'best_contact_path']);
+      var contactMonth = firstUseful(['contact_month_recommendation']);
+      var newsRisk = firstUseful(['news_risk_flag', 'news_risk_note']);
       if (mustProject) {
         var words = mustProject.split(/\s+/).filter(Boolean);
         if (words.length > 12) mustProject = words.slice(0, 12).join(' ') + '…';
@@ -611,6 +630,12 @@
         '<dt>Company</dt><dd>' + escapeHtml(mustCompany || 'Missing') + '</dd>' +
         '<dt>Project (few words)</dt><dd>' + escapeHtml(mustProject || 'Missing') + '</dd>' +
         '<dt>Key people</dt><dd>' + escapeHtml(keyPeople || 'Not found yet') + '</dd>' +
+        '<dt>Confidence tier</dt><dd>' + escapeHtml(confTier) + '</dd>' +
+        '<dt>Best contact month</dt><dd>' + escapeHtml(contactMonth || 'Now') + '</dd>' +
+        '<dt>Why this lead</dt><dd>' + escapeHtml(reasoningSummary || 'Match appears relevant to your brief and filters.') + '</dd>' +
+        '<dt>Next best action</dt><dd>' + escapeHtml(strategyAdvice || 'Open source, confirm decision maker, and send first outreach.') + '</dd>' +
+        '<dt>News risk check</dt><dd>' + escapeHtml(newsRisk || 'No major risk signal found') + '</dd>' +
+        '<dt>Source</dt><dd>' + escapeHtml(sourceAuthority || 'Public source') + '</dd>' +
         '</dl>';
 
       var schema = fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema) ? fieldSchema : null;

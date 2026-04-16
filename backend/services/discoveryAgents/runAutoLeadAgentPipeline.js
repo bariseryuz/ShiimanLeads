@@ -202,10 +202,11 @@ async function runAutoLeadAgentPipeline(opts) {
     const { verified: detVerified, stats: detStats } =
       verifyQuickLeads(rawQuickLeads, { intent: discovery.intent });
 
-    // Layer 3: adversarial recheck on borderline quick leads
+    // Layer 3: adversarial recheck on borderline quick leads.
+    // IMPORTANT: if deterministic verification rejects all rows, do NOT fall back to raw leads.
     const quickLeads = detVerified.length
       ? await adversarialRecheck(b, detVerified, { threshold: 70 })
-      : rawQuickLeads;
+      : [];
 
     // Always-on enrichment layer (company + key people)
     let enrichedQuickLeads = quickLeads;
@@ -276,7 +277,9 @@ async function runAutoLeadAgentPipeline(opts) {
       note: noUrls
         ? discovery.preview_note ||
           'No candidate URLs from search. Set SERPER_API_KEY and try a more specific location or record type.'
-        : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off "Fast answer" for full extraction.',
+        : !quickLeads.length
+          ? 'Quick run found sources, but rows failed quality checks (missing address/company/project detail). No low-quality leads were returned.'
+          : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off "Fast answer" for full extraction.',
       preview_note: discovery.preview_note,
       disclaimer: discovery.disclaimer
     };

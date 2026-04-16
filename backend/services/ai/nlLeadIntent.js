@@ -222,8 +222,8 @@ async function tryArcgisSampleRows(layerPageUrl, maxFeatures = 5) {
     return null;
   }
 
-  try {
-    const response = await axios.get(queryUrl, {
+  async function runArcQuery(u) {
+    const response = await axios.get(u, {
       params: {
         f: 'json',
         where: '1=1',
@@ -234,14 +234,39 @@ async function tryArcgisSampleRows(layerPageUrl, maxFeatures = 5) {
       timeout: 18000,
       validateStatus: () => true
     });
-    const data = response.data;
+    return response.data;
+  }
+
+  try {
+    let data = await runArcQuery(queryUrl);
     if (data?.error) {
       logger.warn(`[nlLeadIntent] ArcGIS error: ${JSON.stringify(data.error).slice(0, 200)}`);
-      return null;
+      data = null;
     }
-    const features = Array.isArray(data?.features) ? data.features : [];
-    const rows = features.slice(0, maxFeatures).map(f => f.attributes || {});
-    return rows.length ? rows : null;
+    let features = Array.isArray(data?.features) ? data.features : [];
+    let rows = features.slice(0, maxFeatures).map(f => f.attributes || {});
+    if (rows.length) return rows;
+
+    // Layer fallback for common ArcGIS pattern: layer 0 empty, layer 1/2 contain table data.
+    for (const lid of [1, 2]) {
+      let alt = '';
+      if (/\/FeatureServer\/\d+\/query$/i.test(queryUrl)) {
+        alt = queryUrl.replace(/\/FeatureServer\/\d+\/query$/i, `/FeatureServer/${lid}/query`);
+      } else if (/\/MapServer\/\d+\/query$/i.test(queryUrl)) {
+        alt = queryUrl.replace(/\/MapServer\/\d+\/query$/i, `/MapServer/${lid}/query`);
+      } else {
+        continue;
+      }
+      const altData = await runArcQuery(alt).catch(() => null);
+      if (altData?.error) continue;
+      const altFeatures = Array.isArray(altData?.features) ? altData.features : [];
+      const altRows = altFeatures.slice(0, maxFeatures).map(f => f.attributes || {});
+      if (altRows.length) {
+        logger.info(`[nlLeadIntent] ArcGIS layer fallback ${lid} yielded ${altRows.length} row(s)`);
+        return altRows;
+      }
+    }
+    return null;
   } catch (e) {
     logger.warn(`[nlLeadIntent] ArcGIS sample failed: ${e.message}`);
     return null;

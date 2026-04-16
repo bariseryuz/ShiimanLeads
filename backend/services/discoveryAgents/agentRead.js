@@ -17,6 +17,16 @@ function openDataFetchOpts(intent) {
   if (i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))) {
     o.minValuationUsd = Number(i.min_project_value_usd);
   }
+  const kws = Array.isArray(i.keywords_for_search)
+    ? i.keywords_for_search.map(k => String(k || '').trim()).filter(Boolean)
+    : [];
+  const searchBits = [
+    String(i.asset_or_use || '').trim(),
+    String(i.trigger_or_record || '').trim(),
+    ...kws.slice(0, 2)
+  ].filter(Boolean);
+  if (searchBits.length) o.searchText = searchBits.join(' ').slice(0, 80);
+  o.latestFirst = true;
   return o;
 }
 

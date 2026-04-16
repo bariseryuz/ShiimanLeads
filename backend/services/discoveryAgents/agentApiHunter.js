@@ -67,6 +67,16 @@ async function runAgentApiHunter(opts) {
   if (intent.min_project_value_usd != null && Number.isFinite(Number(intent.min_project_value_usd))) {
     odcOpts.minValuationUsd = Number(intent.min_project_value_usd);
   }
+  const kws = Array.isArray(intent.keywords_for_search)
+    ? intent.keywords_for_search.map(k => String(k || '').trim()).filter(Boolean)
+    : [];
+  const searchBits = [
+    String(intent.asset_or_use || '').trim(),
+    String(intent.trigger_or_record || '').trim(),
+    ...kws.slice(0, 2)
+  ].filter(Boolean);
+  if (searchBits.length) odcOpts.searchText = searchBits.join(' ').slice(0, 80);
+  odcOpts.latestFirst = true;
 
   const collected = [];
   const urlsAttempted = [];

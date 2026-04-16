@@ -66,6 +66,21 @@ function extractStatusField(row) {
 
 const BAD_STATUSES = /\b(expired|withdrawn|void(ed)?|closed|cancelled|canceled|denied|rejected|revoked|inactive|superseded)\b/i;
 const GOOD_STATUSES = /\b(issued|active|approved|in.?review|under.?review|pending|open|finaled|complete[d]?|in.?progress)\b/i;
+const NON_PHYSICAL_PATTERNS = [
+  /\bP\.?O\.?\s?Box\b/i,
+  /\bRegistered\sAgent\b/i,
+  /\bc\/o\b/i,
+  /\bLegal\sDept\b/i,
+  /\bCorporation\sService\b/i,
+  /\bSuite\s\d+\b/i,
+  /\bSte\.?\s?\d+\b/i
+];
+
+function isNonPhysicalAddress(address) {
+  const a = String(address || '').trim();
+  if (!a) return false;
+  return NON_PHYSICAL_PATTERNS.some(re => re.test(a));
+}
 
 function checkGeography(row, intent) {
   if (!intent) return { pass: true, reason: 'No intent to check against' };
@@ -137,13 +152,15 @@ function checkClientEssentials(row) {
   const company = get(['key_contact_or_firm', 'company_name', 'owner_name', 'contractor_name', 'applicant_name', 'developer']);
   const detail = get(['project_snapshot', 'why_opportunity', 'project_name', 'lead_title', 'description']);
 
-  let hits = 0;
-  if (address) hits++;
-  if (company) hits++;
-  if (detail && detail.split(/\s+/).filter(Boolean).length >= 3) hits++;
-
-  if (hits >= 2) return { pass: true, reason: `Client essentials present (${hits}/3)` };
-  return { pass: false, reason: 'Missing client essentials (need at least 2/3: address, company, project detail)' };
+  const hasDetail = detail && detail.split(/\s+/).filter(Boolean).length >= 3;
+  if (!address || !company) {
+    return { pass: false, reason: 'Missing client essentials (address and company are both required)' };
+  }
+  if (isNonPhysicalAddress(address)) {
+    return { pass: true, soft_flag: true, reason: 'Address appears non-physical (PO Box/registered-agent style); enrichment fallback required' };
+  }
+  if (hasDetail) return { pass: true, reason: 'Client essentials present (address + company + project detail)' };
+  return { pass: true, soft_flag: true, reason: 'Address + company present; project detail is thin' };
 }
 
 function checkFieldCompleteness(row) {
@@ -283,6 +300,7 @@ module.exports = {
   checkGeography,
   checkValueThreshold,
   checkStatus,
+  isNonPhysicalAddress,
   checkClientEssentials,
   checkFieldCompleteness,
   computeConfidence,
