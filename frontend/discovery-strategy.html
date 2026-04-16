@@ -589,6 +589,18 @@
       var mustAddress = firstUseful(['address', 'site_address', 'project_address', 'location']) || n.line1;
       var mustCompany = firstUseful(['company_name', 'key_contact_or_firm', 'owner_name', 'contractor_name', 'applicant_name', 'developer', 'business_name']);
       var mustProject = firstUseful(['project_snapshot', 'project_name', 'lead_title', 'why_opportunity', 'description']);
+      var keyPeople = Array.isArray(flat.key_people)
+        ? flat.key_people
+            .filter(function (p) { return p && typeof p === 'object' && p.name; })
+            .map(function (p) {
+              var nm = String(p.name || '').trim();
+              var rl = String(p.role || '').trim();
+              return rl ? (nm + ' (' + rl + ')') : nm;
+            })
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(' · ')
+        : '';
       if (mustProject) {
         var words = mustProject.split(/\s+/).filter(Boolean);
         if (words.length > 12) mustProject = words.slice(0, 12).join(' ') + '…';
@@ -598,6 +610,7 @@
         '<dt>Address</dt><dd>' + escapeHtml(mustAddress || 'Missing') + '</dd>' +
         '<dt>Company</dt><dd>' + escapeHtml(mustCompany || 'Missing') + '</dd>' +
         '<dt>Project (few words)</dt><dd>' + escapeHtml(mustProject || 'Missing') + '</dd>' +
+        '<dt>Key people</dt><dd>' + escapeHtml(keyPeople || 'Not found yet') + '</dd>' +
         '</dl>';
 
       var schema = fieldSchema && typeof fieldSchema === 'object' && !Array.isArray(fieldSchema) ? fieldSchema : null;

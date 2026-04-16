@@ -23,6 +23,7 @@ const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
 const { buildAutoLeadQuickLeads } = require('./autoLeadQuickLeads');
 const { runAgentApiHunter } = require('./agentApiHunter');
 const { enrichSalesIntelligenceTable } = require('./salesIntelligenceEnrichment');
+const { enrichLeadsWithCompanyPeople } = require('./companyPeopleEnrichment');
 const { runDeterministicVerify, verifyQuickLeads } = require('./deterministicVerify');
 const { adversarialRecheck } = require('./adversarialRecheck');
 
@@ -206,11 +207,29 @@ async function runAutoLeadAgentPipeline(opts) {
       ? await adversarialRecheck(b, detVerified, { threshold: 70 })
       : rawQuickLeads;
 
+    // Always-on enrichment layer (company + key people)
+    let enrichedQuickLeads = quickLeads;
+    let company_people_enrichment = null;
+    try {
+      const ep = await enrichLeadsWithCompanyPeople({
+        brief: b,
+        intent: discovery.intent,
+        leads: quickLeads,
+        maxLeads: 5
+      });
+      if (Array.isArray(ep?.leads) && ep.leads.length) enrichedQuickLeads = ep.leads;
+      if (Array.isArray(ep?.enrichment_rows) && ep.enrichment_rows.length) {
+        company_people_enrichment = { rows: ep.enrichment_rows };
+      }
+    } catch (e) {
+      logger.warn(`quick companyPeople enrichment: ${e.message}`);
+    }
+
     const quick_read = await buildAutoLeadQuickRead({
       brief: b,
       intent: discovery.intent,
       candidate_sources,
-      leads: quickLeads,
+      leads: enrichedQuickLeads,
       urls_attempted: [],
       noSearchHits: noUrls
     });
@@ -227,7 +246,8 @@ async function runAutoLeadAgentPipeline(opts) {
       results_pooled: discovery.results_pooled,
       candidate_sources,
       urls_attempted: [],
-      leads: quickLeads,
+      leads: enrichedQuickLeads,
+      ...(company_people_enrichment ? { company_people_enrichment } : {}),
       verification_stats: detStats,
       field_schema: quickLeads.length
         ? {
@@ -358,11 +378,29 @@ async function runAutoLeadAgentPipeline(opts) {
       'AI strict filter had no exact matches but deterministic + adversarial checks validated some rows.';
   }
 
+  // Always-on enrichment layer (company + key people)
+  let enrichedLeads = leads;
+  let company_people_enrichment = null;
+  try {
+    const ep = await enrichLeadsWithCompanyPeople({
+      brief: b,
+      intent: discovery.intent,
+      leads,
+      maxLeads: 5
+    });
+    if (Array.isArray(ep?.leads) && ep.leads.length) enrichedLeads = ep.leads;
+    if (Array.isArray(ep?.enrichment_rows) && ep.enrichment_rows.length) {
+      company_people_enrichment = { rows: ep.enrichment_rows };
+    }
+  } catch (e) {
+    logger.warn(`companyPeople enrichment: ${e.message}`);
+  }
+
   const quick_read = await buildAutoLeadQuickRead({
     brief: b,
     intent: discovery.intent,
     candidate_sources: discovery.candidate_sources,
-    leads,
+    leads: enrichedLeads,
     urls_attempted: urlsAttempted,
     noSearchHits: false
   });
@@ -373,10 +411,11 @@ async function runAutoLeadAgentPipeline(opts) {
   agent_pipeline.push('deterministic_verify');
   agent_pipeline.push('adversarial_recheck');
 
+  // Always-on sales shaping (no longer optional)
   let sales_intelligence = null;
-  if (String(process.env.AUTO_LEADS_SALES_SHAPE || '').toLowerCase() === 'true' && leads.length) {
+  if (enrichedLeads.length) {
     try {
-      const si = await enrichSalesIntelligenceTable({ brief: b, intent: discovery.intent, leads });
+      const si = await enrichSalesIntelligenceTable({ brief: b, intent: discovery.intent, leads: enrichedLeads });
       if (si?.sales_rows?.length) sales_intelligence = si;
     } catch (e) {
       logger.warn(`runAutoLeadAgentPipeline sales shape: ${e.message}`);
@@ -397,7 +436,8 @@ async function runAutoLeadAgentPipeline(opts) {
     results_pooled: discovery.results_pooled,
     candidate_sources: discovery.candidate_sources,
     urls_attempted: urlsAttempted,
-    leads,
+    leads: enrichedLeads,
+    ...(company_people_enrichment ? { company_people_enrichment } : {}),
     field_schema: manifest.field_schema,
     strict_match_rules: manifest.strict_match_rules,
     strict_filter_applied: strictFilterApplied,
