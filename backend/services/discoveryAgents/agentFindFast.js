@@ -7,6 +7,93 @@ const { hasSerper, googleSearchOrganic, dedupeSearchResults, normalizeUrlKey } =
 const { sortCandidateSources } = require('../candidateUrlSort');
 const { parseBriefWithGemini, buildSerperQueries, buildMachineParameters } = require('../ai/nlLeadIntent');
 
+function uniq(items, max = 12) {
+  return [...new Set((Array.isArray(items) ? items : []).map(x => String(x || '').trim()).filter(Boolean))].slice(0, max);
+}
+
+function extractOfferFromBrief(brief) {
+  const b = String(brief || '').trim();
+  if (!b) return '';
+  const m1 = b.match(/\b(?:i\s+sell|we\s+sell|i\s+offer|we\s+offer|my\s+service\s+is|our\s+service\s+is)\s+([^,.!?]{3,80})/i);
+  if (m1 && m1[1]) return String(m1[1]).trim();
+  const m2 = b.match(/\b(?:looking\s+to\s+sell|want\s+to\s+sell)\s+([^,.!?]{3,80})/i);
+  if (m2 && m2[1]) return String(m2[1]).trim();
+  return '';
+}
+
+function buildBuyerIntentProfile(brief, intent) {
+  const b = String(brief || '').toLowerCase();
+  const offer = extractOfferFromBrief(brief) || String(intent?.asset_or_use || '').trim();
+  const offerLower = String(offer || '').toLowerCase();
+
+  const companyTypes = [];
+  const demandSignals = [];
+  const siteTargets = [];
+
+  if (/lead gen|lead generation|appointment setting|cold email|outreach/.test(`${b} ${offerLower}`)) {
+    companyTypes.push(
+      'marketing agency',
+      'real estate brokerage',
+      'solar installer',
+      'roofing company',
+      'law firm',
+      'med spa',
+      'b2b saas',
+      'recruiting agency'
+    );
+    demandSignals.push(
+      'needs more leads',
+      'book more appointments',
+      'hiring sales reps',
+      'expanding to new markets',
+      'performance marketing budget'
+    );
+    siteTargets.push(
+      'clutch.co',
+      'linkedin.com/company',
+      'indeed.com',
+      'wellfound.com',
+      'crunchbase.com',
+      'g2.com'
+    );
+  } else if (/seo|ads|ppc|marketing/.test(`${b} ${offerLower}`)) {
+    companyTypes.push('local business', 'ecommerce brand', 'startup', 'agency');
+    demandSignals.push('looking for growth', 'hiring marketing manager', 'paid ads spend');
+    siteTargets.push('linkedin.com/company', 'indeed.com', 'crunchbase.com');
+  } else {
+    companyTypes.push(
+      String(intent?.asset_or_use || '').trim() || 'business',
+      'company',
+      'agency',
+      'vendor'
+    );
+    demandSignals.push(
+      String(intent?.trigger_or_record || '').trim() || 'growth signal',
+      'expansion',
+      'hiring',
+      'new contracts'
+    );
+    siteTargets.push('linkedin.com/company', 'clutch.co', 'crunchbase.com');
+  }
+
+  const offerToken = offer ? offer.replace(/\s+/g, ' ').trim().slice(0, 60) : 'lead generation service';
+  const queryStems = uniq([
+    `"${offerToken}" buyer`,
+    `"${offerToken}" companies`,
+    `${offerToken} best fit clients`,
+    `companies that need ${offerToken}`,
+    ...companyTypes.slice(0, 4).map(c => `${c} looking for leads`)
+  ], 8);
+
+  return {
+    offer: offerToken,
+    companyTypes: uniq(companyTypes, 8),
+    demandSignals: uniq(demandSignals, 8),
+    siteTargets: uniq(siteTargets, 8),
+    queryStems
+  };
+}
+
 function fallbackIntentFromBrief(brief) {
   const b = String(brief || '').trim();
   const NUMBER_WORDS = {
@@ -66,6 +153,7 @@ function buildFastQueries(brief) {
 
 function buildFastQueriesFromIntent(intent, brief, opts = {}) {
   const nonTechnical = opts.nonTechnical === true;
+  const buyerProfile = opts.buyerProfile || null;
   const i = intent && typeof intent === 'object' ? intent : {};
   const geo = String(i.geography || '').trim();
   const trigger = String(i.trigger_or_record || 'building permit').trim();
@@ -83,7 +171,15 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
         [geo, vertical || 'business', trigger, 'potential clients', valToken].filter(Boolean).join(' '),
         [geo, trigger, 'buyer intent', 'decision maker'].filter(Boolean).join(' '),
         [geo, 'companies', 'hiring', 'agency', 'vendor'].filter(Boolean).join(' '),
-        [geo, 'new opportunities', 'lead list', 'qualified prospects'].filter(Boolean).join(' ')
+        [geo, 'new opportunities', 'lead list', 'qualified prospects'].filter(Boolean).join(' '),
+        ...(buyerProfile
+          ? [
+              [geo, buyerProfile.offer, 'target companies', buyerProfile.companyTypes[0] || 'business'].filter(Boolean).join(' '),
+              [geo, buyerProfile.companyTypes[1] || 'company', buyerProfile.demandSignals[0] || 'needs leads'].filter(Boolean).join(' '),
+              [geo, buyerProfile.queryStems[0] || 'companies that need lead generation'].filter(Boolean).join(' '),
+              [geo, buyerProfile.queryStems[1] || 'buyer intent', buyerProfile.siteTargets[0] ? `site:${buyerProfile.siteTargets[0]}` : ''].filter(Boolean).join(' ')
+            ]
+          : [])
       ]
     : [
         [geo, vertical, trigger, valToken, 'open data API FeatureServer Socrata'].filter(Boolean).join(' '),
@@ -119,11 +215,33 @@ function isLowSignalArticle(link, title) {
 
 function hasProjectSignal(result, brief) {
   const blob = `${String(result?.title || '')} ${String(result?.snippet || '')} ${String(result?.link || '')}`.toLowerCase();
-  const baseSignals = /\b(project|construction|permit|development|building|contractor|owner|applicant|gc|architect|bid|proposal|issued|active|client|customer|company|agency|vendor|buyer|decision maker|prospect|hiring|rfp|request for proposal)\b/;
+  const baseSignals = /\b(project|construction|permit|development|building|contractor|owner|applicant|gc|architect|bid|proposal|issued|active|client|customer|company|agency|vendor|buyer|decision maker|prospect|hiring|rfp|request for proposal|growth|pipeline|appointments|qualified leads|demand gen|outbound|inbound|booked calls)\b/;
   if (baseSignals.test(blob)) return true;
   const b = String(brief || '').toLowerCase();
   const tokens = b.split(/[^a-z0-9]+/).filter(x => x.length > 3).slice(0, 8);
   return tokens.some(tok => blob.includes(tok));
+}
+
+function scoreResultForBuyerIntent(result, brief, buyerProfile) {
+  const blob = `${String(result?.title || '')} ${String(result?.snippet || '')} ${String(result?.link || '')}`.toLowerCase();
+  let score = 0;
+  if (hasProjectSignal(result, brief)) score += 2;
+  if (buyerProfile) {
+    for (const d of buyerProfile.siteTargets || []) {
+      if (d && String(result?.link || '').toLowerCase().includes(String(d).toLowerCase())) score += 3;
+    }
+    for (const c of buyerProfile.companyTypes || []) {
+      const token = String(c || '').toLowerCase();
+      if (token && blob.includes(token)) score += 2;
+    }
+    for (const s of buyerProfile.demandSignals || []) {
+      const token = String(s || '').toLowerCase();
+      if (token && blob.includes(token)) score += 2;
+    }
+    const offer = String(buyerProfile.offer || '').toLowerCase();
+    if (offer && blob.includes(offer)) score += 2;
+  }
+  return score;
 }
 
 async function runAgentFindFast(brief, opts = {}) {
@@ -134,8 +252,9 @@ async function runAgentFindFast(brief, opts = {}) {
   } catch (e) {
     intent = fallbackIntentFromBrief(brief);
   }
+  const buyerProfile = nonTechnical ? buildBuyerIntentProfile(brief, intent) : null;
   const machineParameters = buildMachineParameters(intent);
-  const queries = buildFastQueriesFromIntent(intent, brief, { nonTechnical });
+  const queries = buildFastQueriesFromIntent(intent, brief, { nonTechnical, buyerProfile });
   if (!hasSerper() || !queries.length) {
     return {
       intent: { mode: 'fast', ...(intent || {}) },
@@ -167,7 +286,10 @@ async function runAgentFindFast(brief, opts = {}) {
     .filter(r => /^https?:\/\//i.test(String(r.link || '')))
     .filter(r => !isLowSignalArticle(r.link, r.title));
   const prioritized = nonTechnical
-    ? deduped.filter(r => hasProjectSignal(r, brief))
+    ? deduped
+        .map(r => ({ ...r, _score: scoreResultForBuyerIntent(r, brief, buyerProfile) }))
+        .filter(r => r._score > 0)
+        .sort((a, b) => b._score - a._score)
     : deduped;
   const pool = prioritized.length ? prioritized : deduped;
 
@@ -192,7 +314,7 @@ async function runAgentFindFast(brief, opts = {}) {
     search_queries_used: useQueries,
     results_pooled: pool.length,
     candidate_sources,
-    preview_note: candidate_sources.length ? null : 'Fast scout found weak sources; try adding city/state + permit type.',
+    preview_note: candidate_sources.length ? null : 'Fast scout found weak sources; try adding what you sell + who should buy + location.',
     disclaimer: 'Quick mode is a fast, chat-style web summary. Use full extract only when you need strict structured output.'
   };
 }
