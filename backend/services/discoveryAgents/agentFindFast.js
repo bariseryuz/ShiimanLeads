@@ -56,7 +56,9 @@ function buildFastQueriesFromIntent(intent, brief) {
 
   const targeted = [
     [geo, vertical, trigger, valToken, 'open data API FeatureServer Socrata'].filter(Boolean).join(' '),
-    [geo, trigger, 'site:gov data portal json'].filter(Boolean).join(' ')
+    [geo, trigger, 'site:gov data portal json'].filter(Boolean).join(' '),
+    [geo, vertical || 'commercial', '"resource" ".json" site:data.*.gov permits valuation'].filter(Boolean).join(' '),
+    [geo, '"dev.socrata.com/foundry"', '"resource" ".json"'].filter(Boolean).join(' ')
   ]
     .map(q => q.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
@@ -69,6 +71,9 @@ function isLowSignalArticle(link, title) {
   const u = String(link || '').toLowerCase();
   const t = String(title || '').toLowerCase();
   if (/medium\.com|substack\.com|wordpress|blogspot|wixsite/.test(u)) return true;
+  if (/dev\.socrata\.com\/foundry\//.test(u)) return true;
+  if (/\/foundry\//.test(u) && /socrata/.test(u)) return true;
+  if (/\/about($|[/?#])/.test(u) && /(data\.|opendata|hub\.arcgis)/.test(u)) return true;
   if (/\.pdf($|\?)/.test(u)) return true;
   if (/\/(report|whitepaper|ebook|brochure)\//.test(u)) return true;
   if (/\/(blog|news|article|guide|insight|press-release)\//.test(u)) return true;

@@ -194,6 +194,11 @@ async function runAutoLeadAgentPipeline(opts) {
     const discovery = await runAgentFindFast(b);
     const noUrls = !discovery.candidate_sources?.length;
     const candidate_sources = noUrls ? [] : discovery.candidate_sources;
+    const hasApiPivotCandidate = candidate_sources.some(s => {
+      const u = String(s?.url || '').toLowerCase();
+      return /dev\.socrata\.com\/foundry\/|\/resource\/[0-9a-z]{4}-[0-9a-z]{4}|featureserver\/\d+|\/mapserver\//i.test(u) ||
+        /^https?:\/\/(data|opendata)\./i.test(u);
+    });
     const rawQuickLeads = noUrls
       ? []
       : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
@@ -251,6 +256,10 @@ async function runAutoLeadAgentPipeline(opts) {
       leads: enrichedQuickLeads,
       ...(company_people_enrichment ? { company_people_enrichment } : {}),
       verification_stats: detStats,
+      site_verification_needed_count:
+        Array.isArray(enrichedQuickLeads)
+          ? enrichedQuickLeads.filter(l => l && l.needs_site_verification === true).length
+          : 0,
       field_schema: quickLeads.length
         ? {
             lead_title: 'Short outreach-friendly label',
@@ -277,6 +286,8 @@ async function runAutoLeadAgentPipeline(opts) {
       note: noUrls
         ? discovery.preview_note ||
           'No candidate URLs from search. Set SERPER_API_KEY and try a more specific location or record type.'
+        : (!quickLeads.length && hasApiPivotCandidate)
+          ? 'No active records found from live API fetch for current query constraints. Try broader filters or a different dataset.'
         : !quickLeads.length
           ? 'Quick run found sources, but rows failed quality checks (missing address/company/project detail). No low-quality leads were returned.'
           : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off "Fast answer" for full extraction.',
@@ -448,6 +459,10 @@ async function runAutoLeadAgentPipeline(opts) {
     strict_match_rules: manifest.strict_match_rules,
     strict_filter_applied: strictFilterApplied,
     verification_stats: detStats,
+    site_verification_needed_count:
+      Array.isArray(enrichedLeads)
+        ? enrichedLeads.filter(l => l && l.needs_site_verification === true).length
+        : 0,
     verified_match_count: finalVerified.length,
     raw_row_count: collectedRaw.length,
     ai_verified_count: aiVerified.length,

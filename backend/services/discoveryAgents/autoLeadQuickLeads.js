@@ -18,6 +18,12 @@ function parseJson(text) {
 async function buildAutoLeadQuickLeads({ brief, sources }) {
   const src = Array.isArray(sources) ? sources : [];
   if (!src.length) return [];
+  const PLATFORM_PROVIDER_RE = /\b(socrata|arcgis|esri|tyler\s*tech|opendata\s*soft|accela)\b/i;
+  const hasApiPivotSource = src.some(s => {
+    const u = String(s?.url || '').toLowerCase();
+    return /dev\.socrata\.com\/foundry\/|\/resource\/[0-9a-z]{4}-[0-9a-z]{4}|featureserver\/\d+|\/mapserver\//i.test(u) ||
+      /^https?:\/\/(data|opendata)\./i.test(u);
+  });
 
   function minValFromBrief(b) {
     const t = String(b || '');
@@ -89,7 +95,7 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
   }
 
   if (!isAIAvailable()) {
-    return src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
+    return hasApiPivotSource ? [] : src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
   }
 
   const model = getGeminiModel('discovery');
@@ -123,11 +129,17 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
             project_snapshot: String(x.project_snapshot || x.why_opportunity || x.project_name || '').trim().slice(0, 120) || 'Project details need verification from source',
             location: String(x.location || 'Unknown').trim().slice(0, 140),
             address: String(x.address || 'Not publicly stated').trim().slice(0, 220),
-            company_name: String(x.company_name || x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180),
+            company_name: (() => {
+              const c = String(x.company_name || x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180);
+              return PLATFORM_PROVIDER_RE.test(c) ? 'Not publicly stated' : c;
+            })(),
             permit_or_record_id: String(x.permit_or_record_id || 'Not publicly stated').trim().slice(0, 120),
             status_or_phase: String(x.status_or_phase || 'Not publicly stated').trim().slice(0, 120),
             estimated_value_usd: String(x.estimated_value_usd || 'Not publicly stated').trim().slice(0, 120),
-            key_contact_or_firm: String(x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180),
+            key_contact_or_firm: (() => {
+              const k = String(x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180);
+              return PLATFORM_PROVIDER_RE.test(k) ? 'Not publicly stated' : k;
+            })(),
             why_opportunity: String(x.why_opportunity || '').trim().slice(0, 360) || 'Potentially relevant source from quick search.',
             evidence: String(x.evidence || x.why_opportunity || '').trim().slice(0, 300) || 'Row-level evidence from public API.',
             recommended_next_step: String(x.recommended_next_step || 'Open source and confirm permit/project table columns before outreach.').trim().slice(0, 220),
@@ -139,8 +151,10 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
         })
         .slice(0, 3);
       if (mappedApi.length) return mappedApi;
+      if (hasApiPivotSource) return [];
     } catch (e) {
       logger.warn(`autoLeadQuickLeads api-first: ${e.message}`);
+      if (hasApiPivotSource) return [];
     }
   }
 
@@ -176,11 +190,17 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
           project_snapshot: String(x.project_snapshot || x.why_opportunity || x.project_name || '').trim().slice(0, 120) || 'Project details need verification from source',
           location: String(x.location || 'Unknown').trim().slice(0, 140),
           address: String(x.address || 'Not publicly stated').trim().slice(0, 220),
-          company_name: String(x.company_name || x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180),
+          company_name: (() => {
+            const c = String(x.company_name || x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180);
+            return PLATFORM_PROVIDER_RE.test(c) ? 'Not publicly stated' : c;
+          })(),
           permit_or_record_id: String(x.permit_or_record_id || 'Not publicly stated').trim().slice(0, 120),
           status_or_phase: String(x.status_or_phase || 'Not publicly stated').trim().slice(0, 120),
           estimated_value_usd: String(x.estimated_value_usd || 'Not publicly stated').trim().slice(0, 120),
-          key_contact_or_firm: String(x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180),
+          key_contact_or_firm: (() => {
+            const k = String(x.key_contact_or_firm || 'Not publicly stated').trim().slice(0, 180);
+            return PLATFORM_PROVIDER_RE.test(k) ? 'Not publicly stated' : k;
+          })(),
           why_opportunity: String(x.why_opportunity || '').trim().slice(0, 360) || 'Potentially relevant source from quick search.',
           evidence: String(x.evidence || x.why_opportunity || '').trim().slice(0, 300) || 'Snippet-level evidence only.',
           recommended_next_step: String(x.recommended_next_step || 'Open source and confirm permit/project table columns before outreach.').trim().slice(0, 220),
@@ -192,10 +212,10 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
       })
       .slice(0, 3);
     if (out.length) return out;
-    return src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
+    return hasApiPivotSource ? [] : src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
   } catch (e) {
     logger.warn(`autoLeadQuickLeads: ${e.message}`);
-    return src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
+    return hasApiPivotSource ? [] : src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
   }
 }
 

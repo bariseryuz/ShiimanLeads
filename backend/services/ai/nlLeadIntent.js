@@ -284,6 +284,8 @@ function filterUnhelpfulSearchLinks(rows) {
 
 function looksDataLikeUrl(url) {
   const u = String(url || '').toLowerCase();
+  if (/dev\.socrata\.com\/foundry\//.test(u)) return false;
+  if (/\/about($|[/?#])/.test(u) && /(data\.|opendata|hub\.arcgis)/.test(u)) return false;
   return (
     /featureserver\/\d+|\/mapserver\//i.test(u) ||
     /\/resource\/[0-9a-z]{4}-[0-9a-z]{4}/i.test(u) ||
@@ -309,8 +311,11 @@ function looksArticleLikeResult(row) {
   const nonDataLanguage =
     /(guide|how to|cost per sq ft|what is|top \d+|best \d+)/i.test(title) ||
     /(guide|how to|sponsored|advertisement)/i.test(snippet);
+  const isDocumentation =
+    /dev\.socrata\.com\/foundry\//.test(link) ||
+    (/\/about($|[/?#])/.test(link) && /(data\.|opendata|hub\.arcgis)/.test(link));
 
-  return blogHost || articlePath || nonDataLanguage;
+  return blogHost || articlePath || nonDataLanguage || isDocumentation;
 }
 
 function prioritizeDataLikePool(rows) {

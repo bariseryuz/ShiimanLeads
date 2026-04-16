@@ -620,6 +620,9 @@
       var strategyAdvice = firstUseful(['strategy_advice', 'best_contact_path']);
       var contactMonth = firstUseful(['contact_month_recommendation']);
       var newsRisk = firstUseful(['news_risk_flag', 'news_risk_note']);
+      var siteVerification = flat.needs_site_verification === true
+        ? ('Required — ' + String(flat.site_verification_reason || 'Potential non-physical address'))
+        : 'Not required';
       if (mustProject) {
         var words = mustProject.split(/\s+/).filter(Boolean);
         if (words.length > 12) mustProject = words.slice(0, 12).join(' ') + '…';
@@ -635,6 +638,7 @@
         '<dt>Why this lead</dt><dd>' + escapeHtml(reasoningSummary || 'Match appears relevant to your brief and filters.') + '</dd>' +
         '<dt>Next best action</dt><dd>' + escapeHtml(strategyAdvice || 'Open source, confirm decision maker, and send first outreach.') + '</dd>' +
         '<dt>News risk check</dt><dd>' + escapeHtml(newsRisk || 'No major risk signal found') + '</dd>' +
+        '<dt>Site verification</dt><dd>' + escapeHtml(siteVerification) + '</dd>' +
         '<dt>Source</dt><dd>' + escapeHtml(sourceAuthority || 'Public source') + '</dd>' +
         '</dl>';
 

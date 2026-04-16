@@ -148,7 +148,13 @@ async function enrichLeadsWithCompanyPeople({ brief, intent, leads, maxLeads = 5
       ...out[i],
       ...(e.company_name ? { company_name: e.company_name } : {}),
       ...(e.company_summary ? { company_summary: e.company_summary } : {}),
-      ...(e.physical_site_address ? { address: e.physical_site_address } : {}),
+      ...(e.physical_site_address
+        ? {
+            address: e.physical_site_address,
+            needs_site_verification: false,
+            site_verification_reason: 'Resolved by physical-site enrichment fallback.'
+          }
+        : {}),
       ...(e.best_contact_path ? { best_contact_path: e.best_contact_path } : {}),
       ...(e.news_risk_flag ? { news_risk_flag: e.news_risk_flag } : {}),
       ...(e.news_risk_note ? { news_risk_note: e.news_risk_note } : {}),

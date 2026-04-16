@@ -149,7 +149,10 @@ function checkClientEssentials(row) {
   };
 
   const address = get(['address', 'site_address', 'project_address', 'location']);
-  const company = get(['key_contact_or_firm', 'company_name', 'owner_name', 'contractor_name', 'applicant_name', 'developer']);
+  let company = get(['key_contact_or_firm', 'company_name', 'owner_name', 'contractor_name', 'applicant_name', 'developer']);
+  if (/\b(socrata|arcgis|esri|tyler\s*tech|opendata\s*soft|accela)\b/i.test(company)) {
+    company = '';
+  }
   const detail = get(['project_snapshot', 'why_opportunity', 'project_name', 'lead_title', 'description']);
 
   const hasDetail = detail && detail.split(/\s+/).filter(Boolean).length >= 3;
@@ -161,6 +164,19 @@ function checkClientEssentials(row) {
   }
   if (hasDetail) return { pass: true, reason: 'Client essentials present (address + company + project detail)' };
   return { pass: true, soft_flag: true, reason: 'Address + company present; project detail is thin' };
+}
+
+function pickPrimaryAddress(row) {
+  if (!row || typeof row !== 'object') return '';
+  const keys = ['address', 'site_address', 'project_address', 'location'];
+  for (const k of keys) {
+    const v = row[k];
+    if (v == null || v === '') continue;
+    const s = String(v).trim();
+    if (!s || /^(not publicly|unknown|n\/?a|null|undefined|none|-|\.+)$/i.test(s)) continue;
+    return s;
+  }
+  return '';
 }
 
 function checkFieldCompleteness(row) {
@@ -241,16 +257,24 @@ function runDeterministicVerify(leads, opts = {}) {
     const allChecks = [geoCheck, valCheck, statusCheck, essentialsCheck, fieldCheck];
     const hardFails = allChecks.filter(c => !c.pass);
     const reasons = allChecks.map(c => c.reason);
-    const confidence = computeConfidence(allChecks);
+    let confidence = computeConfidence(allChecks);
+    if (!essentialsCheck.pass) confidence = 0;
     const label = confidenceLabel(confidence);
 
     const enrichedRow = { ...row };
+    const primaryAddress = pickPrimaryAddress(enrichedRow);
+    const needsSiteVerification = !!primaryAddress && isNonPhysicalAddress(primaryAddress);
+    enrichedRow.needs_site_verification = needsSiteVerification;
+    if (needsSiteVerification) {
+      enrichedRow.site_verification_reason = 'Address appears to be PO Box/registered-agent/non-jobsite.';
+    }
     enrichedRow._verification = {
       confidence,
       confidence_label: label,
       checks: reasons,
       hard_fails: hardFails.map(c => c.reason),
-      passed: hardFails.length === 0
+      passed: hardFails.length === 0,
+      hide_card: !essentialsCheck.pass
     };
 
     if (hardFails.length > 0 && strict) {
@@ -268,6 +292,7 @@ function runDeterministicVerify(leads, opts = {}) {
       ? Math.round(verified.reduce((s, r) => s + (r._verification?.confidence || 0), 0) / verified.length)
       : 0,
     high_confidence_count: verified.filter(r => (r._verification?.confidence || 0) >= 85).length,
+    site_verification_needed_count: verified.filter(r => r.needs_site_verification === true).length,
     checks_applied: [
       'geography',
       'value_threshold',
