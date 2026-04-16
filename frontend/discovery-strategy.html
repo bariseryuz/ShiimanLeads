@@ -946,6 +946,25 @@
       }
     }
 
+    function parseRequestedLeadCount(brief) {
+      var b = String(brief || '').toLowerCase();
+      var digitMatch = b.match(/\b(?:find|give|get|show|return)\s+(\d{1,2})\b/) || b.match(/\b(\d{1,2})\s+leads?\b/);
+      if (digitMatch && digitMatch[1]) {
+        var n = parseInt(digitMatch[1], 10);
+        return Math.min(50, Math.max(1, n || 15));
+      }
+      var words = {
+        one: 1, two: 2, three: 3, four: 4, five: 5,
+        six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+      };
+      var wordMatch = b.match(/\b(?:find|give|get|show|return)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/) ||
+        b.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+leads?\b/);
+      if (wordMatch && wordMatch[1] && words[wordMatch[1]]) {
+        return words[wordMatch[1]];
+      }
+      return 15;
+    }
+
     function renderAutoLeads(data) {
       var dash = document.getElementById('leadDashboard');
       var strategyOut = document.getElementById('results');
@@ -958,7 +977,9 @@
         return;
       }
       const intent = data.intent || {};
-      const leads = Array.isArray(data.leads) ? data.leads : [];
+      const leads = (Array.isArray(data.leads) ? data.leads : []).filter(function (lead) {
+        return !(lead && lead._verification && lead._verification.hide_card === true);
+      });
       const summaryLine = intentPlainSummary(intent);
       var html = '<div class="lead-dashboard-inner">';
       html += '<p class="dashboard-kicker">Lead discovery run</p>';
@@ -1090,7 +1111,7 @@
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ brief: brief, maxLeads: 15, maxSites: 3, quickOnly: quickOnly })
+          body: JSON.stringify({ brief: brief, maxLeads: parseRequestedLeadCount(brief), maxSites: 3, quickOnly: quickOnly })
         });
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
@@ -1131,7 +1152,7 @@
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: url, brief: brief, maxLeads: 15, deleteAfter: false })
+          body: JSON.stringify({ url: url, brief: brief, maxLeads: parseRequestedLeadCount(brief), deleteAfter: false })
         });
         const data = await res.json().catch(function () { return {}; });
         if (!res.ok) {

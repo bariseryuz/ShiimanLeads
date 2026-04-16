@@ -15,9 +15,10 @@ function parseJson(text) {
   }
 }
 
-async function buildAutoLeadQuickLeads({ brief, sources }) {
+async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
   const src = Array.isArray(sources) ? sources : [];
   if (!src.length) return [];
+  const desiredCount = Math.min(25, Math.max(1, parseInt(targetLeads, 10) || 3));
   const PLATFORM_PROVIDER_RE = /\b(socrata|arcgis|esri|tyler\s*tech|opendata\s*soft|accela)\b/i;
   const hasApiPivotSource = src.some(s => {
     const u = String(s?.url || '').toLowerCase();
@@ -79,14 +80,15 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
         for (const apiUrl of apiCandidates) {
           const rows = await fetchOpenDataSampleRows(apiUrl, 6, opts);
           if (!Array.isArray(rows) || !rows.length) continue;
-          for (const r of rows.slice(0, 3)) {
+          const rowTake = Math.min(8, Math.max(3, desiredCount));
+          for (const r of rows.slice(0, rowTake)) {
             if (!r || typeof r !== 'object') continue;
             out.push({
               source_url: /^https?:\/\//i.test(apiUrl) ? apiUrl : u,
               source_title: String(s?.title || 'Source').slice(0, 180),
               row: r
             });
-            if (out.length >= 8) return out;
+            if (out.length >= Math.min(12, Math.max(6, desiredCount * 2))) return out;
           }
           if (out.length) break;
         }
@@ -120,7 +122,7 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
   }
 
   if (!isAIAvailable()) {
-    return hasApiPivotSource ? [] : src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
+    return hasApiPivotSource ? [] : src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
   }
 
   const model = getGeminiModel('discovery');
@@ -128,7 +130,7 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
   if (apiRows.length) {
     const promptApi =
       'Return ONLY JSON with this shape: {"leads":[{"lead_title":"","project_name":"","project_snapshot":"","location":"","address":"","company_name":"","permit_or_record_id":"","status_or_phase":"","estimated_value_usd":"","key_contact_or_firm":"","why_opportunity":"","evidence":"","recommended_next_step":"","source_title":"","source_url":"","missing_fields":"","data_completeness":""}]}\n' +
-      'Build exactly 3 leads from the provided RAW DATA ROWS (not webpage summaries).\n' +
+      `Build up to ${desiredCount} leads from the provided RAW DATA ROWS (not webpage summaries).\n` +
       'If Address/Company are missing in a row, try another row first.\n' +
       'Do not invent values. Use "Not publicly stated" only when row truly lacks it.\n\n' +
       `User brief:\n${String(brief || '').slice(0, 1800)}\n\n` +
@@ -174,7 +176,7 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
             data_completeness: completeness
           };
         })
-        .slice(0, 3);
+        .slice(0, desiredCount);
       if (mappedApi.length) return mappedApi;
       if (hasApiPivotSource) return [];
     } catch (e) {
@@ -185,7 +187,7 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
 
   const prompt =
     'Return ONLY JSON with this shape: {"leads":[{"lead_title":"","project_name":"","project_snapshot":"","location":"","address":"","company_name":"","permit_or_record_id":"","status_or_phase":"","estimated_value_usd":"","key_contact_or_firm":"","why_opportunity":"","evidence":"","recommended_next_step":"","source_title":"","source_url":"","missing_fields":"","data_completeness":""}]}\n' +
-    'Create exactly 3 concise but client-ready opportunities from these source snippets.\n' +
+    `Create up to ${desiredCount} concise but client-ready opportunities from these source snippets.\n` +
     'project_snapshot must be a short 4-12 word summary of the specific project.\n' +
     'Try to include a real company_name from the snippet/title/domain context when possible.\n' +
     'Do not invent exact budgets, permit IDs, contacts, addresses, or status values if not present.\n' +
@@ -235,12 +237,12 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
           data_completeness: completeness
         };
       })
-      .slice(0, 3);
+      .slice(0, desiredCount);
     if (out.length) return out;
-    return hasApiPivotSource ? [] : src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
+    return hasApiPivotSource ? [] : src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
   } catch (e) {
     logger.warn(`autoLeadQuickLeads: ${e.message}`);
-    return hasApiPivotSource ? [] : src.slice(0, 3).map((s, i) => fallbackLeadFromSource(s, i));
+    return hasApiPivotSource ? [] : src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
   }
 }
 

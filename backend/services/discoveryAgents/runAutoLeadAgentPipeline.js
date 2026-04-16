@@ -200,9 +200,13 @@ async function runAutoLeadAgentPipeline(opts) {
         /^https?:\/\/(data|opendata)\./i.test(u);
     });
     let hasApiPivotCandidate = hasApiPivot(candidate_sources);
+    const desiredQuickLeads = Math.min(
+      maxLeads,
+      Math.max(1, parseInt(discovery.intent?.lead_count, 10) || maxLeads)
+    );
     let rawQuickLeads = noUrls
       ? []
-      : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
+      : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources, targetLeads: desiredQuickLeads });
     if (!rawQuickLeads.length && !noUrls) {
       // One bounded recovery attempt with stronger API/JSON bias.
       const recoveryBrief = `${b} API JSON resource endpoint live records`;
@@ -212,7 +216,11 @@ async function runAutoLeadAgentPipeline(opts) {
         noUrls = false;
         candidate_sources = recovery.candidate_sources;
         hasApiPivotCandidate = hasApiPivot(candidate_sources);
-        rawQuickLeads = await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
+        rawQuickLeads = await buildAutoLeadQuickLeads({
+          brief: b,
+          sources: candidate_sources,
+          targetLeads: desiredQuickLeads
+        });
       }
     }
 
@@ -390,7 +398,11 @@ async function runAutoLeadAgentPipeline(opts) {
     }
   }
 
-  const leads = dedupeLeads(finalVerified.length ? finalVerified : detInput, maxLeads);
+  const targetFullLeads = Math.min(
+    maxLeads,
+    Math.max(1, parseInt(discovery.intent?.lead_count, 10) || maxLeads)
+  );
+  const leads = dedupeLeads(finalVerified.length ? finalVerified : detInput, targetFullLeads);
 
   let note = !leads.length && urlsAttempted.length
     ? 'Search ran but no rows were extracted. Try different wording, or use "Extract to my format" on a specific URL.'
@@ -415,7 +427,7 @@ async function runAutoLeadAgentPipeline(opts) {
       brief: b,
       intent: discovery.intent,
       leads,
-      maxLeads: 5
+      maxLeads: Math.min(5, targetFullLeads)
     });
     if (Array.isArray(ep?.leads) && ep.leads.length) enrichedLeads = ep.leads;
     if (Array.isArray(ep?.enrichment_rows) && ep.enrichment_rows.length) {

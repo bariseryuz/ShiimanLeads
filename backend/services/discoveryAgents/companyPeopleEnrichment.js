@@ -29,10 +29,14 @@ async function enrichOneLead(lead, brief, intent) {
   const base = [project || company, location].filter(Boolean).join(' ').trim();
   if (!base) return null;
 
+  const roles = Array.isArray(intent?.decision_maker_roles)
+    ? intent.decision_maker_roles.map(r => String(r || '').trim()).filter(Boolean).slice(0, 3)
+    : [];
+  const roleQuery = roles.length ? roles.join(' OR ') : 'project manager OR architect OR general contractor';
   const queries = [
     `${base} general contractor OR developer`,
-    `${base} project manager OR development director linkedin`,
-    `${base} architect OR owner representative`
+    `${base} ${roleQuery} linkedin`,
+    `${base} owner representative OR purchasing decision maker`
   ];
   const currentAddress = String(lead.address || '').trim();
   const needsPhysicalSiteFallback = isNonPhysicalAddress(currentAddress);

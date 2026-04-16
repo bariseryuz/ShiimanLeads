@@ -9,6 +9,18 @@ const { parseBriefWithGemini, buildSerperQueries, buildMachineParameters } = req
 
 function fallbackIntentFromBrief(brief) {
   const b = String(brief || '').trim();
+  const NUMBER_WORDS = {
+    one: 1,
+    two: 2,
+    three: 3,
+    four: 4,
+    five: 5,
+    six: 6,
+    seven: 7,
+    eight: 8,
+    nine: 9,
+    ten: 10
+  };
   const minMatch = b.match(/(?:over|above|>=?)\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(k|m|million))?/i);
   let minVal = null;
   if (minMatch) {
@@ -18,9 +30,15 @@ function fallbackIntentFromBrief(brief) {
       minVal = /m|million/.test(unit) ? raw * 1000000 : /k/.test(unit) ? raw * 1000 : raw;
     }
   }
+  const countDigitMatch = b.match(/\b(?:find|give|get|show|return)\s+(\d{1,2})\b/i) || b.match(/\b(\d{1,2})\s+leads?\b/i);
+  const countWordMatch = b.match(/\b(?:find|give|get|show|return)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/i) ||
+    b.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+leads?\b/i);
+  const requestedLeadCount = countDigitMatch
+    ? parseInt(countDigitMatch[1], 10)
+    : (countWordMatch ? NUMBER_WORDS[String(countWordMatch[1]).toLowerCase()] : null);
   const st = b.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY|DC)\b/i);
   return {
-    lead_count: 3,
+    lead_count: Math.min(25, Math.max(1, requestedLeadCount || 3)),
     geography: st ? `United States (${String(st[1]).toUpperCase()})` : 'United States',
     geography_kind: st ? 'state' : 'unknown',
     state_code: st ? String(st[1]).toUpperCase() : '',

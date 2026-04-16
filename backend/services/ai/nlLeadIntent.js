@@ -30,6 +30,20 @@ function parseIntentJson(text) {
   }
 }
 
+function extractLeadCountHint(text) {
+  const t = String(text || '').toLowerCase();
+  const digitMatch = t.match(/\b(?:find|give|get|show|return)\s+(\d{1,2})\b/) || t.match(/\b(\d{1,2})\s+leads?\b/);
+  if (digitMatch && digitMatch[1]) return parseInt(digitMatch[1], 10);
+  const words = {
+    one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+  };
+  const wordMatch = t.match(/\b(?:find|give|get|show|return)\s+(one|two|three|four|five|six|seven|eight|nine|ten)\b/) ||
+    t.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+leads?\b/);
+  if (wordMatch && wordMatch[1]) return words[wordMatch[1]] || null;
+  return null;
+}
+
 function inferVertical(assetOrUse) {
   const a = String(assetOrUse || '').toLowerCase();
   if (!a) return 'unknown';
@@ -145,7 +159,7 @@ async function parseBriefWithGemini(brief) {
   }
 
   return {
-    lead_count: Math.min(25, Math.max(1, parseInt(o.lead_count, 10) || 3)),
+    lead_count: Math.min(25, Math.max(1, parseInt(o.lead_count, 10) || extractLeadCountHint(b) || 3)),
     geography: String(o.geography || '').trim() || 'United States',
     geography_kind: String(o.geography_kind || 'unknown'),
     state_code: String(o.state_code || '').trim().toUpperCase().slice(0, 2),
