@@ -58,13 +58,15 @@ function buildFastQueriesFromIntent(intent, brief) {
     [geo, vertical, trigger, valToken, 'open data API FeatureServer Socrata'].filter(Boolean).join(' '),
     [geo, trigger, 'site:gov data portal json'].filter(Boolean).join(' '),
     [geo, vertical || 'commercial', '"resource" ".json" site:data.*.gov permits valuation'].filter(Boolean).join(' '),
-    [geo, '"dev.socrata.com/foundry"', '"resource" ".json"'].filter(Boolean).join(' ')
+    [geo, '"dev.socrata.com/foundry"', '"resource" ".json"'].filter(Boolean).join(' '),
+    [geo, trigger, '"FeatureServer" "query?f=json"'].filter(Boolean).join(' '),
+    [geo, trigger, '"Open Data" "JSON API"'].filter(Boolean).join(' ')
   ]
     .map(q => q.replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 
   const rawFallback = buildFastQueries(brief);
-  return [...new Set([...targeted, ...intentQueries, ...rawFallback])].slice(0, 4).map(q => q.slice(0, 220));
+  return [...new Set([...targeted, ...intentQueries, ...rawFallback])].slice(0, 8).map(q => q.slice(0, 220));
 }
 
 function isLowSignalArticle(link, title) {
@@ -102,11 +104,19 @@ async function runAgentFindFast(brief) {
     };
   }
 
-  const maxCalls = Math.min(2, parseInt(process.env.AUTO_LEADS_FAST_SERPER_CALLS || '2', 10) || 2);
+  const maxCalls = Math.min(5, parseInt(process.env.AUTO_LEADS_FAST_SERPER_CALLS || '5', 10) || 5);
+  const useQueries = queries.slice(0, Math.min(maxCalls, queries.length));
   const all = [];
-  for (let i = 0; i < Math.min(maxCalls, queries.length); i++) {
-    const rows = await googleSearchOrganic(queries[i], { num: 8 }).catch(() => []);
-    rows.forEach(r => all.push({ ...r, sourceQuery: queries[i] }));
+  const results = await Promise.allSettled(
+    useQueries.map(q => googleSearchOrganic(q, { num: 8 }))
+  );
+  for (let i = 0; i < results.length; i++) {
+    const res = results[i];
+    const q = useQueries[i];
+    if (res.status !== 'fulfilled' || !Array.isArray(res.value)) continue;
+    for (const r of res.value) {
+      all.push({ ...r, sourceQuery: q });
+    }
   }
 
   const deduped = dedupeSearchResults(all)
@@ -131,7 +141,7 @@ async function runAgentFindFast(brief) {
   return {
     intent: { mode: 'fast', ...(intent || {}) },
     machine_parameters: machineParameters,
-    search_queries_used: queries.slice(0, Math.min(maxCalls, queries.length)),
+    search_queries_used: useQueries,
     results_pooled: deduped.length,
     candidate_sources,
     preview_note: candidate_sources.length ? null : 'Fast scout found weak sources; try adding city/state + permit type.',

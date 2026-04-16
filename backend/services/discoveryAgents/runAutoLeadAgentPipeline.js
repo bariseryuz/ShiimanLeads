@@ -191,17 +191,30 @@ async function runAutoLeadAgentPipeline(opts) {
     logger.info(
       `[agent-pipeline] quick_only — ${AGENT_FIND} + assistant prose (skip ${AGENT_VERIFY}/${AGENT_READ})`
     );
-    const discovery = await runAgentFindFast(b);
-    const noUrls = !discovery.candidate_sources?.length;
-    const candidate_sources = noUrls ? [] : discovery.candidate_sources;
-    const hasApiPivotCandidate = candidate_sources.some(s => {
+    let discovery = await runAgentFindFast(b);
+    let noUrls = !discovery.candidate_sources?.length;
+    let candidate_sources = noUrls ? [] : discovery.candidate_sources;
+    const hasApiPivot = arr => arr.some(s => {
       const u = String(s?.url || '').toLowerCase();
       return /dev\.socrata\.com\/foundry\/|\/resource\/[0-9a-z]{4}-[0-9a-z]{4}|featureserver\/\d+|\/mapserver\//i.test(u) ||
         /^https?:\/\/(data|opendata)\./i.test(u);
     });
-    const rawQuickLeads = noUrls
+    let hasApiPivotCandidate = hasApiPivot(candidate_sources);
+    let rawQuickLeads = noUrls
       ? []
       : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
+    if (!rawQuickLeads.length && !noUrls) {
+      // One bounded recovery attempt with stronger API/JSON bias.
+      const recoveryBrief = `${b} API JSON resource endpoint live records`;
+      const recovery = await runAgentFindFast(recoveryBrief).catch(() => null);
+      if (recovery?.candidate_sources?.length) {
+        discovery = recovery;
+        noUrls = false;
+        candidate_sources = recovery.candidate_sources;
+        hasApiPivotCandidate = hasApiPivot(candidate_sources);
+        rawQuickLeads = await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources });
+      }
+    }
 
     // Layer 2: deterministic checks on quick leads
     const { verified: detVerified, stats: detStats } =

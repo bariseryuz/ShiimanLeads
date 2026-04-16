@@ -61,6 +61,17 @@ function buildMachineParameters(intent) {
         i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))
           ? Number(i.min_project_value_usd)
           : null,
+      time_window_hours:
+        i.time_window_hours != null && Number.isFinite(Number(i.time_window_hours))
+          ? Number(i.time_window_hours)
+          : null,
+      decision_maker_roles: Array.isArray(i.decision_maker_roles)
+        ? i.decision_maker_roles.map(r => String(r || '').trim()).filter(Boolean).slice(0, 6)
+        : [],
+      required_project_fields: Array.isArray(i.required_project_fields)
+        ? i.required_project_fields.map(f => String(f || '').trim()).filter(Boolean).slice(0, 8)
+        : [],
+      must_search_multiple_sources: !!i.must_search_multiple_sources,
       wants_contact_info: !!i.wants_contact_info
     },
     lead_count: Math.min(25, Math.max(1, parseInt(i.lead_count, 10) || 3)),
@@ -101,14 +112,18 @@ async function parseBriefWithGemini(brief) {
     '  "asset_or_use": "<e.g. multifamily residential, commercial office>",\n' +
     '  "trigger_or_record": "<e.g. building permit, certificate of occupancy, new construction>",\n' +
     '  "min_project_value_usd": <number or null if not specified>,\n' +
+    '  "time_window_hours": <number or null if user asks for recent time windows>,\n' +
+    '  "decision_maker_roles": ["<role title>", "..."] ,\n' +
+    '  "required_project_fields": ["<field user explicitly wants in output>", "..."],\n' +
+    '  "must_search_multiple_sources": <boolean>,\n' +
     '  "wants_contact_info": <boolean>,\n' +
     '  "keywords_for_search": ["3-6 short phrases for Google queries"]\n' +
     '}\n\n' +
-    'Few-shot examples:\n' +
-    'Input: "Hawaii, shades, permits over $1M"\n' +
-    'Output: {"lead_count":3,"geography":"Hawaii","geography_kind":"state","state_code":"HI","asset_or_use":"commercial","trigger_or_record":"building permit","min_project_value_usd":1000000,"wants_contact_info":true,"keywords_for_search":["hawaii commercial permits","window shades permit","honolulu open data permits"]}\n' +
-    'Input: "Find Miami office renovation permits above 300k"\n' +
-    'Output: {"lead_count":3,"geography":"Miami, Florida","geography_kind":"city","state_code":"FL","asset_or_use":"commercial office","trigger_or_record":"renovation permit","min_project_value_usd":300000,"wants_contact_info":false,"keywords_for_search":["miami renovation permits","florida office tenant improvement permits","miami permit data portal"]}\n\n' +
+    'Interpretation rules:\n' +
+    '- Never hardcode domain-specific fields. Extract only what user requests.\n' +
+    '- If user asks for multiple sources, set must_search_multiple_sources=true.\n' +
+    '- decision_maker_roles should reflect the actual buyer roles requested by user.\n' +
+    '- required_project_fields should mirror requested lead details (e.g. floors, value, project type) only when explicitly requested.\n\n' +
     (ragContext
       ? `Retrieved domain knowledge (tune geography, keywords, and record types — user message still wins):\n${ragContext}\n\n`
       : '') +
@@ -140,6 +155,17 @@ async function parseBriefWithGemini(brief) {
       o.min_project_value_usd != null && Number.isFinite(Number(o.min_project_value_usd))
         ? Number(o.min_project_value_usd)
         : null,
+    time_window_hours:
+      o.time_window_hours != null && Number.isFinite(Number(o.time_window_hours)) && Number(o.time_window_hours) > 0
+        ? Number(o.time_window_hours)
+        : null,
+    decision_maker_roles: Array.isArray(o.decision_maker_roles)
+      ? o.decision_maker_roles.map(r => String(r || '').trim()).filter(Boolean).slice(0, 6)
+      : [],
+    required_project_fields: Array.isArray(o.required_project_fields)
+      ? o.required_project_fields.map(f => String(f || '').trim()).filter(Boolean).slice(0, 8)
+      : [],
+    must_search_multiple_sources: !!o.must_search_multiple_sources,
     wants_contact_info: !!o.wants_contact_info,
     keywords_for_search: Array.isArray(o.keywords_for_search)
       ? o.keywords_for_search.map(k => String(k || '').trim()).filter(Boolean).slice(0, 8)
@@ -159,6 +185,16 @@ function buildSerperQueries(intent) {
     `${geo} ${trig} Socrata OR data portal`,
     `${geo} county ${trig} GIS`
   ];
+  if (intent.time_window_hours != null && Number.isFinite(Number(intent.time_window_hours))) {
+    base.push(`${geo} ${trig} last ${Math.max(1, Math.floor(Number(intent.time_window_hours)))} hours`);
+  }
+  if (Array.isArray(intent.required_project_fields) && intent.required_project_fields.length) {
+    const f = intent.required_project_fields.slice(0, 3).join(' ');
+    base.push(`${geo} ${trig} ${f} site:gov`);
+  }
+  if (Array.isArray(intent.decision_maker_roles) && intent.decision_maker_roles.length) {
+    base.push(`${geo} ${asset || 'construction'} ${intent.decision_maker_roles.slice(0, 2).join(' OR ')}`);
+  }
   if (intent.keywords_for_search.length) {
     for (const k of intent.keywords_for_search.slice(0, 2)) {
       base.push(`${k} site:gov OR site:org`);

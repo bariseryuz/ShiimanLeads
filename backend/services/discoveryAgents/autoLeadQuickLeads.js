@@ -46,24 +46,49 @@ async function buildAutoLeadQuickLeads({ brief, sources }) {
       ...(kw ? { searchText: kw } : {}),
       latestFirst: true
     };
+    const isDocUrl = u =>
+      /dev\.socrata\.com\/foundry\//i.test(u) ||
+      (/\/about($|[/?#])/i.test(u) && /(data\.|opendata|hub\.arcgis)/i.test(u));
+    const guessApiCandidates = u => {
+      const list = [];
+      const soc = parseSocrataResource(u);
+      if (soc) {
+        list.push(`https://${soc.host}/resource/${soc.resourceId}.json`);
+      }
+      if (/\/featureserver\/\d+$/i.test(u) && !/\/query(\?|$)/i.test(u)) {
+        list.push(`${u.replace(/\/$/, '')}/query?f=json&where=1%3D1&outFields=*`);
+      }
+      if (/\/mapserver\/\d+$/i.test(u) && !/\/query(\?|$)/i.test(u)) {
+        list.push(`${u.replace(/\/$/, '')}/query?f=json&where=1%3D1&outFields=*`);
+      }
+      return [...new Set(list)];
+    };
     for (const s of src.slice(0, 5)) {
       const u = String(s?.url || '').trim();
       if (!/^https?:\/\//i.test(u)) continue;
       try {
+        const apiCandidates = [u, ...guessApiCandidates(u)];
+        if (isDocUrl(u) && apiCandidates.length < 2) {
+          // Documentation URL with no pivot path: skip the manual.
+          continue;
+        }
         const soc = parseSocrataResource(u);
         if (soc) {
           logger.info(`[autoLeadQuickLeads] socrata pivot: ${u} -> https://${soc.host}/resource/${soc.resourceId}.json`);
         }
-        const rows = await fetchOpenDataSampleRows(u, 6, opts);
-        if (!Array.isArray(rows) || !rows.length) continue;
-        for (const r of rows.slice(0, 3)) {
-          if (!r || typeof r !== 'object') continue;
-          out.push({
-            source_url: u,
-            source_title: String(s?.title || 'Source').slice(0, 180),
-            row: r
-          });
-          if (out.length >= 8) return out;
+        for (const apiUrl of apiCandidates) {
+          const rows = await fetchOpenDataSampleRows(apiUrl, 6, opts);
+          if (!Array.isArray(rows) || !rows.length) continue;
+          for (const r of rows.slice(0, 3)) {
+            if (!r || typeof r !== 'object') continue;
+            out.push({
+              source_url: /^https?:\/\//i.test(apiUrl) ? apiUrl : u,
+              source_title: String(s?.title || 'Source').slice(0, 180),
+              row: r
+            });
+            if (out.length >= 8) return out;
+          }
+          if (out.length) break;
         }
       } catch (e) {
         logger.debug(`[autoLeadQuickLeads] api-first ${u.slice(0, 80)}: ${e.message}`);
