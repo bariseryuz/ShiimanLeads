@@ -109,17 +109,32 @@ function checkGeography(row, intent) {
 function checkValueThreshold(row, intent) {
   if (!intent) return { pass: true, reason: 'No intent' };
   const minVal = intent.min_project_value_usd;
-  if (minVal == null || !Number.isFinite(Number(minVal)) || Number(minVal) <= 0) {
+  const maxVal = intent.max_project_value_usd;
+  const hasMin = minVal != null && Number.isFinite(Number(minVal)) && Number(minVal) > 0;
+  const hasMax = maxVal != null && Number.isFinite(Number(maxVal)) && Number(maxVal) > 0;
+  if (!hasMin && !hasMax) {
     return { pass: true, reason: 'No value threshold in brief' };
   }
   const actual = extractNumericValue(row);
   if (actual == null) {
-    return { pass: true, soft_flag: true, reason: 'Value field missing - cannot verify threshold; kept with flag' };
+    return { pass: true, soft_flag: true, reason: 'Value field missing - cannot verify threshold bound(s); kept with flag' };
   }
-  if (actual >= Number(minVal)) {
-    return { pass: true, reason: `Value $${actual.toLocaleString()} meets $${Number(minVal).toLocaleString()} threshold` };
+  if (hasMin && actual < Number(minVal)) {
+    return { pass: false, reason: `Value $${actual.toLocaleString()} below minimum $${Number(minVal).toLocaleString()}` };
   }
-  return { pass: false, reason: `Value $${actual.toLocaleString()} below $${Number(minVal).toLocaleString()} threshold` };
+  if (hasMax && actual > Number(maxVal)) {
+    return { pass: false, reason: `Value $${actual.toLocaleString()} above maximum $${Number(maxVal).toLocaleString()}` };
+  }
+  if (hasMin && hasMax) {
+    return {
+      pass: true,
+      reason: `Value $${actual.toLocaleString()} within range $${Number(minVal).toLocaleString()}-$${Number(maxVal).toLocaleString()}`
+    };
+  }
+  if (hasMin) {
+    return { pass: true, reason: `Value $${actual.toLocaleString()} meets minimum $${Number(minVal).toLocaleString()}` };
+  }
+  return { pass: true, reason: `Value $${actual.toLocaleString()} meets maximum $${Number(maxVal).toLocaleString()}` };
 }
 
 function checkStatus(row, intent) {

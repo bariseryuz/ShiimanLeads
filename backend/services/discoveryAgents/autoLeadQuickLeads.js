@@ -15,16 +15,12 @@ function parseJson(text) {
   }
 }
 
-async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
+async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent, apiFirst }) {
   const src = Array.isArray(sources) ? sources : [];
   if (!src.length) return [];
   const desiredCount = Math.min(25, Math.max(1, parseInt(targetLeads, 10) || 3));
+  const useApiFirst = apiFirst === true;
   const PLATFORM_PROVIDER_RE = /\b(socrata|arcgis|esri|tyler\s*tech|opendata\s*soft|accela)\b/i;
-  const hasApiPivotSource = src.some(s => {
-    const u = String(s?.url || '').toLowerCase();
-    return /dev\.socrata\.com\/foundry\/|\/resource\/[0-9a-z]{4}-[0-9a-z]{4}|featureserver\/\d+|\/mapserver\//i.test(u) ||
-      /^https?:\/\/(data|opendata)\./i.test(u);
-  });
 
   function minValFromBrief(b) {
     const t = String(b || '');
@@ -38,15 +34,64 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
     return Math.floor(n);
   }
 
+  function maxValFromBrief(b) {
+    const t = String(b || '');
+    const m = t.match(/(?:under|below|<=?|at most|max(?:imum)?(?:\s+of)?)\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(k|m|million))?/i);
+    if (!m) return null;
+    const n = parseFloat(String(m[1] || '').replace(/,/g, ''));
+    if (!Number.isFinite(n)) return null;
+    const u = String(m[2] || '').toLowerCase();
+    if (/m|million/.test(u)) return Math.floor(n * 1000000);
+    if (/k/.test(u)) return Math.floor(n * 1000);
+    return Math.floor(n);
+  }
+
+  function minValFromIntentOrBrief(i, b) {
+    const fromIntent = i && Number.isFinite(Number(i.min_project_value_usd))
+      ? Number(i.min_project_value_usd)
+      : null;
+    if (fromIntent && fromIntent > 0) return Math.floor(fromIntent);
+    return minValFromBrief(b);
+  }
+
+  function maxValFromIntentOrBrief(i, b) {
+    const fromIntent = i && Number.isFinite(Number(i.max_project_value_usd))
+      ? Number(i.max_project_value_usd)
+      : null;
+    if (fromIntent && fromIntent > 0) return Math.floor(fromIntent);
+    return maxValFromBrief(b);
+  }
+
+  function extractNumericValue(row) {
+    if (!row || typeof row !== 'object') return null;
+    const valKeys = /estimated_value_usd|valuation|est_cost|const_cost|project_value|declared_value|total_valuation|job_value|building_value|improvement_value|construction_cost|total_val|permit_valuation|cost|amount|value/i;
+    for (const [k, v] of Object.entries(row)) {
+      if (!valKeys.test(k)) continue;
+      if (v == null || v === '' || /not publicly/i.test(String(v))) continue;
+      const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,\s]/g, ''));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    if (row.attributes && typeof row.attributes === 'object') return extractNumericValue(row.attributes);
+    if (row.properties && typeof row.properties === 'object') return extractNumericValue(row.properties);
+    return null;
+  }
+
+  function buildSearchText(i, b) {
+    if (i && Array.isArray(i.keywords_for_search) && i.keywords_for_search.length) {
+      return String(i.keywords_for_search[0] || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    }
+    const trig = String(i?.trigger_or_record || '').replace(/\s+/g, ' ').trim();
+    const asset = String(i?.asset_or_use || '').replace(/\s+/g, ' ').trim();
+    const fallback = [trig, asset].filter(Boolean).join(' ').trim();
+    if (fallback) return fallback.slice(0, 60);
+    return String(b || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  }
+
   async function collectApiRowsFromSources() {
     const out = [];
-    const minVal = minValFromBrief(brief);
-    const kw = String(brief || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-    const opts = {
-      ...(minVal && Number.isFinite(minVal) ? { minValuationUsd: minVal } : {}),
-      ...(kw ? { searchText: kw } : {}),
-      latestFirst: true
-    };
+    const minVal = minValFromIntentOrBrief(intent, brief);
+    const maxVal = maxValFromIntentOrBrief(intent, brief);
+    const kw = buildSearchText(intent, brief);
     const isDocUrl = u =>
       /dev\.socrata\.com\/foundry\//i.test(u) ||
       (/\/about($|[/?#])/i.test(u) && /(data\.|opendata|hub\.arcgis)/i.test(u));
@@ -78,17 +123,44 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
           logger.info(`[autoLeadQuickLeads] socrata pivot: ${u} -> https://${soc.host}/resource/${soc.resourceId}.json`);
         }
         for (const apiUrl of apiCandidates) {
-          const rows = await fetchOpenDataSampleRows(apiUrl, 6, opts);
-          if (!Array.isArray(rows) || !rows.length) continue;
-          const rowTake = Math.min(8, Math.max(3, desiredCount));
-          for (const r of rows.slice(0, rowTake)) {
-            if (!r || typeof r !== 'object') continue;
-            out.push({
-              source_url: /^https?:\/\//i.test(apiUrl) ? apiUrl : u,
-              source_title: String(s?.title || 'Source').slice(0, 180),
-              row: r
-            });
-            if (out.length >= Math.min(12, Math.max(6, desiredCount * 2))) return out;
+          const attempts = [
+            {
+              // strict pass: value threshold + targeted keyword
+              ...(minVal && Number.isFinite(minVal) ? { minValuationUsd: minVal } : {}),
+              ...(kw ? { searchText: kw } : {}),
+              latestFirst: true
+            },
+            {
+              // relaxed pass: keep value threshold, drop keyword text
+              ...(minVal && Number.isFinite(minVal) ? { minValuationUsd: minVal } : {}),
+              latestFirst: true
+            },
+            {
+              // broad pass: prioritize recency only
+              latestFirst: true
+            }
+          ];
+          for (const fetchOpts of attempts) {
+            const rows = await fetchOpenDataSampleRows(apiUrl, 8, fetchOpts);
+            if (!Array.isArray(rows) || !rows.length) continue;
+            const boundedRows = maxVal && Number.isFinite(maxVal)
+              ? rows.filter(r => {
+                  const v = extractNumericValue(r);
+                  return v == null || v <= maxVal;
+                })
+              : rows;
+            if (!boundedRows.length) continue;
+            const rowTake = Math.min(8, Math.max(3, desiredCount));
+            for (const r of boundedRows.slice(0, rowTake)) {
+              if (!r || typeof r !== 'object') continue;
+              out.push({
+                source_url: /^https?:\/\//i.test(apiUrl) ? apiUrl : u,
+                source_title: String(s?.title || 'Source').slice(0, 180),
+                row: r
+              });
+              if (out.length >= Math.min(12, Math.max(6, desiredCount * 2))) return out;
+            }
+            if (out.length) break;
           }
           if (out.length) break;
         }
@@ -122,12 +194,12 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
   }
 
   if (!isAIAvailable()) {
-    return hasApiPivotSource ? [] : src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
+    return src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
   }
 
   const model = getGeminiModel('discovery');
-  const apiRows = await collectApiRowsFromSources();
-  if (apiRows.length) {
+  const apiRows = useApiFirst ? await collectApiRowsFromSources() : [];
+  if (useApiFirst && apiRows.length) {
     const promptApi =
       'Return ONLY JSON with this shape: {"leads":[{"lead_title":"","project_name":"","project_snapshot":"","location":"","address":"","company_name":"","permit_or_record_id":"","status_or_phase":"","estimated_value_usd":"","key_contact_or_firm":"","why_opportunity":"","evidence":"","recommended_next_step":"","source_title":"","source_url":"","missing_fields":"","data_completeness":""}]}\n' +
       `Build up to ${desiredCount} leads from the provided RAW DATA ROWS (not webpage summaries).\n` +
@@ -178,10 +250,8 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
         })
         .slice(0, desiredCount);
       if (mappedApi.length) return mappedApi;
-      if (hasApiPivotSource) return [];
     } catch (e) {
       logger.warn(`autoLeadQuickLeads api-first: ${e.message}`);
-      if (hasApiPivotSource) return [];
     }
   }
 
@@ -239,10 +309,10 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads }) {
       })
       .slice(0, desiredCount);
     if (out.length) return out;
-    return hasApiPivotSource ? [] : src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
+    return src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
   } catch (e) {
     logger.warn(`autoLeadQuickLeads: ${e.message}`);
-    return hasApiPivotSource ? [] : src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
+    return src.slice(0, desiredCount).map((s, i) => fallbackLeadFromSource(s, i));
   }
 }
 

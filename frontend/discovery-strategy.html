@@ -568,22 +568,8 @@
         return String(v).trim();
       }
 
-      var verification = flat._verification || row._verification || null;
-      var confScore = verification ? (verification.confidence || 0) : null;
-      var confLabel = verification ? (verification.confidence_label || '') : '';
-      var confColor = confLabel === 'high' ? '#16a34a' : confLabel === 'medium' ? '#d97706' : confLabel === 'low' ? '#dc2626' : '#6b7280';
-      var confBadge = confScore != null
-        ? '<span class="lead-card__confidence" style="background:' + confColor + ';" title="Verification confidence: ' + confScore + '/100 (' + escapeAttr(confLabel) + ')">' + confScore + '% ' + escapeHtml(confLabel) + '</span>'
-        : '';
-      var confTier = 'Experimental';
-      if (confScore != null && confScore >= 90) confTier = 'High confidence (direct + verified)';
-      else if (confScore != null && confScore >= 70) confTier = 'Strong lead (needs minor verification)';
-      else if (confScore != null && confScore >= 50) confTier = 'Moderate lead (review address/phase)';
-      else if (confScore != null) confTier = 'Experimental (search-derived)';
-      var adversarialNote = verification && verification.adversarial_passed ? ' <span style="color:#16a34a;font-size:0.72rem;" title="Passed adversarial audit">&#10003; audited</span>' : '';
-
       var html = '<article class="lead-card">' +
-        '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span>' + confBadge + adversarialNote + '</div>' +
+        '<div class="lead-card__head">Record <span class="lead-card__id">' + escapeHtml(n.id) + '</span></div>' +
         '<div class="lead-card__body">' +
         '<div class="lead-card__addr">' + escapeHtml(n.line1) + '</div>' +
         (n.line2 ? '<div class="lead-card__meta">' + escapeHtml(n.line2) + '</div>' : '') +
@@ -611,7 +597,7 @@
       if (sourceUrlForAuthority) {
         try {
           var hu = new URL(sourceUrlForAuthority);
-          sourceAuthority = hu.hostname.replace(/^www\./i, '') + ' (Live API)';
+          sourceAuthority = hu.hostname.replace(/^www\./i, '');
         } catch (e) {
           sourceAuthority = '';
         }
@@ -620,9 +606,6 @@
       var strategyAdvice = firstUseful(['strategy_advice', 'best_contact_path']);
       var contactMonth = firstUseful(['contact_month_recommendation']);
       var newsRisk = firstUseful(['news_risk_flag', 'news_risk_note']);
-      var siteVerification = flat.needs_site_verification === true
-        ? ('Required — ' + String(flat.site_verification_reason || 'Potential non-physical address'))
-        : 'Not required';
       if (mustProject) {
         var words = mustProject.split(/\s+/).filter(Boolean);
         if (words.length > 12) mustProject = words.slice(0, 12).join(' ') + '…';
@@ -633,12 +616,10 @@
         '<dt>Company</dt><dd>' + escapeHtml(mustCompany || 'Missing') + '</dd>' +
         '<dt>Project (few words)</dt><dd>' + escapeHtml(mustProject || 'Missing') + '</dd>' +
         '<dt>Key people</dt><dd>' + escapeHtml(keyPeople || 'Not found yet') + '</dd>' +
-        '<dt>Confidence tier</dt><dd>' + escapeHtml(confTier) + '</dd>' +
         '<dt>Best contact month</dt><dd>' + escapeHtml(contactMonth || 'Now') + '</dd>' +
         '<dt>Why this lead</dt><dd>' + escapeHtml(reasoningSummary || 'Match appears relevant to your brief and filters.') + '</dd>' +
         '<dt>Next best action</dt><dd>' + escapeHtml(strategyAdvice || 'Open source, confirm decision maker, and send first outreach.') + '</dd>' +
         '<dt>News risk check</dt><dd>' + escapeHtml(newsRisk || 'No major risk signal found') + '</dd>' +
-        '<dt>Site verification</dt><dd>' + escapeHtml(siteVerification) + '</dd>' +
         '<dt>Source</dt><dd>' + escapeHtml(sourceAuthority || 'Public source') + '</dd>' +
         '</dl>';
 
@@ -1002,10 +983,9 @@
           html += '<p style="font-size:0.9rem;color:#b45309;margin:0 0 1rem 0;">' + escapeHtml(data.note) + '</p>';
         }
         html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Records found <span class="lead-count-badge">' + leads.length + '</span></p>';
-        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Each card now shows <strong>must-have details first</strong>: address, company, and a short project summary. Extra fields are collapsed under “Show all extracted fields”.</p>';
+        html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Simple lead view: the key details are shown first. Open “Show all extracted fields” only when you want deeper data.</p>';
         var fs = data.field_schema && typeof data.field_schema === 'object' && !Array.isArray(data.field_schema) ? data.field_schema : null;
         html += buildLeadCardsHtml(leads, fs);
-        html += '<details class="lead-table-fallback"><summary>Table view (compact)</summary>' + buildLeadTableHtml(leads, fs) + '</details>';
       } else {
         html += '<div class="lead-empty-result" style="margin:0 0 1rem 0;padding:1rem 1.1rem;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc;">';
         html += '<p style="margin:0 0 0.5rem 0;font-weight:600;color:#0f172a;font-size:1rem;">No rows extracted this run</p>';
@@ -1037,34 +1017,9 @@
         html += '</ul>';
       }
 
-      var vStats = data.verification_stats;
-      if (vStats && typeof vStats === 'object') {
-        html += '<div style="margin:1rem 0 0;padding:0.75rem 1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;font-size:0.82rem;color:#15803d;line-height:1.5;">';
-        html += '<strong>Verification (3-layer)</strong>: ';
-        html += vStats.verified_count + '/' + vStats.total_input + ' passed';
-        if (vStats.avg_confidence) html += ' &middot; avg confidence <strong>' + vStats.avg_confidence + '%</strong>';
-        if (vStats.high_confidence_count) html += ' &middot; <strong>' + vStats.high_confidence_count + '</strong> high-confidence';
-        if (vStats.rejected_count) html += ' &middot; ' + vStats.rejected_count + ' rejected';
-        html += '<br><span style="font-size:0.75rem;color:#166534;">Checks: ' + escapeHtml((vStats.checks_applied || []).join(', ')) + '</span>';
-        html += '</div>';
-      }
-
       if (data.disclaimer) {
         html += '<p style="font-size:0.85rem;color:#64748b;margin:1rem 0 0 0;line-height:1.45;">' + escapeHtml(data.disclaimer) + '</p>';
       }
-
-      html += '<details class="lead-tech"><summary>Technical details (JSON)</summary><pre class="extract-out" style="max-height:320px;margin:0;">' +
-        escapeHtml(JSON.stringify({
-          orchestration: data.orchestration,
-          agent_pipeline: data.agent_pipeline,
-          quick_only: data.quick_only,
-          quick_read: data.quick_read,
-          intent: data.intent,
-          field_schema: data.field_schema,
-          leads: data.leads,
-          candidate_sources: data.candidate_sources
-        }, null, 2)) +
-        '</pre></details>';
       html += '</div>';
 
       dash.innerHTML = html;
@@ -1167,13 +1122,6 @@
         }
         block += '<p style="margin:0 0 0.5rem 0;font-weight:600;font-size:0.95rem;color:#0f172a;">Extracted rows</p>';
         block += buildLeadTableHtml(data.leads || []);
-        block += '<details class="lead-tech" style="margin-top:0.75rem;"><summary>Technical details (JSON)</summary><pre class="extract-out" style="max-height:280px;">' +
-          escapeHtml(JSON.stringify({
-            field_schema: data.field_schema,
-            strict_match_rules: data.strict_match_rules,
-            strict_filter_applied: data.strict_filter_applied,
-            leads: data.leads
-          }, null, 2)) + '</pre></details>';
         if (slotEl) slotEl.innerHTML = block;
         else {
           const out = document.getElementById('results');

@@ -75,6 +75,10 @@ function buildMachineParameters(intent) {
         i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))
           ? Number(i.min_project_value_usd)
           : null,
+      max_value_usd:
+        i.max_project_value_usd != null && Number.isFinite(Number(i.max_project_value_usd))
+          ? Number(i.max_project_value_usd)
+          : null,
       time_window_hours:
         i.time_window_hours != null && Number.isFinite(Number(i.time_window_hours))
           ? Number(i.time_window_hours)
@@ -126,6 +130,7 @@ async function parseBriefWithGemini(brief) {
     '  "asset_or_use": "<e.g. multifamily residential, commercial office>",\n' +
     '  "trigger_or_record": "<e.g. building permit, certificate of occupancy, new construction>",\n' +
     '  "min_project_value_usd": <number or null if not specified>,\n' +
+    '  "max_project_value_usd": <number or null if user sets an upper budget bound>,\n' +
     '  "time_window_hours": <number or null if user asks for recent time windows>,\n' +
     '  "decision_maker_roles": ["<role title>", "..."] ,\n' +
     '  "required_project_fields": ["<field user explicitly wants in output>", "..."],\n' +
@@ -168,6 +173,10 @@ async function parseBriefWithGemini(brief) {
     min_project_value_usd:
       o.min_project_value_usd != null && Number.isFinite(Number(o.min_project_value_usd))
         ? Number(o.min_project_value_usd)
+        : null,
+    max_project_value_usd:
+      o.max_project_value_usd != null && Number.isFinite(Number(o.max_project_value_usd))
+        ? Number(o.max_project_value_usd)
         : null,
     time_window_hours:
       o.time_window_hours != null && Number.isFinite(Number(o.time_window_hours)) && Number(o.time_window_hours) > 0

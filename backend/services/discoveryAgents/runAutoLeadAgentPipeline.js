@@ -194,32 +194,33 @@ async function runAutoLeadAgentPipeline(opts) {
     let discovery = await runAgentFindFast(b);
     let noUrls = !discovery.candidate_sources?.length;
     let candidate_sources = noUrls ? [] : discovery.candidate_sources;
-    const hasApiPivot = arr => arr.some(s => {
-      const u = String(s?.url || '').toLowerCase();
-      return /dev\.socrata\.com\/foundry\/|\/resource\/[0-9a-z]{4}-[0-9a-z]{4}|featureserver\/\d+|\/mapserver\//i.test(u) ||
-        /^https?:\/\/(data|opendata)\./i.test(u);
-    });
-    let hasApiPivotCandidate = hasApiPivot(candidate_sources);
     const desiredQuickLeads = Math.min(
       maxLeads,
       Math.max(1, parseInt(discovery.intent?.lead_count, 10) || maxLeads)
     );
     let rawQuickLeads = noUrls
       ? []
-      : await buildAutoLeadQuickLeads({ brief: b, sources: candidate_sources, targetLeads: desiredQuickLeads });
+      : await buildAutoLeadQuickLeads({
+          brief: b,
+          sources: candidate_sources,
+          targetLeads: desiredQuickLeads,
+          intent: discovery.intent,
+          apiFirst: false
+        });
     if (!rawQuickLeads.length && !noUrls) {
-      // One bounded recovery attempt with stronger API/JSON bias.
-      const recoveryBrief = `${b} API JSON resource endpoint live records`;
+      // One bounded recovery attempt with broader, plain-language search.
+      const recoveryBrief = `${b} broader local project leads`;
       const recovery = await runAgentFindFast(recoveryBrief).catch(() => null);
       if (recovery?.candidate_sources?.length) {
         discovery = recovery;
         noUrls = false;
         candidate_sources = recovery.candidate_sources;
-        hasApiPivotCandidate = hasApiPivot(candidate_sources);
         rawQuickLeads = await buildAutoLeadQuickLeads({
           brief: b,
           sources: candidate_sources,
-          targetLeads: desiredQuickLeads
+          targetLeads: desiredQuickLeads,
+          intent: discovery.intent,
+          apiFirst: false
         });
       }
     }
@@ -307,11 +308,9 @@ async function runAutoLeadAgentPipeline(opts) {
       note: noUrls
         ? discovery.preview_note ||
           'No candidate URLs from search. Set SERPER_API_KEY and try a more specific location or record type.'
-        : (!quickLeads.length && hasApiPivotCandidate)
-          ? 'No active records found from live API fetch for current query constraints. Try broader filters or a different dataset.'
         : !quickLeads.length
           ? 'Quick run found sources, but rows failed quality checks (missing address/company/project detail). No low-quality leads were returned.'
-          : 'Fast answer only — no spreadsheet rows or browser extract this run. Turn off "Fast answer" for full extraction.',
+          : 'Fast answer mode returns a simple, chat-style lead brief. Use Extract/API tools when you need technical row-level output.',
       preview_note: discovery.preview_note,
       disclaimer: discovery.disclaimer
     };
