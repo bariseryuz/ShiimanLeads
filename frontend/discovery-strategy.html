@@ -237,7 +237,7 @@
   <div class="strategy-wrap">
     <div class="strategy-card">
       <h1>Get leads</h1>
-      <p class="hint">Describe the leads you want (location, type, filters). You’ll get a <strong>quick read</strong> first — plain-English opportunities for that area — then matched sources and rows. Full row extraction uses the same keys as elsewhere; this screen is meant to feel like a short assistant reply, not a settings panel.</p>
+      <p class="hint">Describe the leads you want (location, type, filters). You’ll get a <strong>quick read</strong> first — plain-English opportunities for that area — plus suggested places to check. This screen is meant to feel like a short assistant reply, not a technical panel.</p>
 
       <div class="field">
         <label for="leadBrief">What leads do you want?</label>
@@ -963,9 +963,9 @@
       });
       const summaryLine = intentPlainSummary(intent);
       var html = '<div class="lead-dashboard-inner">';
-      html += '<p class="dashboard-kicker">Lead discovery run</p>';
+      html += '<p class="dashboard-kicker">AI search brief</p>';
       html += '<h2 class="dashboard-title">Your leads</h2>';
-      html += '<p class="dashboard-note">This view is only for this search — <strong>not</strong> the same grid as <a href="/my-sources.html">My sources</a> (that’s for saved monitors and scraping). Read the <strong>Quick read</strong> first; cards and tables are extra detail.</p>';
+      html += '<p class="dashboard-note">This is a short assistant-style search result for this request. It is separate from <a href="/my-sources.html">My sources</a>.</p>';
 
       if (data.quick_read && String(data.quick_read).trim()) {
         html += '<div class="quick-read-block">';
@@ -982,15 +982,15 @@
         if (data.note) {
           html += '<p style="font-size:0.9rem;color:#b45309;margin:0 0 1rem 0;">' + escapeHtml(data.note) + '</p>';
         }
-        html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Records found <span class="lead-count-badge">' + leads.length + '</span></p>';
+        html += '<p style="margin:0 0 0.5rem 0;font-size:0.95rem;color:#0f172a;">Lead ideas found <span class="lead-count-badge">' + leads.length + '</span></p>';
         html += '<p class="hint" style="margin:0 0 1rem 0;font-size:0.85rem;">Simple lead view: the key details are shown first. Open “Show all extracted fields” only when you want deeper data.</p>';
         var fs = data.field_schema && typeof data.field_schema === 'object' && !Array.isArray(data.field_schema) ? data.field_schema : null;
         html += buildLeadCardsHtml(leads, fs);
       } else {
         html += '<div class="lead-empty-result" style="margin:0 0 1rem 0;padding:1rem 1.1rem;border-radius:12px;border:1px solid #e2e8f0;background:#f8fafc;">';
-        html += '<p style="margin:0 0 0.5rem 0;font-weight:600;color:#0f172a;font-size:1rem;">No rows extracted this run</p>';
+        html += '<p style="margin:0 0 0.5rem 0;font-weight:600;color:#0f172a;font-size:1rem;">No strong lead ideas yet</p>';
         html += '<p style="margin:0;font-size:0.9rem;color:#475569;line-height:1.5;">' +
-          escapeHtml(data.note || 'The pipeline searched and opened candidate sources, but no tabular rows made it into the response. Common causes: landing page only (no public API hit), auth-gated layer, or browser extract returned zero matches.') +
+          escapeHtml(data.note || 'The assistant searched likely sources, but did not find enough concrete project details in this pass.') +
           '</p>';
         if (data.preview_note) {
           var pn = String(data.preview_note).trim();
@@ -1000,13 +1000,13 @@
               '<strong style="color:#475569;">Discovery note:</strong> ' + escapeHtml(pn) + '</p>';
           }
         }
-        html += '<p style="margin:0.75rem 0 0 0;font-size:0.82rem;color:#64748b;">Try a <strong>specific city or county</strong> plus permit type, use <strong>Optional</strong> tools to paste a dataset URL, or open a link under Sources and add it in My sources.</p>';
+        html += '<p style="margin:0.75rem 0 0 0;font-size:0.82rem;color:#64748b;">Try adding a <strong>specific borough/county</strong> and project type. You can also open one of the sources below for a deeper follow-up.</p>';
         html += '</div>';
       }
 
       var sources = data.candidate_sources || [];
       if (sources.length) {
-        html += '<p style="margin:1.25rem 0 0.5rem 0;font-weight:600;font-size:0.88rem;color:#334155;">Sources considered</p>';
+        html += '<p style="margin:1.25rem 0 0.5rem 0;font-weight:600;font-size:0.88rem;color:#334155;">Places checked</p>';
         html += '<ul class="source-cards">';
         for (var j = 0; j < Math.min(sources.length, 8); j++) {
           var s = sources[j];

@@ -139,7 +139,7 @@ async function runAgentFindFast(brief, opts = {}) {
       results_pooled: 0,
       candidate_sources: [],
       preview_note: 'Fast mode needs SERPER_API_KEY.',
-      disclaimer: 'Quick mode uses search snippets and may be incomplete.'
+      disclaimer: 'Quick mode gives a fast web-style summary and may miss details.'
     };
   }
 
@@ -188,7 +188,7 @@ async function runAgentFindFast(brief, opts = {}) {
     results_pooled: pool.length,
     candidate_sources,
     preview_note: candidate_sources.length ? null : 'Fast scout found weak sources; try adding city/state + permit type.',
-    disclaimer: 'Quick mode is a fast read from search snippets; use full extract for validated row-level data.'
+    disclaimer: 'Quick mode is a fast, chat-style web summary. Use full extract only when you need strict structured output.'
   };
 }
 

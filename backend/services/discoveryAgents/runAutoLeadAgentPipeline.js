@@ -230,10 +230,26 @@ async function runAutoLeadAgentPipeline(opts) {
       verifyQuickLeads(rawQuickLeads, { intent: discovery.intent });
 
     // Layer 3: adversarial recheck on borderline quick leads.
-    // IMPORTANT: if deterministic verification rejects all rows, do NOT fall back to raw leads.
-    const quickLeads = detVerified.length
+    let quickLeads = detVerified.length
       ? await adversarialRecheck(b, detVerified, { threshold: 70 })
       : [];
+    const usingExploratoryFallback = !quickLeads.length && Array.isArray(rawQuickLeads) && rawQuickLeads.length > 0;
+    if (usingExploratoryFallback) {
+      // Chat-style fallback: keep best source-derived opportunities instead of empty state.
+      quickLeads = rawQuickLeads.slice(0, desiredQuickLeads).map((r, idx) => ({
+        ...r,
+        _verification: {
+          confidence: 35,
+          confidence_label: 'low',
+          checks: ['exploratory_source_signal'],
+          hard_fails: [],
+          passed: false,
+          exploratory: true,
+          hide_card: false,
+          rank: idx + 1
+        }
+      }));
+    }
 
     // Always-on enrichment layer (company + key people)
     let enrichedQuickLeads = quickLeads;
@@ -307,10 +323,12 @@ async function runAutoLeadAgentPipeline(opts) {
       strict_filter_applied: false,
       note: noUrls
         ? discovery.preview_note ||
-          'No candidate URLs from search. Set SERPER_API_KEY and try a more specific location or record type.'
+          'I could not find strong web sources for this ask yet. Try a more specific location or project type.'
+        : usingExploratoryFallback
+          ? 'Showing exploratory opportunities from high-signal sources. Ask for a deeper check on any card to pull stronger project details.'
         : !quickLeads.length
-          ? 'Quick run found sources, but rows failed quality checks (missing address/company/project detail). No low-quality leads were returned.'
-          : 'Fast answer mode returns a simple, chat-style lead brief. Use Extract/API tools when you need technical row-level output.',
+          ? 'I found sources, but none had enough concrete project details yet. Try adding city + project type (e.g., commercial permits in Brooklyn).'
+          : 'Fast answer mode returns a short chat-style lead brief. Use Extract/API tools when you need structured technical output.',
       preview_note: discovery.preview_note,
       disclaimer: discovery.disclaimer
     };
