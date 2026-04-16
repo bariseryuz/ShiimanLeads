@@ -191,7 +191,7 @@ async function runAutoLeadAgentPipeline(opts) {
     logger.info(
       `[agent-pipeline] quick_only — ${AGENT_FIND} + assistant prose (skip ${AGENT_VERIFY}/${AGENT_READ})`
     );
-    let discovery = await runAgentFindFast(b);
+    let discovery = await runAgentFindFast(b, { nonTechnical: true });
     let noUrls = !discovery.candidate_sources?.length;
     let candidate_sources = noUrls ? [] : discovery.candidate_sources;
     const desiredQuickLeads = Math.min(
@@ -210,7 +210,7 @@ async function runAutoLeadAgentPipeline(opts) {
     if (!rawQuickLeads.length && !noUrls) {
       // One bounded recovery attempt with broader, plain-language search.
       const recoveryBrief = `${b} broader local project leads`;
-      const recovery = await runAgentFindFast(recoveryBrief).catch(() => null);
+      const recovery = await runAgentFindFast(recoveryBrief, { nonTechnical: true }).catch(() => null);
       if (recovery?.candidate_sources?.length) {
         discovery = recovery;
         noUrls = false;
