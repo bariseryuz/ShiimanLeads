@@ -188,7 +188,7 @@ async function runAutoLeadAgentPipeline(opts) {
         : String(process.env.AUTO_LEADS_QUICK_ONLY || '').toLowerCase() === 'true');
 
   // ═══════════════════════════════════════════════════════════════════════
-  // QUICK-ONLY MODE — find + snippet leads + 3-layer verify (no browser)
+  // QUICK MODE — find + page-read + AI lead extraction + 3-layer verify
   // ═══════════════════════════════════════════════════════════════════════
   if (quickOnly) {
     logger.info(
@@ -207,11 +207,9 @@ async function runAutoLeadAgentPipeline(opts) {
           brief: b,
           sources: candidate_sources,
           targetLeads: desiredQuickLeads,
-          intent: discovery.intent,
-          apiFirst: false
+          intent: discovery.intent
         });
     if (!rawQuickLeads.length && !noUrls) {
-      // One bounded recovery attempt with broader, plain-language search.
       const recoveryBrief = `${b} broader local project leads`;
       const recovery = await runAgentFindFast(recoveryBrief, { nonTechnical: true }).catch(() => null);
       if (recovery?.candidate_sources?.length) {
@@ -222,8 +220,7 @@ async function runAutoLeadAgentPipeline(opts) {
           brief: b,
           sources: candidate_sources,
           targetLeads: desiredQuickLeads,
-          intent: discovery.intent,
-          apiFirst: false
+          intent: discovery.intent
         });
       }
     }
