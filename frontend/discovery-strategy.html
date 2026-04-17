@@ -1902,6 +1902,7 @@
         pendingSearch: false,
         isSearching: false,
         lastFailedInput: '',
+        lastAskedField: '',
         context: {
           objective: '',
           location: '',
@@ -1954,6 +1955,7 @@
           stage: state.stage,
           pendingSearch: state.pendingSearch,
           lastFailedInput: state.lastFailedInput,
+          lastAskedField: state.lastAskedField,
           context: state.context
         }));
       }
@@ -1968,6 +1970,7 @@
           state.stage = parsed.stage || 'idle';
           state.pendingSearch = parsed.pendingSearch === true;
           state.lastFailedInput = String(parsed.lastFailedInput || '');
+          state.lastAskedField = String(parsed.lastAskedField || '');
           state.context = Object.assign({ objective: '', location: '', filters: '', notes: [] }, parsed.context || {});
           if (!Array.isArray(state.context.notes)) state.context.notes = [];
           return true;
@@ -2103,7 +2106,46 @@
       }
 
       function hasFilterCue(text) {
-        return /\b(over|under|between|after|before|recent|last|permit|value|valuation|budget|\$|applicant|owner|contractor)\b/i.test(String(text || ''));
+        return /\b(over|under|between|after|before|recent|last|permit|value|valuation|budget|\$|applicant|owner|contractor|filter|filters|monthly|usage|role|size|cuisine)\b/i.test(String(text || ''));
+      }
+
+      function isNoFilterReply(text) {
+        return /\b(no filters?|none|nope|n\/a|na|nothing specific)\b/i.test(String(text || ''));
+      }
+
+      function isLikelyNoiseReply(text) {
+        const value = String(text || '').trim().toLowerCase();
+        if (!value) return true;
+        if (value.length <= 2) return true;
+        return /^(ok|okay|k|kk|idk|wtf|fuck|f\*+k|lol)$/.test(value);
+      }
+
+      function applyClarifyingReply(text) {
+        const missing = getMissingFields();
+        const asked = state.lastAskedField || (missing.length ? missing[0] : '');
+        if (!asked) return;
+        const clean = truncate(String(text || '').trim(), 300);
+        if (!clean) return;
+
+        if (asked === 'location') {
+          if (!state.context.location && looksLikeLocationReply(clean)) {
+            state.context.location = clean;
+          }
+          return;
+        }
+        if (asked === 'filters') {
+          if (isNoFilterReply(clean)) {
+            state.context.filters = 'No additional filters';
+            return;
+          }
+          if (!isLikelyNoiseReply(clean)) {
+            state.context.filters = clean;
+          }
+          return;
+        }
+        if (asked === 'objective' && !state.context.objective && !isLikelyNoiseReply(clean)) {
+          state.context.objective = clean;
+        }
       }
 
       function isResearchQuestion(text) {
@@ -2225,9 +2267,7 @@
         if (dom.input) dom.input.value = '';
         addMessage('user', text);
         collectContext(text);
-        if (state.stage === 'clarifying' && !state.context.location && looksLikeLocationReply(text)) {
-          state.context.location = truncate(text, 90);
-        }
+        if (state.stage === 'clarifying') applyClarifyingReply(text);
         saveState();
 
         if (isResearchQuestion(text) && !hasSearchIntent(text) && !state.pendingSearch) {
@@ -2245,11 +2285,13 @@
         if (missing.length) {
           state.stage = 'clarifying';
           state.pendingSearch = true;
+          state.lastAskedField = missing[0];
           saveState();
           addMessage('assistant', clarifyingPrompt(missing[0]));
           return;
         }
 
+        state.lastAskedField = '';
         await runLeadSearch(text);
       }
 
@@ -2259,6 +2301,7 @@
         state.pendingSearch = false;
         state.isSearching = false;
         state.lastFailedInput = '';
+        state.lastAskedField = '';
         state.context = { objective: '', location: '', filters: '', notes: [] };
         saveState();
         seedMessages();
