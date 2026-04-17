@@ -15,6 +15,40 @@ function parseJson(text) {
   }
 }
 
+function splitTokens(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(t => t.trim())
+    .filter(t => t.length >= 3)
+    .slice(0, 10);
+}
+
+function extractEvidenceConstraints(brief) {
+  const b = String(brief || '').toLowerCase();
+  const includeTerms = [];
+  const excludeTerms = [];
+  const proofSignals = [];
+
+  const usingMatch = b.match(/\b(?:uses?|using|with)\s+([^,.!?]{2,80})/i);
+  if (usingMatch && usingMatch[1]) includeTerms.push(usingMatch[1].trim());
+
+  const excludeMatch = b.match(/\b(?:besides|except|other than|not)\s+([^,.!?]{2,80})/i);
+  if (excludeMatch && excludeMatch[1]) excludeTerms.push(excludeMatch[1].trim());
+
+  if (/\brecipe|recipes\b/.test(b)) proofSignals.push('recipe');
+  if (/\bmenu|menus\b/.test(b)) proofSignals.push('menu');
+  if (/\bingredient|ingredients\b/.test(b)) proofSignals.push('ingredient');
+
+  return {
+    includeTerms: includeTerms.slice(0, 6),
+    excludeTerms: excludeTerms.slice(0, 6),
+    includeTokens: includeTerms.flatMap(splitTokens).slice(0, 12),
+    excludeTokens: excludeTerms.flatMap(splitTokens).slice(0, 10),
+    proofTokens: proofSignals.flatMap(splitTokens).slice(0, 8)
+  };
+}
+
 const PLATFORM_PROVIDER_RE = /\b(socrata|arcgis|esri|tyler\s*tech|opendata\s*soft|accela)\b/i;
 
 function sanitizeCompany(raw) {
@@ -51,10 +85,41 @@ function mapLeadFromAI(x, i, sources) {
   };
 }
 
+function passesEvidenceConstraints(lead, constraints) {
+  if (!lead || typeof lead !== 'object') return false;
+  const c = constraints || {};
+  const includeTokens = Array.isArray(c.includeTokens) ? c.includeTokens : [];
+  const excludeTokens = Array.isArray(c.excludeTokens) ? c.excludeTokens : [];
+  const proofTokens = Array.isArray(c.proofTokens) ? c.proofTokens : [];
+  if (!includeTokens.length && !excludeTokens.length && !proofTokens.length) return true;
+
+  const evidenceBlob = [
+    lead.lead_title,
+    lead.project_name,
+    lead.project_snapshot,
+    lead.why_opportunity,
+    lead.evidence
+  ].join(' ').toLowerCase();
+
+  for (const token of excludeTokens) {
+    if (token && evidenceBlob.includes(token)) return false;
+  }
+  if (includeTokens.length) {
+    const includeHit = includeTokens.some(t => t && evidenceBlob.includes(t));
+    if (!includeHit) return false;
+  }
+  if (proofTokens.length) {
+    const proofHit = proofTokens.some(t => t && evidenceBlob.includes(t));
+    if (!proofHit) return false;
+  }
+  return true;
+}
+
 async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) {
   const src = Array.isArray(sources) ? sources : [];
   if (!src.length) return [];
   const desiredCount = Math.min(25, Math.max(1, parseInt(targetLeads, 10) || 3));
+  const constraints = extractEvidenceConstraints(brief);
 
   if (!isAIAvailable()) {
     logger.warn('[autoLeadQuickLeads] AI not available, returning empty');
@@ -102,8 +167,14 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     '- Only use facts visible in the page text. Do not invent names, addresses, or numbers.\n' +
     '- company_name must be a real company/person from the text, not a platform name.\n' +
     '- evidence must quote or closely paraphrase a specific passage from the page.\n' +
+    '- Leads must satisfy the user intent evidence requirements below.\n' +
     '- If a field is not in the text, use "Not publicly stated".\n' +
     '- source_url must match one of the provided source URLs exactly.\n\n' +
+    `EVIDENCE REQUIREMENTS:\n${JSON.stringify({
+      must_include_terms: constraints.includeTerms,
+      must_exclude_terms: constraints.excludeTerms,
+      required_proof_signals: constraints.proofTokens
+    }, null, 2)}\n\n` +
     `USER REQUEST:\n${String(brief || '').slice(0, 2000)}\n\n` +
     `PAGE CONTENT:\n${sourceContext.slice(0, 18000)}`;
 
@@ -114,6 +185,7 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     const arr = Array.isArray(o?.leads) ? o.leads : [];
     const mapped = arr
       .map((x, i) => mapLeadFromAI(x, i, src))
+      .filter(x => passesEvidenceConstraints(x, constraints))
       .filter(Boolean)
       .slice(0, desiredCount);
     if (mapped.length) {
@@ -131,7 +203,12 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     'Find the best opportunities matching the user request from these snippets.\n\n' +
     'Return ONLY valid JSON:\n' +
     '{"leads":[{"lead_title":"","project_name":"","project_snapshot":"","location":"","address":"","company_name":"","permit_or_record_id":"","status_or_phase":"","estimated_value_usd":"","key_contact_or_firm":"","why_opportunity":"","evidence":"","recommended_next_step":"","source_title":"","source_url":"","missing_fields":"","data_completeness":"high|medium|low"}]}\n\n' +
-    `Return up to ${desiredCount} leads. Only use facts from snippets. Do not invent.\n\n` +
+    `Return up to ${desiredCount} leads. Only use facts from snippets. Do not invent.\n` +
+    `Apply evidence requirements:\n${JSON.stringify({
+      must_include_terms: constraints.includeTerms,
+      must_exclude_terms: constraints.excludeTerms,
+      required_proof_signals: constraints.proofTokens
+    }, null, 2)}\n\n` +
     `USER REQUEST:\n${String(brief || '').slice(0, 2000)}\n\n` +
     `SNIPPETS:\n${JSON.stringify(src.slice(0, 8), null, 2)}`;
 
@@ -142,6 +219,7 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     const arr = Array.isArray(o?.leads) ? o.leads : [];
     const mapped = arr
       .map((x, i) => mapLeadFromAI(x, i, src))
+      .filter(x => passesEvidenceConstraints(x, constraints))
       .filter(Boolean)
       .slice(0, desiredCount);
     if (mapped.length) return mapped;

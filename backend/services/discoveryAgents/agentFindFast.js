@@ -21,6 +21,50 @@ function extractOfferFromBrief(brief) {
   return '';
 }
 
+function splitPhraseTokens(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map(t => t.trim())
+    .filter(t => t.length >= 3)
+    .slice(0, 8);
+}
+
+function buildEvidenceHintsFromBrief(brief) {
+  const b = String(brief || '').toLowerCase();
+  const includeTerms = [];
+  const excludeTerms = [];
+  const proofSignals = [];
+
+  const usingMatch = b.match(/\b(?:uses?|using|with)\s+([^,.!?]{2,80})/i);
+  if (usingMatch && usingMatch[1]) includeTerms.push(usingMatch[1].trim());
+
+  const forMatch = b.match(/\bfor\s+([^,.!?]{2,80})/i);
+  if (forMatch && /recipe|menu|ingredient|dish|drink|dessert/i.test(forMatch[1])) {
+    includeTerms.push(forMatch[1].trim());
+  }
+
+  const excludeMatch = b.match(/\b(?:besides|except|other than|not)\s+([^,.!?]{2,80})/i);
+  if (excludeMatch && excludeMatch[1]) excludeTerms.push(excludeMatch[1].trim());
+
+  if (/\brecipe|recipes\b/.test(b)) proofSignals.push('recipe');
+  if (/\bmenu|menus\b/.test(b)) proofSignals.push('menu');
+  if (/\bingredient|ingredients\b/.test(b)) proofSignals.push('ingredient');
+  if (/\bcoffee bean|coffee beans\b/.test(b)) proofSignals.push('coffee bean');
+
+  const includeTokens = uniq(includeTerms.flatMap(splitPhraseTokens), 12);
+  const excludeTokens = uniq(excludeTerms.flatMap(splitPhraseTokens), 10);
+  const proofTokens = uniq(proofSignals.flatMap(splitPhraseTokens), 10);
+
+  return {
+    includeTerms: uniq(includeTerms, 6),
+    excludeTerms: uniq(excludeTerms, 6),
+    includeTokens,
+    excludeTokens,
+    proofTokens
+  };
+}
+
 function buildBuyerIntentProfile(brief, intent) {
   const b = String(brief || '').toLowerCase();
   const offer = extractOfferFromBrief(brief) || String(intent?.asset_or_use || '').trim();
@@ -60,6 +104,10 @@ function buildBuyerIntentProfile(brief, intent) {
     companyTypes.push('local business', 'ecommerce brand', 'startup', 'agency');
     demandSignals.push('looking for growth', 'hiring marketing manager', 'paid ads spend');
     siteTargets.push('linkedin.com/company', 'indeed.com', 'crunchbase.com');
+  } else if (/restaurant|caf[eé]|bakery|bar|bistro|menu|recipe|ingredient|food/i.test(`${b} ${offerLower}`)) {
+    companyTypes.push('restaurant', 'cafe', 'bakery', 'bar', 'food business');
+    demandSignals.push('menu update', 'new dish', 'seasonal menu', 'ingredient sourcing');
+    siteTargets.push('yelp.com', 'tripadvisor.com', 'doordash.com', 'grubhub.com', 'restaurantji.com');
   } else {
     companyTypes.push(
       String(intent?.asset_or_use || '').trim() || 'business',
@@ -169,6 +217,7 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
   const nonTechnical = opts.nonTechnical === true;
   const buyerProfile = opts.buyerProfile || null;
   const searchMode = String(opts.searchMode || '');
+  const evidenceHints = opts.evidenceHints || null;
   const i = intent && typeof intent === 'object' ? intent : {};
   const geo = String(i.geography || '').trim();
   const trigger = String(i.trigger_or_record || 'building permit').trim();
@@ -216,7 +265,31 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
     .filter(Boolean);
 
   const rawFallback = buildFastQueries(brief);
-  return [...new Set([...targeted, ...intentQueries, ...rawFallback])].slice(0, 8).map(q => q.slice(0, 220));
+  const evidenceQueries = [];
+  if (searchMode !== 'record_hunt' && evidenceHints) {
+    const include = (evidenceHints.includeTerms || [])[0] || (evidenceHints.proofTokens || [])[0] || '';
+    const exclude = (evidenceHints.excludeTerms || [])[0] || '';
+    const proof = (evidenceHints.proofTokens || []).slice(0, 2).join(' ');
+    if (include) {
+      evidenceQueries.push(
+        [geo, vertical || 'business', include, 'menu OR recipes OR ingredients'].filter(Boolean).join(' ')
+      );
+      evidenceQueries.push(
+        [geo, vertical || 'business', include, 'site:*.com'].filter(Boolean).join(' ')
+      );
+    }
+    if (include || proof) {
+      evidenceQueries.push(
+        [geo, vertical || 'business', proof || include, '"about" OR "menu" OR "our ingredients"'].filter(Boolean).join(' ')
+      );
+    }
+    if (exclude) {
+      evidenceQueries.push(
+        [geo, vertical || 'business', include || 'target business', `-"${exclude}"`].filter(Boolean).join(' ')
+      );
+    }
+  }
+  return [...new Set([...targeted, ...intentQueries, ...evidenceQueries, ...rawFallback])].slice(0, 8).map(q => q.slice(0, 220));
 }
 
 function isLowSignalArticle(link, title) {
@@ -245,7 +318,7 @@ function hasProjectSignal(result, brief) {
   return tokens.some(tok => blob.includes(tok));
 }
 
-function scoreResultForBuyerIntent(result, brief, buyerProfile) {
+function scoreResultForBuyerIntent(result, brief, buyerProfile, evidenceHints) {
   const blob = `${String(result?.title || '')} ${String(result?.snippet || '')} ${String(result?.link || '')}`.toLowerCase();
   let score = 0;
   if (hasProjectSignal(result, brief)) score += 2;
@@ -263,6 +336,20 @@ function scoreResultForBuyerIntent(result, brief, buyerProfile) {
     }
     const offer = String(buyerProfile.offer || '').toLowerCase();
     if (offer && blob.includes(offer)) score += 2;
+  }
+  if (evidenceHints) {
+    const includeTokens = Array.isArray(evidenceHints.includeTokens) ? evidenceHints.includeTokens : [];
+    const excludeTokens = Array.isArray(evidenceHints.excludeTokens) ? evidenceHints.excludeTokens : [];
+    const proofTokens = Array.isArray(evidenceHints.proofTokens) ? evidenceHints.proofTokens : [];
+    for (const token of includeTokens.slice(0, 8)) {
+      if (token && blob.includes(token)) score += 2;
+    }
+    for (const token of proofTokens.slice(0, 6)) {
+      if (token && blob.includes(token)) score += 1;
+    }
+    for (const token of excludeTokens.slice(0, 6)) {
+      if (token && blob.includes(token)) score -= 4;
+    }
   }
   return score;
 }
@@ -282,8 +369,9 @@ async function runAgentFindFast(brief, opts = {}) {
   }
   const searchMode = classifySearchMode(brief, intent);
   const buyerProfile = nonTechnical ? buildBuyerIntentProfile(brief, intent) : null;
+  const evidenceHints = nonTechnical ? buildEvidenceHintsFromBrief(brief) : null;
   const machineParameters = buildMachineParameters(intent);
-  const queries = buildFastQueriesFromIntent(intent, brief, { nonTechnical, buyerProfile, searchMode });
+  const queries = buildFastQueriesFromIntent(intent, brief, { nonTechnical, buyerProfile, searchMode, evidenceHints });
   if (!hasSerper() || !queries.length) {
     return {
       intent: { mode: 'fast', ...(intent || {}) },
@@ -319,7 +407,7 @@ async function runAgentFindFast(brief, opts = {}) {
   }
   const prioritized = nonTechnical
     ? deduped
-        .map(r => ({ ...r, _score: scoreResultForBuyerIntent(r, brief, buyerProfile) }))
+        .map(r => ({ ...r, _score: scoreResultForBuyerIntent(r, brief, buyerProfile, evidenceHints) }))
         .filter(r => r._score > 0)
         .sort((a, b) => b._score - a._score)
     : deduped;

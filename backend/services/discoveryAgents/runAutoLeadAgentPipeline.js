@@ -308,11 +308,11 @@ async function runAutoLeadAgentPipeline(opts) {
       strict_filter_applied: false,
       note: noUrls
         ? discovery.preview_note ||
-          'I could not find strong web sources for this ask yet. Try a more specific location or project type.'
+          'I could not find strong web sources for this ask yet. Try a more specific location, buyer profile, or proof signal.'
         : usingExploratoryFallback
           ? 'Showing exploratory opportunities from high-signal sources. Ask for a deeper check on any card to pull stronger project details.'
         : !quickLeads.length
-          ? 'I found sources, but none had enough concrete project details yet. Try adding city + project type (e.g., commercial permits in Brooklyn).'
+          ? 'I found sources, but none had enough evidence matching your exact intent. Add required signals (what must appear, what to exclude) and I will re-check.'
           : 'Fast answer mode returns a short chat-style lead brief. Use Extract/API tools when you need structured technical output.',
       preview_note: discovery.preview_note,
       disclaimer: discovery.disclaimer
