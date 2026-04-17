@@ -150,7 +150,18 @@ router.post('/auto-leads', requirePaid, enforceSourceLimit, express.json(), with
       quickOnly
     });
     await incrementUsage(req.session.user.id, 'discovery', 1);
-    res.json(out);
+    res.json({
+      ...out,
+      success: out && out.success !== false,
+      mode: out && out.mode ? out.mode : 'auto_leads',
+      leads: Array.isArray(out && out.leads) ? out.leads : [],
+      candidate_sources: Array.isArray(out && out.candidate_sources) ? out.candidate_sources : [],
+      assistant_message:
+        (out && out.sales_intelligence && out.sales_intelligence.summary) ||
+        (out && out.note) ||
+        (out && out.preview_note) ||
+        ''
+    });
   } catch (e) {
     const msg = e.message || String(e);
     const code = msg.includes('Describe') || msg.includes('at least') ? 400 : 500;

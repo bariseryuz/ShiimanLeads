@@ -568,30 +568,36 @@
   </nav>
 
   <div class="strategy-wrap">
-    <div class="strategy-card">
-      <h1>Get leads</h1>
-      <p class="hint">Describe the leads you want (location, type, filters). You’ll get a <strong>quick read</strong> first — plain-English opportunities for that area — plus suggested places to check. This screen is meant to feel like a short assistant reply, not a technical panel.</p>
+    <div class="strategy-card lead-chat-shell">
+      <h1>AI Lead Chat</h1>
+      <p class="hint">Talk naturally and I will ask follow-up questions, help with research questions, and run lead searches once your request is clear enough.</p>
 
-      <div class="field">
-        <label for="leadBrief">What leads do you want?</label>
-        <textarea id="leadBrief" placeholder="Example: Recent commercial building permits in Travis County TX over $250k — I need project address, valuation, and applicant name if shown." style="min-height:120px;"></textarea>
+      <div id="chatThread" class="lead-chat-thread" aria-live="polite" aria-label="Lead assistant conversation"></div>
+
+      <div class="lead-chat-composer">
+        <label for="chatInput">Message the assistant</label>
+        <textarea
+          id="chatInput"
+          class="lead-chat-input"
+          placeholder="Example: I need recent commercial permit leads in Travis County over $250k with applicant and project address."
+          style="min-height:100px;"
+        ></textarea>
+        <div class="lead-chat-actions">
+          <button type="button" class="btn btn-secondary" id="chatSendBtn">Send</button>
+          <button type="button" class="btn btn-secondary lead-chat-action-muted" id="chatRetryBtn">Retry last request</button>
+          <button type="button" class="btn btn-secondary lead-chat-action-muted" id="chatResetBtn">Clear chat</button>
+        </div>
       </div>
-      <button type="button" class="btn btn-secondary" id="btnAutoLeads">Find leads for me</button>
-      <p class="hint" style="margin-top:0.75rem;font-size:0.8rem;">Assistant mode is automatic: quick search-style answers first, and deeper extraction when your prompt asks for full details.</p>
     </div>
 
-    <div class="strategy-card" style="padding-top:0.5rem;">
-      <div id="err" class="err" style="display:none;"></div>
-      <div id="autoLeadProgress" class="auto-lead-progress" style="display:none;" aria-live="polite">
-        <p class="auto-lead-progress__title">Search progress</p>
-        <div id="autoLeadProgressLog" class="auto-lead-progress__log"></div>
-      </div>
+    <div style="display:none;" aria-hidden="true">
+      <textarea id="leadBrief"></textarea>
+      <button type="button" id="btnAutoLeads"></button>
+      <div id="err" class="err"></div>
+      <div id="autoLeadProgress"><div id="autoLeadProgressLog"></div></div>
+      <div id="results"></div>
+      <section id="leadDashboard" class="lead-dashboard-section"></section>
     </div>
-
-    <div id="results" style="display:none;"></div>
-
-    <section id="leadDashboard" class="lead-dashboard-section" style="display:none;" aria-label="Lead run results"></section>
-
   </div>
 
   <script>
@@ -1494,13 +1500,8 @@
           return { res: res, data: data };
         }
 
-        var stepIdx = 0;
-        pushSearchProgress(inFlightSteps[stepIdx++]);
-        progressTimer = setInterval(function () {
-          if (stepIdx < inFlightSteps.length) {
-            pushSearchProgress(inFlightSteps[stepIdx++]);
-          }
-        }, 1300);
+        pushSearchProgress(inFlightSteps[0]);
+        pushSearchProgress(inFlightSteps[1]);
 
         var first = await callAutoLeads(quickOnly);
         if (progressTimer) {
@@ -1891,6 +1892,400 @@
     }).catch(function () {
       window.location.href = '/login.html';
     });
+  </script>
+  <script>
+    (function initLeadChatRebuild() {
+      const STORAGE_KEY = 'leadChatState.v1';
+      const state = {
+        messages: [],
+        stage: 'idle',
+        pendingSearch: false,
+        isSearching: false,
+        lastFailedInput: '',
+        context: {
+          objective: '',
+          location: '',
+          filters: '',
+          notes: []
+        }
+      };
+      const dom = {
+        thread: document.getElementById('chatThread'),
+        input: document.getElementById('chatInput'),
+        sendBtn: document.getElementById('chatSendBtn'),
+        retryBtn: document.getElementById('chatRetryBtn'),
+        resetBtn: document.getElementById('chatResetBtn')
+      };
+
+      function esc(text) {
+        if (text == null) return '';
+        const d = document.createElement('div');
+        d.textContent = String(text);
+        return d.innerHTML;
+      }
+
+      function escAttr(text) {
+        return esc(text).replace(/"/g, '&quot;');
+      }
+
+      function truncate(text, maxLen) {
+        const value = String(text || '').trim();
+        if (!value) return '';
+        return value.length > maxLen ? value.slice(0, maxLen) + '…' : value;
+      }
+
+      function addMessage(role, text, kind, payload) {
+        state.messages.push({
+          id: Date.now() + '-' + Math.random().toString(16).slice(2),
+          role: role,
+          kind: kind || 'text',
+          text: String(text || ''),
+          payload: payload || null,
+          createdAt: new Date().toISOString()
+        });
+        if (state.messages.length > 80) state.messages = state.messages.slice(-80);
+        saveState();
+        render();
+      }
+
+      function saveState() {
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+          messages: state.messages,
+          stage: state.stage,
+          pendingSearch: state.pendingSearch,
+          lastFailedInput: state.lastFailedInput,
+          context: state.context
+        }));
+      }
+
+      function loadState() {
+        const raw = sessionStorage.getItem(STORAGE_KEY);
+        if (!raw) return false;
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || !Array.isArray(parsed.messages)) return false;
+          state.messages = parsed.messages.slice(-80);
+          state.stage = parsed.stage || 'idle';
+          state.pendingSearch = parsed.pendingSearch === true;
+          state.lastFailedInput = String(parsed.lastFailedInput || '');
+          state.context = Object.assign({ objective: '', location: '', filters: '', notes: [] }, parsed.context || {});
+          if (!Array.isArray(state.context.notes)) state.context.notes = [];
+          return true;
+        } catch {
+          return false;
+        }
+      }
+
+      function normalizeLeadRow(row) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return {};
+        const out = {};
+        if (row.attributes && typeof row.attributes === 'object') {
+          Object.keys(row.attributes).forEach(function (key) { out[key] = row.attributes[key]; });
+        }
+        if (row.properties && typeof row.properties === 'object') {
+          Object.keys(row.properties).forEach(function (key) { out[key] = row.properties[key]; });
+        }
+        Object.keys(row).forEach(function (key) {
+          if (key === 'attributes' || key === 'properties' || key === 'geometry') return;
+          out[key] = row[key];
+        });
+        return out;
+      }
+
+      function pickValue(row, keys) {
+        for (let i = 0; i < keys.length; i += 1) {
+          const val = row[keys[i]];
+          if (val == null || val === '' || typeof val === 'object') continue;
+          return String(val);
+        }
+        return '';
+      }
+
+      function renderLeadResults(data) {
+        const leads = Array.isArray(data && data.leads) ? data.leads : [];
+        const sources = Array.isArray(data && data.candidate_sources) ? data.candidate_sources : [];
+        const summary = String((data && (data.summary || data.note || data.preview_note)) || '').trim();
+        const quickRead = String((data && data.quick_read) || '').trim();
+        let html = '<div class="lead-chat-result">';
+        if (summary) {
+          html += '<p class="lead-chat-result__summary">' + esc(summary) + '</p>';
+        }
+        if (quickRead) {
+          html += '<details class="lead-chat-result__details"><summary>Quick read</summary><p>' + esc(quickRead) + '</p></details>';
+        }
+        html += '<p class="lead-chat-result__count">Leads returned: <strong>' + leads.length + '</strong></p>';
+        if (!leads.length) {
+          html += '<p class="lead-chat-result__empty">No strong matches yet. Add tighter location or filters and try again.</p>';
+        } else {
+          html += '<div class="lead-chat-lead-list">';
+          leads.slice(0, 12).forEach(function (raw, idx) {
+            const row = normalizeLeadRow(raw);
+            const title = pickValue(row, ['project_address', 'site_address', 'address', 'project_name', 'description']) || ('Lead ' + (idx + 1));
+            const contact = pickValue(row, ['applicant_name', 'owner_name', 'contractor_name', 'contact_name']);
+            const value = pickValue(row, ['valuation', 'project_value', 'estimated_cost', 'permit_value']);
+            const date = pickValue(row, ['issued_date', 'issue_date', 'permit_date', 'application_date']);
+            const url = pickValue(row, ['source_url', 'url', 'link']);
+            html += '<article class="lead-chat-lead-item">';
+            html += '<h4>' + esc(title) + '</h4>';
+            html += '<p>' +
+              (contact ? '<span><strong>Contact:</strong> ' + esc(contact) + '</span>' : '') +
+              (value ? '<span><strong> Value:</strong> ' + esc(value) + '</span>' : '') +
+              (date ? '<span><strong> Date:</strong> ' + esc(date) + '</span>' : '') +
+              '</p>';
+            if (url) {
+              html += '<a href="' + escAttr(url) + '" target="_blank" rel="noopener">Open source</a>';
+            }
+            html += '</article>';
+          });
+          html += '</div>';
+        }
+        if (sources.length) {
+          html += '<p class="lead-chat-result__sources-label">Sources checked</p><ul class="lead-chat-source-list">';
+          sources.slice(0, 8).forEach(function (source) {
+            const title = source && source.title ? source.title : 'Source';
+            const url = source && source.url ? source.url : '#';
+            html += '<li><a href="' + escAttr(url) + '" target="_blank" rel="noopener">' + esc(truncate(title, 64)) + '</a></li>';
+          });
+          html += '</ul>';
+        }
+        if (data && data.disclaimer) {
+          html += '<p class="lead-chat-result__disclaimer">' + esc(data.disclaimer) + '</p>';
+        }
+        html += '</div>';
+        return html;
+      }
+
+      function renderMessage(msg) {
+        const roleClass = msg.role === 'user' ? 'is-user' : (msg.role === 'system' ? 'is-system' : 'is-assistant');
+        const kindClass = msg.kind === 'status' ? 'is-status' : '';
+        const body = msg.kind === 'lead_results'
+          ? renderLeadResults(msg.payload || {})
+          : '<p>' + esc(msg.text || '') + '</p>';
+        return (
+          '<div class="lead-chat-message ' + roleClass + ' ' + kindClass + '">' +
+            '<div class="lead-chat-message__bubble">' + body + '</div>' +
+          '</div>'
+        );
+      }
+
+      function render() {
+        if (!dom.thread) return;
+        dom.thread.innerHTML = state.messages.map(renderMessage).join('');
+        dom.thread.scrollTop = dom.thread.scrollHeight;
+        setActionState();
+      }
+
+      function setActionState() {
+        if (dom.sendBtn) dom.sendBtn.disabled = state.isSearching;
+        if (dom.input) dom.input.disabled = state.isSearching;
+        if (dom.retryBtn) dom.retryBtn.disabled = state.isSearching || !state.lastFailedInput;
+        if (dom.resetBtn) dom.resetBtn.disabled = state.isSearching;
+        if (dom.sendBtn) dom.sendBtn.textContent = state.isSearching ? 'Searching…' : 'Send';
+      }
+
+      function parseLocation(text) {
+        const m = String(text || '').match(/\b(?:in|near|around|within|across)\s+([a-z0-9 ,.-]{3,90})/i);
+        return m ? truncate(m[1], 90) : '';
+      }
+
+      function hasSearchIntent(text) {
+        return /\b(lead|leads|find|need|looking for|prospect|records|opportunit)\b/i.test(String(text || ''));
+      }
+
+      function hasFilterCue(text) {
+        return /\b(over|under|between|after|before|recent|last|permit|value|valuation|budget|\$|applicant|owner|contractor)\b/i.test(String(text || ''));
+      }
+
+      function isResearchQuestion(text) {
+        const value = String(text || '').trim();
+        return /\?$/.test(value) || /^(what|how|where|which|can|should|is|are)\b/i.test(value);
+      }
+
+      function collectContext(text) {
+        const clean = String(text || '').trim();
+        if (!clean) return;
+        if (!state.context.objective || hasSearchIntent(clean)) {
+          state.context.objective = truncate(clean, 300);
+        }
+        const location = parseLocation(clean);
+        if (location) state.context.location = location;
+        if (hasFilterCue(clean)) state.context.filters = truncate(clean, 300);
+        state.context.notes.push(truncate(clean, 240));
+        if (state.context.notes.length > 8) state.context.notes = state.context.notes.slice(-8);
+      }
+
+      function getMissingFields() {
+        const missing = [];
+        if (!state.context.objective) missing.push('objective');
+        if (!state.context.location) missing.push('location');
+        if (!state.context.filters) missing.push('filters');
+        return missing;
+      }
+
+      function clarifyingPrompt(field) {
+        if (field === 'objective') return 'What exact lead type do you want (industry, project type, buyer type)?';
+        if (field === 'location') return 'Which city, county, or region should I target?';
+        return 'Any filters to apply (date range, valuation, permit type, contact fields)?';
+      }
+
+      function parseRequestedLeadCount(brief) {
+        const match = String(brief || '').toLowerCase().match(/\b(\d{1,2})\s*(?:leads|records|rows|opportunities)\b/);
+        if (!match) return 15;
+        return Math.max(1, Math.min(50, parseInt(match[1], 10) || 15));
+      }
+
+      function wantsDeepExtract(brief) {
+        return /\b(deep|full|complete|all fields|every field|raw rows|structured|csv|table|spreadsheet)\b/i.test(String(brief || ''));
+      }
+
+      function buildBrief() {
+        const noteTrail = state.context.notes.slice(-3).join(' ');
+        return [
+          state.context.objective && ('Goal: ' + state.context.objective),
+          state.context.location && ('Location: ' + state.context.location),
+          state.context.filters && ('Filters: ' + state.context.filters),
+          noteTrail && ('Conversation context: ' + noteTrail)
+        ].filter(Boolean).join('. ');
+      }
+
+      function normalizeResponse(raw) {
+        const data = raw && typeof raw === 'object' ? raw : {};
+        return {
+          summary: data.sales_intelligence && data.sales_intelligence.summary ? data.sales_intelligence.summary : '',
+          note: data.note || '',
+          preview_note: data.preview_note || '',
+          quick_read: data.quick_read || '',
+          disclaimer: data.disclaimer || '',
+          leads: Array.isArray(data.leads) ? data.leads : [],
+          candidate_sources: Array.isArray(data.candidate_sources) ? data.candidate_sources : []
+        };
+      }
+
+      async function runLeadSearch(triggerText) {
+        const brief = buildBrief();
+        state.isSearching = true;
+        state.stage = 'searching';
+        state.pendingSearch = false;
+        saveState();
+        render();
+
+        addMessage('assistant', 'Understood. Preparing your request now.', 'status');
+        const quickOnly = !wantsDeepExtract(brief);
+        addMessage(
+          'assistant',
+          quickOnly ? 'Searching public and monitorable sources.' : 'Running deeper extraction for richer lead fields.',
+          'status'
+        );
+
+        try {
+          const response = await fetch('/api/discover/auto-leads', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              brief: brief,
+              maxLeads: parseRequestedLeadCount(brief),
+              maxSites: 3,
+              quickOnly: quickOnly
+            })
+          });
+          const payload = await response.json().catch(function () { return {}; });
+          if (!response.ok) {
+            throw new Error(payload.error || response.statusText || 'Lead search failed');
+          }
+          addMessage('assistant', 'Search completed. Building your shortlist.', 'status');
+          addMessage('assistant', 'Here are the best matches I found.', 'lead_results', normalizeResponse(payload));
+          state.lastFailedInput = '';
+          state.stage = 'results';
+        } catch (error) {
+          state.lastFailedInput = triggerText;
+          state.stage = 'idle';
+          addMessage('system', (error && error.message) || 'Search failed due to a network/runtime error.');
+        } finally {
+          state.isSearching = false;
+          saveState();
+          render();
+        }
+      }
+
+      async function sendUserMessage(forcedText) {
+        if (state.isSearching) return;
+        const text = String(forcedText != null ? forcedText : (dom.input ? dom.input.value : '')).trim();
+        if (!text) return;
+        if (dom.input) dom.input.value = '';
+        addMessage('user', text);
+        collectContext(text);
+        saveState();
+
+        if (isResearchQuestion(text) && !hasSearchIntent(text) && !state.pendingSearch) {
+          addMessage('assistant', 'I can answer strategy questions and also run a lead search. Tell me when to search, with area and filters.');
+          return;
+        }
+
+        const shouldAttemptSearch = hasSearchIntent(text) || state.pendingSearch || state.stage === 'clarifying';
+        if (!shouldAttemptSearch) {
+          addMessage('assistant', 'Share your target area and filters when you are ready, then I will run the search.');
+          return;
+        }
+
+        const missing = getMissingFields();
+        if (missing.length) {
+          state.stage = 'clarifying';
+          state.pendingSearch = true;
+          saveState();
+          addMessage('assistant', clarifyingPrompt(missing[0]));
+          return;
+        }
+
+        await runLeadSearch(text);
+      }
+
+      function resetChat() {
+        state.messages = [];
+        state.stage = 'idle';
+        state.pendingSearch = false;
+        state.isSearching = false;
+        state.lastFailedInput = '';
+        state.context = { objective: '', location: '', filters: '', notes: [] };
+        saveState();
+        seedMessages();
+        render();
+      }
+
+      function seedMessages() {
+        if (state.messages.length) return;
+        addMessage('assistant', 'Hi, I am your lead assistant. Tell me what leads you need and I will ask follow-up questions.');
+        addMessage('assistant', 'You can also ask research questions before we run the lead pull.');
+      }
+
+      function bindEvents() {
+        if (dom.sendBtn) dom.sendBtn.addEventListener('click', function () { sendUserMessage(); });
+        if (dom.retryBtn) {
+          dom.retryBtn.addEventListener('click', function () {
+            if (!state.lastFailedInput) return;
+            addMessage('user', 'Retrying the last request.');
+            runLeadSearch(state.lastFailedInput);
+          });
+        }
+        if (dom.resetBtn) dom.resetBtn.addEventListener('click', resetChat);
+        if (dom.input) {
+          dom.input.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              sendUserMessage();
+            }
+          });
+        }
+      }
+
+      if (!loadState()) {
+        seedMessages();
+      } else {
+        render();
+      }
+      bindEvents();
+      setActionState();
+    })();
   </script>
 </body>
 </html>
