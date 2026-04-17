@@ -395,8 +395,8 @@ async function runAgentFindFast(brief, opts = {}) {
       search_queries_used: [],
       results_pooled: 0,
       candidate_sources: [],
-      preview_note: 'Fast mode needs SERPER_API_KEY.',
-      disclaimer: 'Quick mode gives a fast web-style summary and may miss details.'
+      preview_note: 'Search is unavailable — SERPER_API_KEY missing.',
+      disclaimer: ''
     };
   }
 
@@ -460,8 +460,8 @@ async function runAgentFindFast(brief, opts = {}) {
     search_queries_used: useQueries,
     results_pooled: pool.length,
     candidate_sources,
-    preview_note: candidate_sources.length ? null : 'Fast scout found weak sources; try adding what you sell + who should buy + location.',
-    disclaimer: 'Quick mode is a fast, chat-style web summary. Use full extract only when you need strict structured output.'
+    preview_note: candidate_sources.length ? null : 'Found weak sources. Try adding what you sell, who should buy, and a location.',
+    disclaimer: ''
   };
 }
 

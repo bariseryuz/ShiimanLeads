@@ -23,7 +23,7 @@ function splitTokens(text) {
     .split(/[^a-z0-9]+/)
     .map(t => t.trim())
     .filter(t => t.length >= 3)
-    .slice(0, 10);
+    .slice(0, 12);
 }
 
 function extractEvidenceConstraints(brief) {
@@ -116,55 +116,64 @@ function passesEvidenceConstraints(lead, constraints, mode = 'strict') {
     if (!includeHit) return false;
     if (!proofHit) return false;
   } else {
-    // Fallback mode: keep logic intent-aware, but allow either include or proof.
     if (!(includeHit || proofHit)) return false;
   }
   return true;
 }
 
-async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) {
-  const src = Array.isArray(sources) ? sources : [];
-  if (!src.length) return [];
-  const desiredCount = Math.min(25, Math.max(1, parseInt(targetLeads, 10) || 3));
-  const constraints = extractEvidenceConstraints(brief);
+function briefKeywordSet(brief) {
+  const STOP = new Set([
+    'the','and','for','with','from','into','that','this','these','those',
+    'find','leads','lead','please','want','need','give','show','list',
+    'looking','look','real','some','any','new','just','also','what','where',
+    'near','about','using','have','has','had','your','our','their','there',
+    'you','they','them','can','will','would','should','could','more','less',
+    'all','only','one','two','three','many','per','than','then','been','being',
+    'make','made','help','are','was','were','who','whom','which','why','how'
+  ]);
+  const words = String(brief || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !STOP.has(w));
+  return Array.from(new Set(words)).slice(0, 20);
+}
 
-  if (!isAIAvailable()) {
-    logger.warn('[autoLeadQuickLeads] AI not available, returning empty');
-    return [];
+function rankLinksByRelevance(links, intentTokens) {
+  if (!Array.isArray(links) || !links.length) return [];
+  const toks = (intentTokens || []).map(t => String(t || '').toLowerCase()).filter(Boolean);
+  if (!toks.length) return [];
+  const scored = [];
+  for (const l of links) {
+    if (!l || !l.url || !l.anchor) continue;
+    const hay = `${l.anchor} ${l.url}`.toLowerCase();
+    let score = 0;
+    for (const t of toks) {
+      if (!t) continue;
+      if (hay.includes(t)) score += t.length >= 5 ? 3 : 2;
+    }
+    if (/\b(contact|directory|list|top|best|near|in\s+\w+)\b/.test(hay)) score += 1;
+    if (l.anchor.length >= 20) score += 1;
+    if (score > 0) scored.push({ link: l, score });
   }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(s => s.link);
+}
 
-  // Step 1: Actually visit and read top source pages
-  const maxPages = Math.min(4, src.length);
-  logger.info(`[autoLeadQuickLeads] reading ${maxPages} pages from ${src.length} candidates`);
-  const readResult = await readMultiplePagesWithDiagnostics(src, maxPages);
-  const pages = Array.isArray(readResult?.pages) ? readResult.pages : [];
-  _lastReadDiagnostics = readResult && readResult.diagnostics
-    ? readResult.diagnostics
-    : { attempted: maxPages, readable: pages.length, failed: Math.max(0, maxPages - pages.length), failures: [] };
-  logger.info(`[autoLeadQuickLeads] successfully read ${pages.length} pages`);
-
-  // Build context from page content + snippets as fallback
-  let sourceContext = '';
-  if (pages.length) {
-    sourceContext = pages.map((p, i) =>
-      `--- Source ${i + 1}: ${p.title} (${p.url}) ---\n${p.text.slice(0, 4000)}\n`
-    ).join('\n');
+function dedupeByUrl(items) {
+  const seen = new Set();
+  const out = [];
+  for (const it of items || []) {
+    const u = String(it?.url || '').trim();
+    if (!u || seen.has(u)) continue;
+    seen.add(u);
+    out.push(it);
   }
-  // Add snippet context for pages we couldn't read
-  const readUrls = new Set(pages.map(p => p.url));
-  const unreadSources = src.filter(s => !readUrls.has(s.url));
-  if (unreadSources.length) {
-    sourceContext += '\n--- Additional sources (snippet only) ---\n';
-    sourceContext += unreadSources.slice(0, 4).map(s =>
-      `${s.title || 'Source'} (${s.url}): ${String(s.snippet || '').slice(0, 300)}`
-    ).join('\n');
-  }
+  return out;
+}
 
-  if (!sourceContext.trim()) {
-    logger.warn('[autoLeadQuickLeads] no page content or snippets available');
-    return [];
-  }
-
+async function extractLeadsFromContext({ brief, sourceContext, allowedSources, constraints, desiredCount }) {
+  if (!sourceContext || !sourceContext.trim()) return [];
   const model = getGeminiModel('discovery');
   const prompt =
     'You are a lead research assistant. The user described what they are looking for. ' +
@@ -180,7 +189,7 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     '- evidence must quote or closely paraphrase a specific passage from the page.\n' +
     '- Leads must satisfy the user intent evidence requirements below.\n' +
     '- If a field is not in the text, use "Not publicly stated".\n' +
-    '- source_url must match one of the provided source URLs exactly.\n\n' +
+    '- source_url must be one of the provided source URLs.\n\n' +
     `EVIDENCE REQUIREMENTS:\n${JSON.stringify({
       must_include_terms: constraints.includeTerms,
       must_exclude_terms: constraints.excludeTerms,
@@ -188,23 +197,17 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     }, null, 2)}\n\n` +
     `USER REQUEST:\n${String(brief || '').slice(0, 2000)}\n\n` +
     `PAGE CONTENT:\n${sourceContext.slice(0, 18000)}`;
-
   try {
     const result = await model.generateContent(prompt);
     const raw = (await result.response).text();
     const o = parseJson(raw);
     const arr = Array.isArray(o?.leads) ? o.leads : [];
-    const mappedBase = arr
-      .map((x, i) => mapLeadFromAI(x, i, src))
-      .filter(Boolean);
-    const mappedStrict = mappedBase
+    const mappedBase = arr.map((x, i) => mapLeadFromAI(x, i, allowedSources)).filter(Boolean);
+    const strict = mappedBase
       .filter(x => passesEvidenceConstraints(x, constraints, 'strict'))
       .slice(0, desiredCount);
-    if (mappedStrict.length) {
-      logger.info(`[autoLeadQuickLeads] AI produced ${mappedStrict.length} strict leads from page content`);
-      return mappedStrict;
-    }
-    const mappedSoft = mappedBase
+    if (strict.length) return strict;
+    const soft = mappedBase
       .filter(x => passesEvidenceConstraints(x, constraints, 'soft'))
       .slice(0, desiredCount)
       .map(x => ({
@@ -212,16 +215,162 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
         data_completeness: x.data_completeness === 'high' ? 'medium' : 'low',
         missing_fields: x.missing_fields || 'Partial evidence match; refine required proof terms for stricter matching.'
       }));
-    if (mappedSoft.length) {
-      logger.info(`[autoLeadQuickLeads] AI produced ${mappedSoft.length} soft-fallback leads from page content`);
-      return mappedSoft;
-    }
+    return soft;
   } catch (e) {
-    logger.warn(`autoLeadQuickLeads page-content AI: ${e.message}`);
+    logger.warn(`[autoLeadQuickLeads] extractLeadsFromContext: ${e.message}`);
+    return [];
+  }
+}
+
+function buildContextFromPages(pages, snippetSources) {
+  let ctx = '';
+  if (pages && pages.length) {
+    ctx = pages.map((p, i) =>
+      `--- Source ${i + 1}: ${p.title || 'Source'} (${p.url}) ---\n${String(p.text || '').slice(0, 3800)}\n`
+    ).join('\n');
+  }
+  if (snippetSources && snippetSources.length) {
+    ctx += '\n--- Additional sources (snippet only) ---\n';
+    ctx += snippetSources.slice(0, 4).map(s =>
+      `${s.title || 'Source'} (${s.url}): ${String(s.snippet || '').slice(0, 300)}`
+    ).join('\n');
+  }
+  return ctx;
+}
+
+function mergeDiagnostics(a, b) {
+  const base = a || { attempted: 0, readable: 0, failed: 0, failures: [] };
+  const add = b || { attempted: 0, readable: 0, failed: 0, failures: [] };
+  return {
+    attempted: (base.attempted || 0) + (add.attempted || 0),
+    readable: (base.readable || 0) + (add.readable || 0),
+    failed: (base.failed || 0) + (add.failed || 0),
+    failures: [...(base.failures || []), ...(add.failures || [])]
+  };
+}
+
+async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) {
+  const src = Array.isArray(sources) ? sources : [];
+  if (!src.length) return [];
+  const desiredCount = Math.min(25, Math.max(1, parseInt(targetLeads, 10) || 3));
+  const constraints = extractEvidenceConstraints(brief);
+
+  if (!isAIAvailable()) {
+    logger.warn('[autoLeadQuickLeads] AI not available, returning empty');
+    return [];
   }
 
-  // Last resort: snippet-only generation
-  logger.info('[autoLeadQuickLeads] falling back to snippet-based generation');
+  const intentTokens = Array.from(new Set([
+    ...briefKeywordSet(brief),
+    ...(constraints.includeTokens || []),
+    ...(constraints.proofTokens || [])
+  ]));
+
+  // PHASE A: Read top sources.
+  const firstBatchMax = Math.min(6, src.length);
+  logger.info(`[autoLeadQuickLeads] PhaseA reading ${firstBatchMax} pages from ${src.length} candidates`);
+  const phaseA = await readMultiplePagesWithDiagnostics(src, firstBatchMax);
+  const pagesA = Array.isArray(phaseA?.pages) ? phaseA.pages : [];
+  let diag = phaseA?.diagnostics || { attempted: firstBatchMax, readable: pagesA.length, failed: Math.max(0, firstBatchMax - pagesA.length), failures: [] };
+  logger.info(`[autoLeadQuickLeads] PhaseA readable=${pagesA.length}`);
+
+  const readUrls = new Set(pagesA.map(p => p.url));
+  const unreadFirstBatch = src.slice(0, firstBatchMax).filter(s => !readUrls.has(s.url));
+
+  const ctxA = buildContextFromPages(pagesA, unreadFirstBatch);
+  let leads = [];
+  if (ctxA.trim()) {
+    leads = await extractLeadsFromContext({
+      brief,
+      sourceContext: ctxA,
+      allowedSources: src,
+      constraints,
+      desiredCount
+    });
+    if (leads.length) {
+      logger.info(`[autoLeadQuickLeads] PhaseA produced ${leads.length} leads`);
+      _lastReadDiagnostics = diag;
+      return leads;
+    }
+  }
+
+  // PHASE B: Follow relevant inner links from pages we already read.
+  const innerCandidates = [];
+  for (const p of pagesA) {
+    const ranked = rankLinksByRelevance(p.links, intentTokens);
+    for (const l of ranked.slice(0, 4)) {
+      innerCandidates.push({ url: l.url, title: l.anchor, from: p.url });
+    }
+  }
+  const innerUnique = dedupeByUrl(innerCandidates)
+    .filter(l => !readUrls.has(l.url))
+    .slice(0, 6);
+
+  if (innerUnique.length) {
+    logger.info(`[autoLeadQuickLeads] PhaseB following ${innerUnique.length} inner links`);
+    const phaseB = await readMultiplePagesWithDiagnostics(innerUnique, innerUnique.length);
+    const pagesB = Array.isArray(phaseB?.pages) ? phaseB.pages : [];
+    diag = mergeDiagnostics(diag, phaseB?.diagnostics);
+    pagesB.forEach(p => readUrls.add(p.url));
+    logger.info(`[autoLeadQuickLeads] PhaseB readable=${pagesB.length}`);
+
+    // Treat inner pages as additional sources so mapLeadFromAI accepts their URLs.
+    const combinedSources = [
+      ...src,
+      ...pagesB.map(p => ({ url: p.url, title: p.title, snippet: '' }))
+    ];
+    const ctxB = buildContextFromPages([...pagesA, ...pagesB], unreadFirstBatch);
+    if (ctxB.trim()) {
+      leads = await extractLeadsFromContext({
+        brief,
+        sourceContext: ctxB,
+        allowedSources: combinedSources,
+        constraints,
+        desiredCount
+      });
+      if (leads.length) {
+        logger.info(`[autoLeadQuickLeads] PhaseB produced ${leads.length} leads`);
+        _lastReadDiagnostics = diag;
+        return leads;
+      }
+    }
+  }
+
+  // PHASE C: Try the next batch of search sources we haven't touched yet.
+  const remaining = src.slice(firstBatchMax).filter(s => !readUrls.has(s.url));
+  if (remaining.length) {
+    const nextMax = Math.min(6, remaining.length);
+    logger.info(`[autoLeadQuickLeads] PhaseC reading ${nextMax} more pages`);
+    const phaseC = await readMultiplePagesWithDiagnostics(remaining, nextMax);
+    const pagesC = Array.isArray(phaseC?.pages) ? phaseC.pages : [];
+    diag = mergeDiagnostics(diag, phaseC?.diagnostics);
+    pagesC.forEach(p => readUrls.add(p.url));
+    logger.info(`[autoLeadQuickLeads] PhaseC readable=${pagesC.length}`);
+
+    const allPages = [...pagesA, ...pagesC];
+    const unreadAll = src.filter(s => !readUrls.has(s.url)).slice(0, 6);
+    const ctxC = buildContextFromPages(allPages, unreadAll);
+    if (ctxC.trim()) {
+      leads = await extractLeadsFromContext({
+        brief,
+        sourceContext: ctxC,
+        allowedSources: src,
+        constraints,
+        desiredCount
+      });
+      if (leads.length) {
+        logger.info(`[autoLeadQuickLeads] PhaseC produced ${leads.length} leads`);
+        _lastReadDiagnostics = diag;
+        return leads;
+      }
+    }
+  }
+
+  _lastReadDiagnostics = diag;
+
+  // PHASE D: Snippet-only last resort.
+  logger.info('[autoLeadQuickLeads] PhaseD snippet-only fallback');
+  const model = getGeminiModel('discovery');
   const snippetPrompt =
     'You are a lead research assistant. I could not fully read the source pages, but here are search result snippets.\n' +
     'Find the best opportunities matching the user request from these snippets.\n\n' +
@@ -235,20 +384,17 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     }, null, 2)}\n\n` +
     `USER REQUEST:\n${String(brief || '').slice(0, 2000)}\n\n` +
     `SNIPPETS:\n${JSON.stringify(src.slice(0, 8), null, 2)}`;
-
   try {
     const result = await model.generateContent(snippetPrompt);
     const raw = (await result.response).text();
     const o = parseJson(raw);
     const arr = Array.isArray(o?.leads) ? o.leads : [];
-    const mappedBase = arr
-      .map((x, i) => mapLeadFromAI(x, i, src))
-      .filter(Boolean);
-    const mappedStrict = mappedBase
+    const mappedBase = arr.map((x, i) => mapLeadFromAI(x, i, src)).filter(Boolean);
+    const strict = mappedBase
       .filter(x => passesEvidenceConstraints(x, constraints, 'strict'))
       .slice(0, desiredCount);
-    if (mappedStrict.length) return mappedStrict;
-    const mappedSoft = mappedBase
+    if (strict.length) return strict;
+    const soft = mappedBase
       .filter(x => passesEvidenceConstraints(x, constraints, 'soft'))
       .slice(0, desiredCount)
       .map(x => ({
@@ -256,18 +402,16 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
         data_completeness: x.data_completeness === 'high' ? 'medium' : 'low',
         missing_fields: x.missing_fields || 'Partial evidence match from snippet-only fallback.'
       }));
-    if (mappedSoft.length) return mappedSoft;
+    if (soft.length) return soft;
   } catch (e) {
-    logger.warn(`autoLeadQuickLeads snippet AI: ${e.message}`);
+    logger.warn(`[autoLeadQuickLeads] snippet AI: ${e.message}`);
   }
 
   return [];
 }
 
-module.exports = { buildAutoLeadQuickLeads };
-
 function getLastQuickLeadReadDiagnostics() {
   return _lastReadDiagnostics;
 }
 
-module.exports.getLastQuickLeadReadDiagnostics = getLastQuickLeadReadDiagnostics;
+module.exports = { buildAutoLeadQuickLeads, getLastQuickLeadReadDiagnostics };

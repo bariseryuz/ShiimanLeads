@@ -2248,7 +2248,7 @@
           html += '<p class="lead-chat-result__summary">' + esc(summary) + '</p>';
         }
         if (quickRead) {
-          html += '<details class="lead-chat-result__details"><summary>Quick read</summary><p>' + esc(quickRead) + '</p></details>';
+          html += '<details class="lead-chat-result__details"><summary>What I found</summary><p>' + esc(quickRead) + '</p></details>';
         }
         html += '<p class="lead-chat-result__count">Leads returned: <strong>' + leads.length + '</strong></p>';
         if (!leads.length) {
@@ -2289,10 +2289,12 @@
           const attempted = Number(siteDiag.attempted || 0);
           const readable = Number(siteDiag.readable || 0);
           const failed = Number(siteDiag.failed || Math.max(0, attempted - readable));
-          html += '<p class="lead-chat-result__disclaimer">' +
-            'Website read health: read ' + readable + '/' + attempted + ' pages' +
-            (failed > 0 ? (' (' + failed + ' blocked/failed).') : '.') +
-            '</p>';
+          const viaPlaywright = Number(siteDiag.readable_via_playwright || 0);
+          let note = 'Discovery: the agent opened ' + readable + '/' + attempted + ' pages';
+          if (failed > 0) note += ' (' + failed + ' blocked/failed)';
+          note += ' and followed relevant inner links where useful.';
+          if (viaPlaywright > 0) note += ' ' + viaPlaywright + ' needed a stealth browser (JS-heavy or blocked).';
+          html += '<p class="lead-chat-result__disclaimer">' + note + '</p>';
         }
         if (data && data.disclaimer) {
           html += '<p class="lead-chat-result__disclaimer">' + esc(data.disclaimer) + '</p>';
@@ -2462,10 +2464,6 @@
         return Math.max(1, Math.min(50, parseInt(match[1], 10) || 15));
       }
 
-      function wantsDeepExtract(brief) {
-        return /\b(deep|full|complete|all fields|every field|raw rows|structured|csv|table|spreadsheet)\b/i.test(String(brief || ''));
-      }
-
       function buildBrief() {
         const noteTrail = state.context.notes.slice(-3).join(' ');
         return [
@@ -2499,12 +2497,7 @@
         render();
 
         addMessage('assistant', 'Understood. Preparing your request now.', 'status');
-        const quickOnly = !wantsDeepExtract(brief);
-        addMessage(
-          'assistant',
-          quickOnly ? 'Searching public and monitorable sources.' : 'Running deeper extraction for richer lead fields.',
-          'status'
-        );
+        addMessage('assistant', 'Searching sources and reading the top pages.', 'status');
 
         try {
           const response = await fetch('/api/discover/auto-leads', {
@@ -2515,7 +2508,7 @@
               brief: brief,
               maxLeads: parseRequestedLeadCount(brief),
               maxSites: 3,
-              quickOnly: quickOnly
+              quickOnly: true
             })
           });
           const payload = await response.json().catch(function () { return {}; });
