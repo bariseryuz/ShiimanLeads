@@ -53,12 +53,32 @@ function inferVertical(assetOrUse) {
   return 'other';
 }
 
+function isRecordHuntIntentText(text) {
+  const t = String(text || '').toLowerCase();
+  return /\b(permit|permits|construction|project|development|bid|rfp|issued|inspection|license|violation|planning|zoning|featureserver|mapserver|socrata|arcgis|open data|public records?)\b/.test(
+    t
+  );
+}
+
+function shouldInjectRagContext(briefText) {
+  // RAG corpus is currently public-record heavy; avoid forcing permit-like priors
+  // into broader buyer-intent prompts (restaurants, wholesalers, agencies, etc).
+  return isRecordHuntIntentText(briefText);
+}
+
+function inferTriggerDefaultFromText(text) {
+  return isRecordHuntIntentText(text) ? 'building permit' : 'buyer intent signal';
+}
+
 /**
  * Canonical machine parameters object used BEFORE search.
  * Converts human brief intent into strict constraints for discovery/extraction.
  */
 function buildMachineParameters(intent) {
   const i = intent && typeof intent === 'object' ? intent : {};
+  const triggerDefault = inferTriggerDefaultFromText(
+    `${String(i.trigger_or_record || '')} ${String(i.asset_or_use || '')} ${String(i.keywords_for_search || '')}`
+  );
   return {
     geography: {
       text: String(i.geography || '').trim() || 'United States',
@@ -69,7 +89,7 @@ function buildMachineParameters(intent) {
       raw: String(i.asset_or_use || '').trim(),
       normalized: inferVertical(i.asset_or_use)
     },
-    record_type: String(i.trigger_or_record || 'building permit').trim() || 'building permit',
+    record_type: String(i.trigger_or_record || triggerDefault).trim() || triggerDefault,
     constraints: {
       min_value_usd:
         i.min_project_value_usd != null && Number.isFinite(Number(i.min_project_value_usd))
@@ -100,7 +120,7 @@ function buildMachineParameters(intent) {
 }
 
 /**
- * @param {string} brief - User sentence e.g. "3 hot leads, new multifamily permits in CA over $300k"
+ * @param {string} brief - User sentence from any industry (e.g. suppliers, local services, SaaS, healthcare, logistics, real estate)
  */
 async function parseBriefWithGemini(brief) {
   const b = String(brief || '').trim();
@@ -112,7 +132,7 @@ async function parseBriefWithGemini(brief) {
   }
 
   let ragContext = '';
-  if (isRagEnabled()) {
+  if (isRagEnabled() && shouldInjectRagContext(b)) {
     try {
       ragContext = await retrieveLeadGenContext(b, { topK: 5, maxChars: 3500 });
     } catch (e) {
@@ -127,8 +147,8 @@ async function parseBriefWithGemini(brief) {
     '  "geography": "<plain words e.g. California, Los Angeles County, Nashville TN>",\n' +
     '  "geography_kind": "state"|"county"|"city"|"metro"|"unknown",\n' +
     '  "state_code": "<two-letter US state if applicable or empty>",\n' +
-    '  "asset_or_use": "<e.g. multifamily residential, commercial office>",\n' +
-    '  "trigger_or_record": "<e.g. building permit, certificate of occupancy, new construction>",\n' +
+    '  "asset_or_use": "<target offer/industry/use-case in user language (any vertical)>",\n' +
+    '  "trigger_or_record": "<lead trigger in user language: public record, hiring, expansion, procurement, behavior, intent, etc.>",\n' +
     '  "min_project_value_usd": <number or null if not specified>,\n' +
     '  "max_project_value_usd": <number or null if user sets an upper budget bound>,\n' +
     '  "time_window_hours": <number or null if user asks for recent time windows>,\n' +
@@ -139,10 +159,12 @@ async function parseBriefWithGemini(brief) {
     '  "keywords_for_search": ["3-6 short phrases for Google queries"]\n' +
     '}\n\n' +
     'Interpretation rules:\n' +
+    '- This parser must work for ANY industry. Do not bias toward one vertical.\n' +
     '- Never hardcode domain-specific fields. Extract only what user requests.\n' +
+    '- If request is about B2B buyers/suppliers/services (not public records), prefer business signals over permits.\n' +
     '- If user asks for multiple sources, set must_search_multiple_sources=true.\n' +
     '- decision_maker_roles should reflect the actual buyer roles requested by user.\n' +
-    '- required_project_fields should mirror requested lead details (e.g. floors, value, project type) only when explicitly requested.\n\n' +
+    '- required_project_fields should mirror requested lead details only when explicitly requested.\n\n' +
     (ragContext
       ? `Retrieved domain knowledge (tune geography, keywords, and record types — user message still wins):\n${ragContext}\n\n`
       : '') +
@@ -156,11 +178,12 @@ async function parseBriefWithGemini(brief) {
   const raw = (await result.response).text();
   const o = parseIntentJson(raw);
   if (!o || typeof o !== 'object') {
-    throw new Error('Could not understand that request — try adding location, permit type, and any dollar threshold.');
+    throw new Error('Could not understand that request — try adding location, target buyer type, and optional filters.');
   }
-  let triggerOrRecord = String(o.trigger_or_record || 'building permit').trim();
+  const triggerDefault = inferTriggerDefaultFromText(`${b} ${String(o.asset_or_use || '')}`);
+  let triggerOrRecord = String(o.trigger_or_record || triggerDefault).trim();
   if (!triggerOrRecord || /^unknown$/i.test(triggerOrRecord)) {
-    triggerOrRecord = 'building permit';
+    triggerOrRecord = triggerDefault;
   }
 
   return {
@@ -201,22 +224,30 @@ function buildSerperQueries(intent) {
   const st = intent.state_code;
   const asset = intent.asset_or_use;
   let trig = intent.trigger_or_record;
-  if (!trig || /^unknown$/i.test(String(trig))) trig = 'building permit';
-  const base = [
-    `${geo} ${trig} open data ArcGIS FeatureServer site:gov`,
-    `${st ? st + ' ' : ''}${trig} ${asset || 'commercial'} site:gov`,
-    `${geo} ${trig} Socrata OR data portal`,
-    `${geo} county ${trig} GIS`
-  ];
+  if (!trig || /^unknown$/i.test(String(trig))) trig = inferTriggerDefaultFromText(asset || geo);
+  const recordLike = isRecordHuntIntentText(`${trig} ${asset}`);
+  const base = recordLike
+    ? [
+        `${geo} ${trig} open data ArcGIS FeatureServer site:gov`,
+        `${st ? st + ' ' : ''}${trig} ${asset || 'commercial'} site:gov`,
+        `${geo} ${trig} Socrata OR data portal`,
+        `${geo} county ${trig} GIS`
+      ]
+    : [
+        `${geo} ${asset || 'business'} ${trig} potential buyers`,
+        `${geo} ${asset || 'business'} companies hiring OR expansion`,
+        `${geo} ${asset || 'business'} supplier opportunities`,
+        `${geo} ${asset || 'business'} site:linkedin.com/company OR site:clutch.co`
+      ];
   if (intent.time_window_hours != null && Number.isFinite(Number(intent.time_window_hours))) {
     base.push(`${geo} ${trig} last ${Math.max(1, Math.floor(Number(intent.time_window_hours)))} hours`);
   }
   if (Array.isArray(intent.required_project_fields) && intent.required_project_fields.length) {
     const f = intent.required_project_fields.slice(0, 3).join(' ');
-    base.push(`${geo} ${trig} ${f} site:gov`);
+    base.push(recordLike ? `${geo} ${trig} ${f} site:gov` : `${geo} ${asset || 'business'} ${f}`);
   }
   if (Array.isArray(intent.decision_maker_roles) && intent.decision_maker_roles.length) {
-    base.push(`${geo} ${asset || 'construction'} ${intent.decision_maker_roles.slice(0, 2).join(' OR ')}`);
+    base.push(`${geo} ${asset || (recordLike ? 'construction' : 'business')} ${intent.decision_maker_roles.slice(0, 2).join(' OR ')}`);
   }
   if (intent.keywords_for_search.length) {
     for (const k of intent.keywords_for_search.slice(0, 2)) {
@@ -391,11 +422,18 @@ async function pickBestSourceUrls(organicPool, intent) {
   if (!pool.length || !isAIAvailable()) return [];
   try {
     const model = getGeminiModel('discovery');
+    const recordLike = isRecordHuntIntentText(
+      `${String(intent?.trigger_or_record || '')} ${String(intent?.asset_or_use || '')}`
+    );
     const pack =
-      'Pick up to 5 URLs most likely to yield ROW-LEVEL public records (permits, licenses, bids, violations).\n' +
-      'Prefer: ArcGIS FeatureServer or MapServer layer URLs, Socrata, open-data APIs — NOT generic department homepages unless no better link exists.\n' +
-      'Never pick PDF/image/blog/news/guide URLs unless there are no portal/data URLs left.\n' +
-      'Prefer links whose path includes FeatureServer, MapServer, "data", "permits", resource/{id}, or hub.arcgis.com datasets.\n' +
+      (recordLike
+        ? 'Pick up to 5 URLs most likely to yield ROW-LEVEL public records (permits, licenses, bids, violations).\n' +
+          'Prefer: ArcGIS FeatureServer or MapServer layer URLs, Socrata, open-data APIs — NOT generic department homepages unless no better link exists.\n' +
+          'Never pick PDF/image/blog/news/guide URLs unless there are no portal/data URLs left.\n' +
+          'Prefer links whose path includes FeatureServer, MapServer, "data", "permits", resource/{id}, or hub.arcgis.com datasets.\n'
+        : 'Pick up to 5 URLs likely to help discover real businesses/buyers for outreach.\n' +
+          'Prefer company directories, business listings, association member directories, or company profile pages over construction permit datasets.\n' +
+          'Do not force open-data/FeatureServer choices unless the intent clearly asks for public-record datasets.\n') +
       `Intent: ${JSON.stringify(intent)}\n\n` +
       'Candidates (title, link, snippet):\n' +
       JSON.stringify(
@@ -495,7 +533,14 @@ async function runNlLeadIntentDiscovery(brief) {
   }
 
   const pool = deduped.slice(0, 30);
-  const prioritizedPool = prioritizeDataLikePool(pool);
+  const recordLike = isRecordHuntIntentText(
+    `${String(intent?.trigger_or_record || '')} ${String(intent?.asset_or_use || '')} ${String(brief || '')}`
+  );
+  const prioritizedPool = recordLike
+    ? prioritizeDataLikePool(pool)
+    : pool.filter(r => !looksArticleLikeResult(r)).length
+      ? pool.filter(r => !looksArticleLikeResult(r))
+      : pool;
 
   let pickedUrls = await pickBestSourceUrls(prioritizedPool, intent);
   if (!pickedUrls.length) {
@@ -526,29 +571,34 @@ async function runNlLeadIntentDiscovery(brief) {
 
   let preview_leads = null;
   let preview_note = null;
-  const firstUrl = pickedUrls[0];
-  if (firstUrl) {
-    try {
-      preview_leads = await fetchOpenDataSampleRows(firstUrl, Math.min(intent.lead_count, 10));
-    } catch (e) {
-      logger.warn(`[nlLeadIntent] openDataDirect preview: ${e.message}`);
+  if (recordLike) {
+    const firstUrl = pickedUrls[0];
+    if (firstUrl) {
+      try {
+        preview_leads = await fetchOpenDataSampleRows(firstUrl, Math.min(intent.lead_count, 10));
+      } catch (e) {
+        logger.warn(`[nlLeadIntent] openDataDirect preview: ${e.message}`);
+      }
+    }
+    if (!preview_leads?.length) {
+      const firstArc =
+        pickedUrls.find(looksLikeArcGisDataUrl) || pickedUrls.find(u => /\/mapserver\//i.test(String(u || '')));
+      if (firstArc) {
+        const n = Math.min(intent.lead_count, 10);
+        preview_leads = await tryArcgisSampleRows(firstArc, n);
+      }
     }
   }
-  if (!preview_leads?.length) {
-    const firstArc =
-      pickedUrls.find(looksLikeArcGisDataUrl) || pickedUrls.find(u => /\/mapserver\//i.test(String(u || '')));
-    if (firstArc) {
-      const n = Math.min(intent.lead_count, 10);
-      preview_leads = await tryArcgisSampleRows(firstArc, n);
-    }
-  }
-  if (preview_leads?.length) {
+  if (recordLike && preview_leads?.length) {
     preview_note =
       `Showing up to ${preview_leads.length} raw rows from the first candidate (open-data API or public layer, where=1=1). ` +
       `Apply dollar/location filters using the correct field names in My sources → JSON API if needed.`;
-  } else {
+  } else if (recordLike) {
     preview_note =
       'Could not fetch a live sample from the first URL (portal page only, auth, or non-public layer). Try another candidate or add the dataset as a JSON API source.';
+  } else {
+    preview_note =
+      'Selected buyer-intent oriented sources instead of permit/open-data datasets. Refine target buyer profile for tighter lead quality.';
   }
 
   return {
@@ -560,8 +610,9 @@ async function runNlLeadIntentDiscovery(brief) {
     candidate_sources,
     preview_leads,
     preview_note,
-    disclaimer:
-      'Contact emails are rarely in permit APIs. Use enrichment and your ICP after leads are in the dashboard.'
+    disclaimer: recordLike
+      ? 'Contact emails are rarely in permit APIs. Use enrichment and your ICP after leads are in the dashboard.'
+      : 'These are discovery sources for buyer-intent prospecting. Use enrichment to add decision-maker contact details.'
   };
 }
 

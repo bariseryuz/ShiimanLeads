@@ -579,7 +579,7 @@
         <textarea
           id="chatInput"
           class="lead-chat-input"
-          placeholder="Example: I need recent commercial permit leads in Travis County over $250k with applicant and project address."
+          placeholder="Example: I need 20 California restaurants (not coffee shops) that use coffee beans in recipes so I can pitch wholesale samples."
           style="min-height:100px;"
         ></textarea>
         <div class="lead-chat-actions">
@@ -2088,6 +2088,16 @@
         return m ? truncate(m[1], 90) : '';
       }
 
+      function looksLikeLocationReply(text) {
+        const value = String(text || '').trim();
+        if (!value) return false;
+        if (value.length > 64) return false;
+        if (/\d/.test(value)) return false;
+        const parts = value.split(/\s+/).filter(Boolean);
+        if (parts.length > 6) return false;
+        return /^[a-zA-Z ,.-]+$/.test(value);
+      }
+
       function hasSearchIntent(text) {
         return /\b(lead|leads|find|need|looking for|prospect|records|opportunit)\b/i.test(String(text || ''));
       }
@@ -2125,7 +2135,7 @@
       function clarifyingPrompt(field) {
         if (field === 'objective') return 'What exact lead type do you want (industry, project type, buyer type)?';
         if (field === 'location') return 'Which city, county, or region should I target?';
-        return 'Any filters to apply (date range, valuation, permit type, contact fields)?';
+        return 'Any filters to apply (business type, cuisine, company size, monthly usage, contact role)?';
       }
 
       function parseRequestedLeadCount(brief) {
@@ -2215,6 +2225,9 @@
         if (dom.input) dom.input.value = '';
         addMessage('user', text);
         collectContext(text);
+        if (state.stage === 'clarifying' && !state.context.location && looksLikeLocationReply(text)) {
+          state.context.location = truncate(text, 90);
+        }
         saveState();
 
         if (isResearchQuestion(text) && !hasSearchIntent(text) && !state.pendingSearch) {
