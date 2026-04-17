@@ -65,6 +65,13 @@ function buildEvidenceHintsFromBrief(brief) {
   };
 }
 
+function normalizeText(text) {
+  return String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 function buildBuyerIntentProfile(brief, intent) {
   const b = String(brief || '').toLowerCase();
   const offer = extractOfferFromBrief(brief) || String(intent?.asset_or_use || '').trim();
@@ -143,10 +150,10 @@ function buildBuyerIntentProfile(brief, intent) {
 }
 
 function classifySearchMode(brief, intent) {
-  const b = String(brief || '').toLowerCase();
-  const trigger = String(intent?.trigger_or_record || '').toLowerCase();
-  const asset = String(intent?.asset_or_use || '').toLowerCase();
-  const recordLike = /\b(permit|permits|construction|project|development|bid|rfp|issued|inspection|license|violation|planning|zoning)\b/.test(
+  const b = normalizeText(brief);
+  const trigger = normalizeText(intent?.trigger_or_record || '');
+  const asset = normalizeText(intent?.asset_or_use || '');
+  const recordLike = /\b(permit|permits|constr\w*|project|develop\w*|bid|rfp|issued|inspection|license|violation|planning|zoning|arcgis|featureserver|mapserver|socrata|open data)\b/.test(
     `${b} ${trigger} ${asset}`
   );
   const sellingLike = /\b(i sell|we sell|i offer|we offer|lead gen|lead generation|appointment setting|cold email|outreach|clients for)\b/.test(
@@ -186,7 +193,7 @@ function fallbackIntentFromBrief(brief) {
     ? parseInt(countDigitMatch[1], 10)
     : (countWordMatch ? NUMBER_WORDS[String(countWordMatch[1]).toLowerCase()] : null);
   const st = b.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|MA|MD|ME|MI|MN|MO|MS|MT|NC|ND|NE|NH|NJ|NM|NV|NY|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VA|VT|WA|WI|WV|WY|DC)\b/i);
-  const triggerHint = /permit|construction|project|bid|development/i.test(b)
+  const triggerHint = /permit|constr\w*|project|bid|develop\w*/i.test(b)
     ? 'building permit'
     : (/agency|client|customer|company|software|saas|lead gen|prospect/i.test(b)
       ? 'buyer intent signal'
@@ -356,7 +363,16 @@ function scoreResultForBuyerIntent(result, brief, buyerProfile, evidenceHints) {
 
 function isOffTopicForRecordHunt(result) {
   const blob = `${String(result?.title || '')} ${String(result?.snippet || '')} ${String(result?.link || '')}`.toLowerCase();
-  return /\b(staffing|employment agency|recruitment agency|temporary staffing|jobs board|job posting|headhunter)\b/.test(blob);
+  return /\b(staffing|employment agency|recruitment agency|temporary staffing|jobs board|job posting|headhunter|job recruiter|find a job|career)\b/.test(blob);
+}
+
+function isGovOrDataSource(result) {
+  const link = String(result?.link || '').toLowerCase();
+  const title = String(result?.title || '').toLowerCase();
+  const snippet = String(result?.snippet || '').toLowerCase();
+  if (/\.gov(\/|$)/.test(link) || /site:gov/.test(link)) return true;
+  if (/featureserver|mapserver|arcgis|socrata|opendata|open data|\/resource\//.test(`${link} ${title} ${snippet}`)) return true;
+  return false;
 }
 
 async function runAgentFindFast(brief, opts = {}) {
@@ -403,7 +419,17 @@ async function runAgentFindFast(brief, opts = {}) {
     .filter(r => /^https?:\/\//i.test(String(r.link || '')))
     .filter(r => !isLowSignalArticle(r.link, r.title));
   if (searchMode === 'record_hunt') {
-    deduped = deduped.filter(r => !isOffTopicForRecordHunt(r));
+    deduped = deduped
+      .filter(r => !isOffTopicForRecordHunt(r))
+      .map(r => {
+        const textBlob = `${String(r.title || '')} ${String(r.snippet || '')}`.toLowerCase();
+        let score = 0;
+        if (isGovOrDataSource(r)) score += 4;
+        if (/\b(permit|constr\w*|project|issued|zoning|inspection|contract|tender|rfp)\b/.test(textBlob)) score += 2;
+        if (/\b(staffing|recruit|jobs?)\b/.test(textBlob)) score -= 6;
+        return { ...r, _recordScore: score };
+      })
+      .sort((a, b) => (b._recordScore || 0) - (a._recordScore || 0));
   }
   const prioritized = nonTechnical
     ? deduped

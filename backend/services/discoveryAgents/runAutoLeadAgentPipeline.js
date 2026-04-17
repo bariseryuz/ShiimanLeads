@@ -20,7 +20,7 @@ const { runAgentVerifyPlan, runAgentVerifyFilterBatch } = require('./agentVerify
 const { runAgentRead } = require('./agentRead');
 const { AGENT_FIND, AGENT_READ, AGENT_VERIFY, AGENT_API_HUNTER } = require('./agentConstants');
 const { buildAutoLeadQuickRead } = require('./autoLeadQuickRead');
-const { buildAutoLeadQuickLeads } = require('./autoLeadQuickLeads');
+const { buildAutoLeadQuickLeads, getLastQuickLeadReadDiagnostics } = require('./autoLeadQuickLeads');
 const { runAgentApiHunter } = require('./agentApiHunter');
 const { enrichSalesIntelligenceTable } = require('./salesIntelligenceEnrichment');
 const { enrichLeadsWithCompanyPeople } = require('./companyPeopleEnrichment');
@@ -262,6 +262,7 @@ async function runAutoLeadAgentPipeline(opts) {
       urls_attempted: [],
       noSearchHits: noUrls
     });
+    const site_read_diagnostics = getLastQuickLeadReadDiagnostics();
     return {
       success: true,
       mode: 'auto_leads',
@@ -275,6 +276,7 @@ async function runAutoLeadAgentPipeline(opts) {
       search_queries_expanded: discovery.search_queries_expanded,
       results_pooled: discovery.results_pooled,
       candidate_sources,
+      ...(site_read_diagnostics ? { site_read_diagnostics } : {}),
       urls_attempted: [],
       leads: enrichedQuickLeads,
       ...(company_people_enrichment ? { company_people_enrichment } : {}),

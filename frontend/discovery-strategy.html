@@ -2242,6 +2242,7 @@
         const sources = Array.isArray(data && data.candidate_sources) ? data.candidate_sources : [];
         const summary = String((data && (data.summary || data.note || data.preview_note)) || '').trim();
         const quickRead = String((data && data.quick_read) || '').trim();
+        const siteDiag = data && data.site_read_diagnostics ? data.site_read_diagnostics : null;
         let html = '<div class="lead-chat-result">';
         if (summary) {
           html += '<p class="lead-chat-result__summary">' + esc(summary) + '</p>';
@@ -2283,6 +2284,15 @@
             html += '<li><a href="' + escAttr(url) + '" target="_blank" rel="noopener">' + esc(truncate(title, 64)) + '</a></li>';
           });
           html += '</ul>';
+        }
+        if (siteDiag && typeof siteDiag === 'object') {
+          const attempted = Number(siteDiag.attempted || 0);
+          const readable = Number(siteDiag.readable || 0);
+          const failed = Number(siteDiag.failed || Math.max(0, attempted - readable));
+          html += '<p class="lead-chat-result__disclaimer">' +
+            'Website read health: read ' + readable + '/' + attempted + ' pages' +
+            (failed > 0 ? (' (' + failed + ' blocked/failed).') : '.') +
+            '</p>';
         }
         if (data && data.disclaimer) {
           html += '<p class="lead-chat-result__disclaimer">' + esc(data.disclaimer) + '</p>';
@@ -2474,6 +2484,7 @@
           preview_note: data.preview_note || '',
           quick_read: data.quick_read || '',
           disclaimer: data.disclaimer || '',
+          site_read_diagnostics: data.site_read_diagnostics || null,
           leads: Array.isArray(data.leads) ? data.leads : [],
           candidate_sources: Array.isArray(data.candidate_sources) ? data.candidate_sources : []
         };

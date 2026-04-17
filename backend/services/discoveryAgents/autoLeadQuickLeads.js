@@ -1,6 +1,8 @@
 const logger = require('../../utils/logger');
 const { getGeminiModel, isAIAvailable } = require('../ai/geminiClient');
-const { readMultiplePages } = require('./pageReader');
+const { readMultiplePagesWithDiagnostics } = require('./pageReader');
+
+let _lastReadDiagnostics = null;
 
 function parseJson(text) {
   let t = String(text || '').trim();
@@ -134,7 +136,11 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
   // Step 1: Actually visit and read top source pages
   const maxPages = Math.min(4, src.length);
   logger.info(`[autoLeadQuickLeads] reading ${maxPages} pages from ${src.length} candidates`);
-  const pages = await readMultiplePages(src, maxPages);
+  const readResult = await readMultiplePagesWithDiagnostics(src, maxPages);
+  const pages = Array.isArray(readResult?.pages) ? readResult.pages : [];
+  _lastReadDiagnostics = readResult && readResult.diagnostics
+    ? readResult.diagnostics
+    : { attempted: maxPages, readable: pages.length, failed: Math.max(0, maxPages - pages.length), failures: [] };
   logger.info(`[autoLeadQuickLeads] successfully read ${pages.length} pages`);
 
   // Build context from page content + snippets as fallback
@@ -259,3 +265,9 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
 }
 
 module.exports = { buildAutoLeadQuickLeads };
+
+function getLastQuickLeadReadDiagnostics() {
+  return _lastReadDiagnostics;
+}
+
+module.exports.getLastQuickLeadReadDiagnostics = getLastQuickLeadReadDiagnostics;
