@@ -2257,21 +2257,40 @@
           html += '<div class="lead-chat-lead-list">';
           leads.slice(0, 12).forEach(function (raw, idx) {
             const row = normalizeLeadRow(raw);
-            const title = pickValue(row, ['project_address', 'site_address', 'address', 'project_name', 'description']) || ('Lead ' + (idx + 1));
-            const contact = pickValue(row, ['applicant_name', 'owner_name', 'contractor_name', 'contact_name']);
-            const value = pickValue(row, ['valuation', 'project_value', 'estimated_cost', 'permit_value']);
+            const title = pickValue(row, ['company_name', 'project_name', 'lead_title', 'project_address', 'site_address', 'address']) || ('Lead ' + (idx + 1));
+            const address = pickValue(row, ['address', 'project_address', 'site_address', 'location']);
+            const contact = pickValue(row, ['key_contact_or_firm', 'applicant_name', 'owner_name', 'contractor_name', 'contact_name']);
+            const value = pickValue(row, ['valuation', 'project_value', 'estimated_cost', 'permit_value', 'estimated_value_usd']);
             const date = pickValue(row, ['issued_date', 'issue_date', 'permit_date', 'application_date']);
+            const website = pickValue(row, ['company_website', 'website']);
             const url = pickValue(row, ['source_url', 'url', 'link']);
+            const summary = pickValue(row, ['company_summary', 'project_snapshot', 'why_opportunity']);
+            const nextStep = pickValue(row, ['best_contact_path', 'recommended_next_step']);
+            const people = Array.isArray(row.key_people) ? row.key_people.filter(function (p) { return p && p.name; }) : [];
             html += '<article class="lead-chat-lead-item">';
             html += '<h4>' + esc(title) + '</h4>';
-            html += '<p>' +
-              (contact ? '<span><strong>Contact:</strong> ' + esc(contact) + '</span>' : '') +
-              (value ? '<span><strong> Value:</strong> ' + esc(value) + '</span>' : '') +
-              (date ? '<span><strong> Date:</strong> ' + esc(date) + '</span>' : '') +
-              '</p>';
-            if (url) {
-              html += '<a href="' + escAttr(url) + '" target="_blank" rel="noopener">Open source</a>';
+            if (summary) html += '<p class="lead-chat-lead-item__summary">' + esc(summary) + '</p>';
+            const metaBits = [];
+            if (address) metaBits.push('<span><strong>Address:</strong> ' + esc(address) + '</span>');
+            if (contact && !people.length) metaBits.push('<span><strong>Contact:</strong> ' + esc(contact) + '</span>');
+            if (value) metaBits.push('<span><strong>Value:</strong> ' + esc(value) + '</span>');
+            if (date) metaBits.push('<span><strong>Date:</strong> ' + esc(date) + '</span>');
+            if (metaBits.length) html += '<p>' + metaBits.join(' ') + '</p>';
+            if (people.length) {
+              html += '<p class="lead-chat-lead-item__people"><strong>Key people:</strong> ';
+              html += people.slice(0, 4).map(function (p) {
+                const label = p.role ? (esc(p.name) + ' <em>(' + esc(p.role) + ')</em>') : esc(p.name);
+                return p.source_url
+                  ? '<a href="' + escAttr(p.source_url) + '" target="_blank" rel="noopener">' + label + '</a>'
+                  : label;
+              }).join(', ');
+              html += '</p>';
             }
+            if (nextStep) html += '<p class="lead-chat-lead-item__next"><strong>Next step:</strong> ' + esc(nextStep) + '</p>';
+            const linkBits = [];
+            if (website) linkBits.push('<a href="' + escAttr(website) + '" target="_blank" rel="noopener">Company website</a>');
+            if (url) linkBits.push('<a href="' + escAttr(url) + '" target="_blank" rel="noopener">Source</a>');
+            if (linkBits.length) html += '<p class="lead-chat-lead-item__links">' + linkBits.join(' &middot; ') + '</p>';
             html += '</article>';
           });
           html += '</div>';
