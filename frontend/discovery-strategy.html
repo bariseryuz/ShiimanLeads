@@ -244,12 +244,101 @@
       letter-spacing: -0.01em;
     }
     .strategy-wrap {
-      max-width: 1120px;
+      max-width: 1240px;
       margin: 92px auto 44px;
       padding: 0 14px;
       display: grid;
-      grid-template-columns: minmax(0, 1fr);
+      grid-template-columns: 280px minmax(0, 1fr);
       gap: 12px;
+      align-items: start;
+    }
+    .history-card {
+      border-radius: 16px;
+      border: 1px solid #e6e9f2;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.05);
+      background: rgba(255, 255, 255, 0.96);
+      padding: 0.85rem 0.75rem;
+      position: sticky;
+      top: 96px;
+    }
+    .history-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.15rem 0.3rem 0.6rem;
+      border-bottom: 1px solid #edf2fa;
+      margin-bottom: 0.5rem;
+    }
+    .history-card__title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+    .history-card__new {
+      border: 1px solid #dbe3f0;
+      background: #f8fafc;
+      color: #1e293b;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.28rem 0.55rem;
+      cursor: pointer;
+    }
+    .history-card__new:hover { background: #eef2ff; }
+    .history-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      max-height: 56vh;
+      overflow-y: auto;
+      padding: 0.15rem 0.1rem 0.25rem;
+    }
+    .history-item {
+      border: 1px solid #e5e7eb;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 0.48rem 0.55rem;
+      cursor: pointer;
+      transition: border-color .15s ease, background .15s ease;
+    }
+    .history-item:hover {
+      border-color: #c7d2fe;
+      background: #f8faff;
+    }
+    .history-item.is-active {
+      border-color: #93c5fd;
+      background: #eff6ff;
+    }
+    .history-item__title {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #0f172a;
+      margin: 0 0 0.15rem 0;
+      line-height: 1.35;
+    }
+    .history-item__meta {
+      font-size: 0.72rem;
+      color: #64748b;
+      margin: 0;
+    }
+    .history-empty {
+      font-size: 0.78rem;
+      color: #64748b;
+      margin: 0.5rem 0.25rem;
+    }
+    .history-card__toggle {
+      display: inline-block;
+      margin: 0.45rem 0.25rem 0.15rem;
+      border: 0;
+      background: transparent;
+      color: #1d4ed8;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      text-align: left;
     }
     .strategy-card {
       border-radius: 16px;
@@ -409,7 +498,9 @@
       }
       .strategy-wrap {
         margin-top: 84px;
+        grid-template-columns: minmax(0, 1fr);
       }
+      .history-card { position: static; }
       .desktop-nav { gap: 0.5rem !important; }
       .nav-links { gap: 0.9rem !important; }
       .nav-links a { font-size: 0.78rem !important; }
@@ -449,7 +540,12 @@
         margin-top: 128px;
         padding: 0 10px;
         gap: 10px;
+        grid-template-columns: minmax(0, 1fr);
       }
+      .history-card {
+        padding: 0.7rem 0.65rem;
+      }
+      .history-list { max-height: 180px; }
       .strategy-card {
         border-radius: 14px;
         padding: 0.95rem 0.9rem;
@@ -568,6 +664,15 @@
   </nav>
 
   <div class="strategy-wrap">
+    <aside class="history-card" aria-label="Conversation history">
+      <div class="history-card__head">
+        <h2 class="history-card__title">History</h2>
+        <button type="button" class="history-card__new" id="chatHistoryNewBtn">+ New</button>
+      </div>
+      <div id="chatHistoryList" class="history-list"></div>
+      <button type="button" class="history-card__toggle" id="chatHistoryToggleBtn">View all history →</button>
+    </aside>
+
     <div class="strategy-card lead-chat-shell">
       <h1>AI Lead Chat</h1>
       <p class="hint">Talk naturally and I will ask follow-up questions, help with research questions, and run lead searches once your request is clear enough.</p>
@@ -1896,13 +2001,18 @@
   <script>
     (function initLeadChatRebuild() {
       const STORAGE_KEY = 'leadChatState.v1';
+      const HISTORY_STORAGE_KEY = 'leadChatSessions.v1';
+      const MAX_HISTORY_ITEMS = 40;
+      let showAllHistory = false;
       const state = {
+        sessionId: '',
         messages: [],
         stage: 'idle',
         pendingSearch: false,
         isSearching: false,
         lastFailedInput: '',
         lastAskedField: '',
+        filterAskedOnce: false,
         context: {
           objective: '',
           location: '',
@@ -1915,7 +2025,10 @@
         input: document.getElementById('chatInput'),
         sendBtn: document.getElementById('chatSendBtn'),
         retryBtn: document.getElementById('chatRetryBtn'),
-        resetBtn: document.getElementById('chatResetBtn')
+        resetBtn: document.getElementById('chatResetBtn'),
+        historyList: document.getElementById('chatHistoryList'),
+        historyToggleBtn: document.getElementById('chatHistoryToggleBtn'),
+        historyNewBtn: document.getElementById('chatHistoryNewBtn')
       };
 
       function esc(text) {
@@ -1935,6 +2048,120 @@
         return value.length > maxLen ? value.slice(0, maxLen) + '…' : value;
       }
 
+      function newSessionId() {
+        return 'session_' + Date.now() + '_' + Math.random().toString(16).slice(2, 8);
+      }
+
+      function formatTimeAgo(iso) {
+        const ts = Date.parse(String(iso || ''));
+        if (!Number.isFinite(ts)) return '';
+        const deltaSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+        if (deltaSec < 60) return 'just now';
+        if (deltaSec < 3600) return Math.floor(deltaSec / 60) + 'm ago';
+        if (deltaSec < 86400) return Math.floor(deltaSec / 3600) + 'h ago';
+        return Math.floor(deltaSec / 86400) + 'd ago';
+      }
+
+      function readHistoryItems() {
+        const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
+        if (!raw) return [];
+        try {
+          const arr = JSON.parse(raw);
+          return Array.isArray(arr) ? arr : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function writeHistoryItems(items) {
+        const arr = Array.isArray(items) ? items.slice(0, MAX_HISTORY_ITEMS) : [];
+        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(arr));
+      }
+
+      function deriveHistoryTitle(snapshot) {
+        const messages = Array.isArray(snapshot && snapshot.messages) ? snapshot.messages : [];
+        const firstUser = messages.find(m => m && m.role === 'user' && String(m.text || '').trim());
+        if (firstUser) return truncate(firstUser.text, 46);
+        if (snapshot && snapshot.context && snapshot.context.objective) {
+          return truncate(snapshot.context.objective, 46);
+        }
+        return 'New lead search';
+      }
+
+      function buildSessionSnapshot() {
+        return {
+          id: state.sessionId,
+          updatedAt: new Date().toISOString(),
+          title: deriveHistoryTitle({ messages: state.messages, context: state.context }),
+          messages: state.messages,
+          stage: state.stage,
+          pendingSearch: state.pendingSearch,
+          lastFailedInput: state.lastFailedInput,
+          lastAskedField: state.lastAskedField,
+          context: state.context
+        };
+      }
+
+      function upsertSessionHistory() {
+        if (!state.sessionId) return;
+        const snapshot = buildSessionSnapshot();
+        const list = readHistoryItems();
+        const idx = list.findIndex(x => x && x.id === state.sessionId);
+        if (idx >= 0) list.splice(idx, 1);
+        list.unshift(snapshot);
+        writeHistoryItems(list);
+      }
+
+      function renderHistory() {
+        if (!dom.historyList) return;
+        const items = readHistoryItems();
+        if (!items.length) {
+          dom.historyList.innerHTML = '<p class="history-empty">No conversations yet.</p>';
+        } else {
+          const visible = showAllHistory ? items : items.slice(0, 5);
+          dom.historyList.innerHTML = visible.map(item => {
+            const active = item.id === state.sessionId ? ' is-active' : '';
+            const title = truncate(item.title || 'Lead search', 52);
+            const count = Array.isArray(item.messages)
+              ? item.messages.filter(m => m && m.role === 'user').length
+              : 0;
+            return (
+              '<article class="history-item' + active + '" data-history-id="' + escAttr(item.id || '') + '">' +
+                '<p class="history-item__title">' + esc(title) + '</p>' +
+                '<p class="history-item__meta">' + esc(formatTimeAgo(item.updatedAt)) + ' · ' + count + ' prompts</p>' +
+              '</article>'
+            );
+          }).join('');
+        }
+        if (dom.historyToggleBtn) {
+          const enough = readHistoryItems().length > 5;
+          dom.historyToggleBtn.style.display = enough ? 'inline-block' : 'none';
+          dom.historyToggleBtn.textContent = showAllHistory ? 'Show recent history →' : 'View all history →';
+        }
+        dom.historyList.querySelectorAll('[data-history-id]').forEach(function (el) {
+          el.addEventListener('click', function () {
+            const id = el.getAttribute('data-history-id');
+            if (id) loadSessionFromHistory(id);
+          });
+        });
+      }
+
+      function loadSessionFromHistory(sessionId) {
+        const hit = readHistoryItems().find(x => x && x.id === sessionId);
+        if (!hit) return;
+        state.sessionId = String(hit.id || newSessionId());
+        state.messages = Array.isArray(hit.messages) ? hit.messages.slice(-80) : [];
+        state.stage = hit.stage || 'idle';
+        state.pendingSearch = hit.pendingSearch === true;
+        state.isSearching = false;
+        state.lastFailedInput = String(hit.lastFailedInput || '');
+        state.lastAskedField = String(hit.lastAskedField || '');
+        state.context = Object.assign({ objective: '', location: '', filters: '', notes: [] }, hit.context || {});
+        if (!Array.isArray(state.context.notes)) state.context.notes = [];
+        saveState();
+        render();
+      }
+
       function addMessage(role, text, kind, payload) {
         state.messages.push({
           id: Date.now() + '-' + Math.random().toString(16).slice(2),
@@ -1951,13 +2178,17 @@
 
       function saveState() {
         sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+          sessionId: state.sessionId,
           messages: state.messages,
           stage: state.stage,
           pendingSearch: state.pendingSearch,
           lastFailedInput: state.lastFailedInput,
           lastAskedField: state.lastAskedField,
+          filterAskedOnce: state.filterAskedOnce,
           context: state.context
         }));
+        upsertSessionHistory();
+        renderHistory();
       }
 
       function loadState() {
@@ -1966,11 +2197,13 @@
         try {
           const parsed = JSON.parse(raw);
           if (!parsed || !Array.isArray(parsed.messages)) return false;
+          state.sessionId = String(parsed.sessionId || '');
           state.messages = parsed.messages.slice(-80);
           state.stage = parsed.stage || 'idle';
           state.pendingSearch = parsed.pendingSearch === true;
           state.lastFailedInput = String(parsed.lastFailedInput || '');
           state.lastAskedField = String(parsed.lastAskedField || '');
+          state.filterAskedOnce = parsed.filterAskedOnce === true;
           state.context = Object.assign({ objective: '', location: '', filters: '', notes: [] }, parsed.context || {});
           if (!Array.isArray(state.context.notes)) state.context.notes = [];
           return true;
@@ -2101,6 +2334,15 @@
         return /^[a-zA-Z ,.-]+$/.test(value);
       }
 
+      function normalizeLocationReply(text) {
+        const value = String(text || '').trim();
+        const lower = value.toLowerCase();
+        if (lower === 'la') return 'Los Angeles';
+        if (lower === 'nyc') return 'New York City';
+        if (lower === 'sf') return 'San Francisco';
+        return value;
+      }
+
       function hasSearchIntent(text) {
         return /\b(lead|leads|find|need|looking for|prospect|records|opportunit)\b/i.test(String(text || ''));
       }
@@ -2129,18 +2371,18 @@
 
         if (asked === 'location') {
           if (!state.context.location && looksLikeLocationReply(clean)) {
-            state.context.location = clean;
+            state.context.location = truncate(normalizeLocationReply(clean), 90);
           }
           return;
         }
         if (asked === 'filters') {
+          state.filterAskedOnce = true;
           if (isNoFilterReply(clean)) {
             state.context.filters = 'No additional filters';
             return;
           }
-          if (!isLikelyNoiseReply(clean)) {
-            state.context.filters = clean;
-          }
+          // Treat any non-empty reply as a filter answer to avoid looping.
+          state.context.filters = isLikelyNoiseReply(clean) ? 'No additional filters' : clean;
           return;
         }
         if (asked === 'objective' && !state.context.objective && !isLikelyNoiseReply(clean)) {
@@ -2170,7 +2412,10 @@
         const missing = [];
         if (!state.context.objective) missing.push('objective');
         if (!state.context.location) missing.push('location');
-        if (!state.context.filters) missing.push('filters');
+        if (!state.context.filters && !state.filterAskedOnce) missing.push('filters');
+        if (!state.context.filters && state.filterAskedOnce) {
+          state.context.filters = 'No additional filters';
+        }
         return missing;
       }
 
@@ -2286,6 +2531,7 @@
           state.stage = 'clarifying';
           state.pendingSearch = true;
           state.lastAskedField = missing[0];
+          if (missing[0] === 'filters') state.filterAskedOnce = true;
           saveState();
           addMessage('assistant', clarifyingPrompt(missing[0]));
           return;
@@ -2296,12 +2542,17 @@
       }
 
       function resetChat() {
+        if (state.messages.length) {
+          upsertSessionHistory();
+        }
+        state.sessionId = newSessionId();
         state.messages = [];
         state.stage = 'idle';
         state.pendingSearch = false;
         state.isSearching = false;
         state.lastFailedInput = '';
         state.lastAskedField = '';
+        state.filterAskedOnce = false;
         state.context = { objective: '', location: '', filters: '', notes: [] };
         saveState();
         seedMessages();
@@ -2324,6 +2575,17 @@
           });
         }
         if (dom.resetBtn) dom.resetBtn.addEventListener('click', resetChat);
+        if (dom.historyToggleBtn) {
+          dom.historyToggleBtn.addEventListener('click', function () {
+            showAllHistory = !showAllHistory;
+            renderHistory();
+          });
+        }
+        if (dom.historyNewBtn) {
+          dom.historyNewBtn.addEventListener('click', function () {
+            resetChat();
+          });
+        }
         if (dom.input) {
           dom.input.addEventListener('keydown', function (event) {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -2335,11 +2597,14 @@
       }
 
       if (!loadState()) {
+        state.sessionId = newSessionId();
         seedMessages();
       } else {
+        if (!state.sessionId) state.sessionId = newSessionId();
         render();
       }
       bindEvents();
+      renderHistory();
       setActionState();
     })();
   </script>
