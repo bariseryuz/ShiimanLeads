@@ -2322,10 +2322,11 @@
       function parseLocation(text) {
         const value = String(text || '').trim();
         if (!value) return '';
-        const m = value.match(/\b(?:in|near|around|within|across)\s+([a-z0-9 ,.-]{3,90})/i);
+        const normalized = normalizeIntentText(value);
+        const m = normalized.match(/\b(?:in|near|around|within|across)\s+([a-z0-9 ,.-]{3,90})/i);
         if (m) return truncate(m[1], 90);
         // Fallback: catch plain area replies like "california in general"
-        const stateLike = value.match(/\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i);
+        const stateLike = normalized.match(/\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i);
         if (stateLike) return truncate(stateLike[1], 90);
         if (looksLikeLocationReply(value)) return truncate(value, 90);
         return '';
@@ -2343,22 +2344,30 @@
 
       function normalizeLocationReply(text) {
         const value = String(text || '').trim();
-        const lower = value.toLowerCase();
+        const lower = normalizeIntentText(value);
         if (lower === 'la') return 'Los Angeles';
         if (lower === 'nyc') return 'New York City';
         if (lower === 'sf') return 'San Francisco';
         return value;
       }
 
+      function normalizeIntentText(text) {
+        return String(text || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toLowerCase();
+      }
+
       function hasSearchIntent(text) {
-        const value = String(text || '');
-        return /\b(lead|leads|need|looking for|prospect|records?|opportunit|opened|opening|newly opened|supplier|buyers?|clients?|businesses?)\b/i.test(value) ||
-          /\bf.nd\b/i.test(value);
+        const value = normalizeIntentText(text);
+        return /\b(find|get|show|give|list|identify|discover|source|need|looking for|lead|leads|prospect|records?|opportunit|opened|opening|newly opened|supplier|buyers?|clients?|businesses?)\b/i.test(value) ||
+          /\bf.nd\b/i.test(value) ||
+          /\bf\wnd\b/i.test(value);
       }
 
       function hasLeadTargetSignal(text) {
         return /\b(restaurant|restaurants|cafe|cafes|coffee shop|coffee shops|bakery|bar|retail|store|stores|company|companies|business|businesses|agency|agencies|clinic|clinics|salon|salons|brand|brands)\b/i.test(
-          String(text || '')
+          normalizeIntentText(text)
         );
       }
 
@@ -2367,11 +2376,11 @@
       }
 
       function isNoFilterReply(text) {
-        return /\b(no filters?|none|nope|n\/a|na|nothing specific)\b/i.test(String(text || ''));
+        return /\b(no filters?|none|nope|n\/a|na|nothing specific)\b/i.test(normalizeIntentText(text));
       }
 
       function isLikelyNoiseReply(text) {
-        const value = String(text || '').trim().toLowerCase();
+        const value = normalizeIntentText(String(text || '').trim());
         if (!value) return true;
         if (value.length <= 2) return true;
         return /^(ok|okay|k|kk|idk|wtf|fuck|f\*+k|lol)$/.test(value);
@@ -2413,11 +2422,12 @@
       function collectContext(text) {
         const clean = String(text || '').trim();
         if (!clean) return;
-        if (!state.context.objective || hasSearchIntent(clean)) {
+        const parsedLocation = parseLocation(clean);
+        const looksPureLocation = !!parsedLocation && !hasLeadTargetSignal(clean) && clean.length <= 42;
+        if ((!state.context.objective && !looksPureLocation) || hasSearchIntent(clean) || hasLeadTargetSignal(clean)) {
           state.context.objective = truncate(clean, 300);
         }
-        const location = parseLocation(clean);
-        if (location) state.context.location = location;
+        if (parsedLocation) state.context.location = truncate(normalizeLocationReply(parsedLocation), 90);
         if (hasFilterCue(clean)) state.context.filters = truncate(clean, 300);
         state.context.notes.push(truncate(clean, 240));
         if (state.context.notes.length > 8) state.context.notes = state.context.notes.slice(-8);
@@ -2427,10 +2437,6 @@
         const missing = [];
         if (!state.context.objective) missing.push('objective');
         if (!state.context.location) missing.push('location');
-        if (!state.context.filters && !state.filterAskedOnce) missing.push('filters');
-        if (!state.context.filters && state.filterAskedOnce) {
-          state.context.filters = 'No additional filters';
-        }
         return missing;
       }
 
@@ -2556,12 +2562,24 @@
           state.stage = 'clarifying';
           state.pendingSearch = true;
           state.lastAskedField = missing[0];
-          if (missing[0] === 'filters') state.filterAskedOnce = true;
           saveState();
           addMessage('assistant', clarifyingPrompt(missing[0]));
           return;
         }
 
+        if (!state.context.filters && !state.filterAskedOnce) {
+          state.filterAskedOnce = true;
+          state.stage = 'clarifying';
+          state.pendingSearch = true;
+          state.lastAskedField = 'filters';
+          saveState();
+          addMessage('assistant', 'Optional: share any filters (type/size/role) or say "no filters" and I will run it now.');
+          return;
+        }
+
+        if (!state.context.filters) {
+          state.context.filters = 'No additional filters';
+        }
         state.lastAskedField = '';
         await runLeadSearch(text);
       }
