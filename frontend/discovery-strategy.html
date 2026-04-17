@@ -2320,8 +2320,15 @@
       }
 
       function parseLocation(text) {
-        const m = String(text || '').match(/\b(?:in|near|around|within|across)\s+([a-z0-9 ,.-]{3,90})/i);
-        return m ? truncate(m[1], 90) : '';
+        const value = String(text || '').trim();
+        if (!value) return '';
+        const m = value.match(/\b(?:in|near|around|within|across)\s+([a-z0-9 ,.-]{3,90})/i);
+        if (m) return truncate(m[1], 90);
+        // Fallback: catch plain area replies like "california in general"
+        const stateLike = value.match(/\b(alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming)\b/i);
+        if (stateLike) return truncate(stateLike[1], 90);
+        if (looksLikeLocationReply(value)) return truncate(value, 90);
+        return '';
       }
 
       function looksLikeLocationReply(text) {
@@ -2344,7 +2351,15 @@
       }
 
       function hasSearchIntent(text) {
-        return /\b(lead|leads|find|need|looking for|prospect|records|opportunit)\b/i.test(String(text || ''));
+        const value = String(text || '');
+        return /\b(lead|leads|need|looking for|prospect|records?|opportunit|opened|opening|newly opened|supplier|buyers?|clients?|businesses?)\b/i.test(value) ||
+          /\bf.nd\b/i.test(value);
+      }
+
+      function hasLeadTargetSignal(text) {
+        return /\b(restaurant|restaurants|cafe|cafes|coffee shop|coffee shops|bakery|bar|retail|store|stores|company|companies|business|businesses|agency|agencies|clinic|clinics|salon|salons|brand|brands)\b/i.test(
+          String(text || '')
+        );
       }
 
       function hasFilterCue(text) {
@@ -2520,7 +2535,17 @@
           return;
         }
 
-        const shouldAttemptSearch = hasSearchIntent(text) || state.pendingSearch || state.stage === 'clarifying';
+        const locationFromMessage = parseLocation(text);
+        if (!state.context.location && locationFromMessage) {
+          state.context.location = locationFromMessage;
+        }
+
+        const objectiveReady = !!state.context.objective && hasLeadTargetSignal(state.context.objective);
+        const shouldAttemptSearch =
+          hasSearchIntent(text) ||
+          state.pendingSearch ||
+          state.stage === 'clarifying' ||
+          (objectiveReady && (!!state.context.location || !!locationFromMessage));
         if (!shouldAttemptSearch) {
           addMessage('assistant', 'Share your target area and filters when you are ready, then I will run the search.');
           return;
