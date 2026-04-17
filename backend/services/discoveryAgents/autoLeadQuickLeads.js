@@ -85,7 +85,7 @@ function mapLeadFromAI(x, i, sources) {
   };
 }
 
-function passesEvidenceConstraints(lead, constraints) {
+function passesEvidenceConstraints(lead, constraints, mode = 'strict') {
   if (!lead || typeof lead !== 'object') return false;
   const c = constraints || {};
   const includeTokens = Array.isArray(c.includeTokens) ? c.includeTokens : [];
@@ -104,13 +104,18 @@ function passesEvidenceConstraints(lead, constraints) {
   for (const token of excludeTokens) {
     if (token && evidenceBlob.includes(token)) return false;
   }
-  if (includeTokens.length) {
-    const includeHit = includeTokens.some(t => t && evidenceBlob.includes(t));
+  const includeHit = includeTokens.length
+    ? includeTokens.some(t => t && evidenceBlob.includes(t))
+    : true;
+  const proofHit = proofTokens.length
+    ? proofTokens.some(t => t && evidenceBlob.includes(t))
+    : true;
+  if (mode === 'strict') {
     if (!includeHit) return false;
-  }
-  if (proofTokens.length) {
-    const proofHit = proofTokens.some(t => t && evidenceBlob.includes(t));
     if (!proofHit) return false;
+  } else {
+    // Fallback mode: keep logic intent-aware, but allow either include or proof.
+    if (!(includeHit || proofHit)) return false;
   }
   return true;
 }
@@ -183,14 +188,27 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     const raw = (await result.response).text();
     const o = parseJson(raw);
     const arr = Array.isArray(o?.leads) ? o.leads : [];
-    const mapped = arr
+    const mappedBase = arr
       .map((x, i) => mapLeadFromAI(x, i, src))
-      .filter(x => passesEvidenceConstraints(x, constraints))
-      .filter(Boolean)
+      .filter(Boolean);
+    const mappedStrict = mappedBase
+      .filter(x => passesEvidenceConstraints(x, constraints, 'strict'))
       .slice(0, desiredCount);
-    if (mapped.length) {
-      logger.info(`[autoLeadQuickLeads] AI produced ${mapped.length} leads from page content`);
-      return mapped;
+    if (mappedStrict.length) {
+      logger.info(`[autoLeadQuickLeads] AI produced ${mappedStrict.length} strict leads from page content`);
+      return mappedStrict;
+    }
+    const mappedSoft = mappedBase
+      .filter(x => passesEvidenceConstraints(x, constraints, 'soft'))
+      .slice(0, desiredCount)
+      .map(x => ({
+        ...x,
+        data_completeness: x.data_completeness === 'high' ? 'medium' : 'low',
+        missing_fields: x.missing_fields || 'Partial evidence match; refine required proof terms for stricter matching.'
+      }));
+    if (mappedSoft.length) {
+      logger.info(`[autoLeadQuickLeads] AI produced ${mappedSoft.length} soft-fallback leads from page content`);
+      return mappedSoft;
     }
   } catch (e) {
     logger.warn(`autoLeadQuickLeads page-content AI: ${e.message}`);
@@ -217,12 +235,22 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     const raw = (await result.response).text();
     const o = parseJson(raw);
     const arr = Array.isArray(o?.leads) ? o.leads : [];
-    const mapped = arr
+    const mappedBase = arr
       .map((x, i) => mapLeadFromAI(x, i, src))
-      .filter(x => passesEvidenceConstraints(x, constraints))
-      .filter(Boolean)
+      .filter(Boolean);
+    const mappedStrict = mappedBase
+      .filter(x => passesEvidenceConstraints(x, constraints, 'strict'))
       .slice(0, desiredCount);
-    if (mapped.length) return mapped;
+    if (mappedStrict.length) return mappedStrict;
+    const mappedSoft = mappedBase
+      .filter(x => passesEvidenceConstraints(x, constraints, 'soft'))
+      .slice(0, desiredCount)
+      .map(x => ({
+        ...x,
+        data_completeness: x.data_completeness === 'high' ? 'medium' : 'low',
+        missing_fields: x.missing_fields || 'Partial evidence match from snippet-only fallback.'
+      }));
+    if (mappedSoft.length) return mappedSoft;
   } catch (e) {
     logger.warn(`autoLeadQuickLeads snippet AI: ${e.message}`);
   }
