@@ -219,42 +219,74 @@ async function parseBriefWithGemini(brief) {
   };
 }
 
-function buildSerperQueries(intent) {
-  const geo = intent.geography;
-  const st = intent.state_code;
-  const asset = intent.asset_or_use;
-  let trig = intent.trigger_or_record;
-  if (!trig || /^unknown$/i.test(String(trig))) trig = inferTriggerDefaultFromText(asset || geo);
+function normalizeBriefForSearch(brief) {
+  return String(brief || '')
+    .replace(/\b(please|kindly|could you|can you|i would like|i'd like|find me|give me|show me|get me|list|provide)\s+/gi, '')
+    .replace(/\b(some|few|a couple of|a bunch of|around|roughly|about)\s+\d{0,2}\s*(leads?|records?|rows?|opportunities|results)\b/gi, '')
+    .replace(/\b\d{1,2}\s*(leads?|records?|rows?|opportunities)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildSerperQueries(intent, brief = '') {
+  const geo = String(intent?.geography || '').trim();
+  const st = String(intent?.state_code || '').trim();
+  const asset = String(intent?.asset_or_use || '').trim();
+  let trig = String(intent?.trigger_or_record || '').trim();
+  if (!trig || /^unknown$/i.test(trig)) trig = inferTriggerDefaultFromText(asset || geo);
   const recordLike = isRecordHuntIntentText(`${trig} ${asset}`);
-  const base = recordLike
-    ? [
-        `${geo} ${trig} open data ArcGIS FeatureServer site:gov`,
-        `${st ? st + ' ' : ''}${trig} ${asset || 'commercial'} site:gov`,
-        `${geo} ${trig} Socrata OR data portal`,
-        `${geo} county ${trig} GIS`
-      ]
-    : [
-        `${geo} ${asset || 'business'} ${trig} potential buyers`,
-        `${geo} ${asset || 'business'} companies hiring OR expansion`,
-        `${geo} ${asset || 'business'} supplier opportunities`,
-        `${geo} ${asset || 'business'} site:linkedin.com/company OR site:clutch.co`
-      ];
-  if (intent.time_window_hours != null && Number.isFinite(Number(intent.time_window_hours))) {
-    base.push(`${geo} ${trig} last ${Math.max(1, Math.floor(Number(intent.time_window_hours)))} hours`);
-  }
-  if (Array.isArray(intent.required_project_fields) && intent.required_project_fields.length) {
-    const f = intent.required_project_fields.slice(0, 3).join(' ');
-    base.push(recordLike ? `${geo} ${trig} ${f} site:gov` : `${geo} ${asset || 'business'} ${f}`);
-  }
-  if (Array.isArray(intent.decision_maker_roles) && intent.decision_maker_roles.length) {
-    base.push(`${geo} ${asset || (recordLike ? 'construction' : 'business')} ${intent.decision_maker_roles.slice(0, 2).join(' OR ')}`);
-  }
-  if (intent.keywords_for_search.length) {
-    for (const k of intent.keywords_for_search.slice(0, 2)) {
+  const kws = Array.isArray(intent?.keywords_for_search)
+    ? intent.keywords_for_search.map(k => String(k || '').trim()).filter(Boolean)
+    : [];
+  const cleanedBrief = normalizeBriefForSearch(brief);
+  const locationHint = geo && !/^united states$/i.test(geo) ? geo : '';
+
+  let base;
+  if (recordLike) {
+    base = [
+      `${geo} ${trig} open data ArcGIS FeatureServer site:gov`,
+      `${st ? st + ' ' : ''}${trig} ${asset || 'commercial'} site:gov`,
+      `${geo} ${trig} Socrata OR "data portal"`,
+      `${geo} county ${trig} GIS`
+    ];
+    if (intent?.time_window_hours != null && Number.isFinite(Number(intent.time_window_hours))) {
+      base.push(`${geo} ${trig} last ${Math.max(1, Math.floor(Number(intent.time_window_hours)))} hours`);
+    }
+    if (Array.isArray(intent?.required_project_fields) && intent.required_project_fields.length) {
+      const f = intent.required_project_fields.slice(0, 3).join(' ');
+      base.push(`${geo} ${trig} ${f} site:gov`);
+    }
+    for (const k of kws.slice(0, 2)) {
       base.push(`${k} site:gov OR site:org`);
     }
+  } else {
+    const assetOrBusiness = asset || (kws[0] || 'business');
+    base = [];
+    if (cleanedBrief && cleanedBrief.length > 6) base.push(cleanedBrief);
+    if (locationHint) {
+      base.push(`best ${assetOrBusiness} in ${locationHint}`);
+      base.push(`top ${assetOrBusiness} ${locationHint}`);
+      base.push(`${assetOrBusiness} directory ${locationHint}`);
+      if (kws.length) {
+        base.push(`${assetOrBusiness} ${kws.slice(0, 2).join(' ')} ${locationHint}`);
+      }
+      base.push(`list of ${assetOrBusiness} ${locationHint}`);
+    } else {
+      base.push(`best ${assetOrBusiness}`);
+      base.push(`top ${assetOrBusiness} companies`);
+      base.push(`${assetOrBusiness} directory`);
+      if (kws.length) base.push(`${assetOrBusiness} ${kws.slice(0, 2).join(' ')}`);
+    }
+    if (Array.isArray(intent?.required_project_fields) && intent.required_project_fields.length) {
+      const f = intent.required_project_fields.slice(0, 3).join(' ');
+      base.push([assetOrBusiness, f, locationHint].filter(Boolean).join(' '));
+    }
+    if (Array.isArray(intent?.decision_maker_roles) && intent.decision_maker_roles.length) {
+      base.push([assetOrBusiness, locationHint, intent.decision_maker_roles.slice(0, 2).join(' OR ')].filter(Boolean).join(' '));
+    }
   }
-  return [...new Set(base.map(q => q.trim()).filter(q => q.length > 5))].slice(0, 5);
+
+  return [...new Set(base.map(q => String(q || '').replace(/\s+/g, ' ').trim()).filter(q => q.length > 5))].slice(0, 6);
 }
 
 function looksLikeArcGisDataUrl(link) {

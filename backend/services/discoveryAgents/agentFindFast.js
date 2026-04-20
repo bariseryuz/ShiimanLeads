@@ -233,30 +233,33 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
     ? Math.floor(Number(i.min_project_value_usd))
     : null;
   const valToken = minVal ? `>${minVal}` : '';
-  const intentQueries = buildSerperQueries(i)
+  const intentQueries = buildSerperQueries(i, brief)
     .map(q => String(q || '').trim())
     .filter(q => q.length > 4);
 
+  const cleanBrief = String(brief || '')
+    .replace(/\b(please|kindly|find me|give me|show me|get me|list|provide)\s+/gi, '')
+    .replace(/\b\d{1,2}\s*(leads?|records?|rows?|opportunities)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const targeted = (nonTechnical
     ? (searchMode === 'record_hunt'
       ? [
           [geo, vertical || 'commercial', trigger, 'issued', 'new records', valToken].filter(Boolean).join(' '),
           [geo, trigger, 'open data', 'site:gov'].filter(Boolean).join(' '),
-          [geo, 'DOB permits', 'multifamily', 'site:gov OR site:nyc.gov'].filter(Boolean).join(' '),
           [geo, 'building permit database', 'project address', 'valuation'].filter(Boolean).join(' '),
           [geo, 'developer project announcement', vertical || 'multifamily'].filter(Boolean).join(' ')
         ]
       : [
-          [geo, vertical || 'business', trigger, 'potential clients', valToken].filter(Boolean).join(' '),
-          [geo, trigger, 'buyer intent', 'decision maker'].filter(Boolean).join(' '),
-          [geo, 'companies', 'hiring', 'agency', 'vendor'].filter(Boolean).join(' '),
-          [geo, 'new opportunities', 'lead list', 'qualified prospects'].filter(Boolean).join(' '),
+          cleanBrief,
+          [geo, `best ${vertical || 'businesses'}`].filter(Boolean).join(' '),
+          [geo, `top ${vertical || 'businesses'}`].filter(Boolean).join(' '),
+          [geo, `${vertical || 'business'} directory`].filter(Boolean).join(' '),
+          [`list of ${vertical || 'businesses'}`, geo].filter(Boolean).join(' '),
           ...(buyerProfile
             ? [
-                [geo, buyerProfile.offer, 'target companies', buyerProfile.companyTypes[0] || 'business'].filter(Boolean).join(' '),
-                [geo, buyerProfile.companyTypes[1] || 'company', buyerProfile.demandSignals[0] || 'needs leads'].filter(Boolean).join(' '),
-                [geo, buyerProfile.queryStems[0] || 'companies that need lead generation'].filter(Boolean).join(' '),
-                [geo, buyerProfile.queryStems[1] || 'buyer intent', buyerProfile.siteTargets[0] ? `site:${buyerProfile.siteTargets[0]}` : ''].filter(Boolean).join(' ')
+                [geo, buyerProfile.offer, buyerProfile.companyTypes[0] || 'business'].filter(Boolean).join(' '),
+                [geo, buyerProfile.companyTypes[1] || 'company', buyerProfile.demandSignals[0] || ''].filter(Boolean).join(' ')
               ]
             : [])
         ])
@@ -268,8 +271,8 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
         [geo, trigger, '"FeatureServer" "query?f=json"'].filter(Boolean).join(' '),
         [geo, trigger, '"Open Data" "JSON API"'].filter(Boolean).join(' ')
       ])
-    .map(q => q.replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+    .map(q => String(q || '').replace(/\s+/g, ' ').trim())
+    .filter(q => q && q.length > 4);
 
   const rawFallback = buildFastQueries(brief);
   const evidenceQueries = [];
@@ -296,10 +299,10 @@ function buildFastQueriesFromIntent(intent, brief, opts = {}) {
       );
     }
   }
-  return [...new Set([...targeted, ...intentQueries, ...evidenceQueries, ...rawFallback])].slice(0, 8).map(q => q.slice(0, 220));
+  return [...new Set([...targeted, ...intentQueries, ...evidenceQueries, ...rawFallback])].slice(0, 10).map(q => q.slice(0, 220));
 }
 
-function isLowSignalArticle(link, title) {
+function isLowSignalArticle(link, title, { mode = 'record_hunt' } = {}) {
   const u = String(link || '').toLowerCase();
   const t = String(title || '').toLowerCase();
   if (/medium\.com|substack\.com|wordpress|blogspot|wixsite/.test(u)) return true;
@@ -307,12 +310,17 @@ function isLowSignalArticle(link, title) {
   if (/wikipedia\.org|reddit\.com|quora\.com/.test(u)) return true;
   if (/dev\.socrata\.com\/foundry\//.test(u)) return true;
   if (/\/foundry\//.test(u) && /socrata/.test(u)) return true;
-  if (/\/docs?\//.test(u) || /\/documentation\//.test(u) || /\/api\//.test(u) && /(guide|docs|reference)/.test(u)) return true;
+  if (/\/docs?\//.test(u) || /\/documentation\//.test(u) || (/\/api\//.test(u) && /(guide|docs|reference)/.test(u))) return true;
   if (/\/about($|[/?#])/.test(u) && /(data\.|opendata|hub\.arcgis)/.test(u)) return true;
   if (/\.pdf($|\?)/.test(u)) return true;
-  if (/\/(report|whitepaper|ebook|brochure)\//.test(u)) return true;
-  if (/\/(blog|news|article|guide|insight|press-release)\//.test(u)) return true;
-  if (/(guide|tutorial|how to|introduction|quickstart|api key|sdk|reference|swagger|cost per sq ft|tips|market report|quarterly report|pipeline report)/.test(t)) return true;
+  if (/\/(whitepaper|ebook|brochure)\//.test(u)) return true;
+  if (mode === 'record_hunt') {
+    if (/\/(blog|news|article|guide|insight|press-release)\//.test(u)) return true;
+    if (/\/(report|quarterly-report|pipeline-report|market-report)\//.test(u)) return true;
+    if (/(guide|tutorial|how to|introduction|quickstart|api key|sdk|reference|swagger|cost per sq ft|tips|market report|quarterly report|pipeline report)/.test(t)) return true;
+  } else {
+    if (/(api key|sdk reference|swagger|tutorial|how to set up|quickstart)/.test(t)) return true;
+  }
   return false;
 }
 
@@ -400,7 +408,7 @@ async function runAgentFindFast(brief, opts = {}) {
     };
   }
 
-  const maxCalls = Math.min(5, parseInt(process.env.AUTO_LEADS_FAST_SERPER_CALLS || '5', 10) || 5);
+  const maxCalls = Math.min(8, parseInt(process.env.AUTO_LEADS_FAST_SERPER_CALLS || '6', 10) || 6);
   const useQueries = queries.slice(0, Math.min(maxCalls, queries.length));
   const all = [];
   const results = await Promise.allSettled(
@@ -417,7 +425,7 @@ async function runAgentFindFast(brief, opts = {}) {
 
   let deduped = dedupeSearchResults(all)
     .filter(r => /^https?:\/\//i.test(String(r.link || '')))
-    .filter(r => !isLowSignalArticle(r.link, r.title));
+    .filter(r => !isLowSignalArticle(r.link, r.title, { mode: searchMode }));
   if (searchMode === 'record_hunt') {
     deduped = deduped
       .filter(r => !isOffTopicForRecordHunt(r))
@@ -434,7 +442,6 @@ async function runAgentFindFast(brief, opts = {}) {
   const prioritized = nonTechnical
     ? deduped
         .map(r => ({ ...r, _score: scoreResultForBuyerIntent(r, brief, buyerProfile, evidenceHints) }))
-        .filter(r => r._score > 0)
         .sort((a, b) => b._score - a._score)
     : deduped;
   const pool = prioritized.length ? prioritized : deduped;
@@ -446,7 +453,7 @@ async function runAgentFindFast(brief, opts = {}) {
   }
 
   const candidate_sources = sortCandidateSources(
-    [...uniqByUrl.values()].slice(0, 8).map(r => ({
+    [...uniqByUrl.values()].slice(0, 12).map(r => ({
       title: r.title || 'Source',
       url: r.link,
       snippet: String(r.snippet || '').slice(0, 400),
