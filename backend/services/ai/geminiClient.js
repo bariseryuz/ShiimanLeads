@@ -11,6 +11,87 @@ const scaleLimits = require('../../config/scaleLimits');
 const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Gemini concurrency limiter (prevents 429 storms)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class Semaphore {
+  /**
+   * @param {number} max
+   */
+  constructor(max) {
+    this.max = Math.max(1, Number.isFinite(Number(max)) ? Number(max) : 2);
+    this.inFlight = 0;
+    /** @type {Array<() => void>} */
+    this.queue = [];
+  }
+
+  /**
+   * @param {{ timeoutMs?: number }} [opts]
+   * @returns {Promise<() => void>} release fn
+   */
+  acquire(opts = {}) {
+    const timeoutMs = opts.timeoutMs != null ? opts.timeoutMs : 45000;
+    if (this.inFlight < this.max) {
+      this.inFlight += 1;
+      return Promise.resolve(() => this.release());
+    }
+    return new Promise((resolve, reject) => {
+      const timer =
+        timeoutMs > 0
+          ? setTimeout(() => {
+              // Remove ourselves from queue if still present.
+              const idx = this.queue.indexOf(grant);
+              if (idx >= 0) this.queue.splice(idx, 1);
+              reject(new Error('AI queue timeout (too many concurrent requests). Please retry.'));
+            }, timeoutMs)
+          : null;
+
+      const grant = () => {
+        if (timer) clearTimeout(timer);
+        this.inFlight += 1;
+        resolve(() => this.release());
+      };
+
+      this.queue.push(grant);
+    });
+  }
+
+  release() {
+    this.inFlight = Math.max(0, this.inFlight - 1);
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+const GEMINI_MAX_CONCURRENT = parseInt(String(process.env.GEMINI_MAX_CONCURRENT || '2'), 10) || 2;
+const GEMINI_QUEUE_TIMEOUT_MS =
+  parseInt(String(process.env.GEMINI_QUEUE_TIMEOUT_MS || '45000'), 10) || 45000;
+
+const geminiSemaphore = new Semaphore(GEMINI_MAX_CONCURRENT);
+
+function wrapModelWithLimiter(model, meta) {
+  if (!model || typeof model.generateContent !== 'function') return model;
+  if (model.__shiimanLimited) return model;
+
+  const original = model.generateContent.bind(model);
+  model.generateContent = async (...args) => {
+    const release = await geminiSemaphore.acquire({ timeoutMs: GEMINI_QUEUE_TIMEOUT_MS });
+    try {
+      return await original(...args);
+    } catch (e) {
+      const msg = String(e?.message || e);
+      // Add a small amount of context to logs to correlate with 429 bursts.
+      logger.warn(`[Gemini] generateContent failed (${meta?.model || 'model'}): ${msg}`);
+      throw e;
+    } finally {
+      release();
+    }
+  };
+  Object.defineProperty(model, '__shiimanLimited', { value: true, enumerable: false });
+  return model;
+}
+
 /** Cheap + deterministic JSON for scraping, vision, structured pipelines */
 const MODEL_JSON = process.env.GEMINI_MODEL_JSON || 'gemini-2.0-flash-lite';
 /** Clearer writing for user-facing text (closer to the Gemini app experience) */
@@ -53,7 +134,7 @@ function getGeminiModel(purpose = 'extraction') {
   if (useProse) {
     const temp = parseFloat(String(process.env.GEMINI_PROSE_TEMPERATURE || '0.65'), 10);
     const maxTok = parseInt(String(process.env.GEMINI_PROSE_MAX_TOKENS || '8192'), 10) || 8192;
-    return genAI.getGenerativeModel({
+    const m = genAI.getGenerativeModel({
       model: MODEL_PROSE,
       systemInstruction: proseSystemInstruction(),
       generationConfig: {
@@ -64,9 +145,10 @@ function getGeminiModel(purpose = 'extraction') {
       },
       safetySettings: SAFETY
     });
+    return wrapModelWithLimiter(m, { model: MODEL_PROSE, purpose: String(purpose || '') });
   }
 
-  return genAI.getGenerativeModel({
+  const m = genAI.getGenerativeModel({
     model: MODEL_JSON,
     generationConfig: {
       temperature: 0.1,
@@ -75,6 +157,7 @@ function getGeminiModel(purpose = 'extraction') {
     },
     safetySettings: SAFETY
   });
+  return wrapModelWithLimiter(m, { model: MODEL_JSON, purpose: String(purpose || '') });
 }
 
 function getEmbeddingModelName() {
@@ -86,7 +169,8 @@ function getEmbeddingModel() {
     logger.error('❌ AI Client: Embeddings require GEMINI_API_KEY / GOOGLE_API_KEY');
     throw new Error('GEMINI_API_KEY is missing from environment variables');
   }
-  return genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+  const m = genAI.getGenerativeModel({ model: EMBEDDING_MODEL });
+  return wrapModelWithLimiter(m, { model: EMBEDDING_MODEL, purpose: 'embeddings' });
 }
 
 /**
