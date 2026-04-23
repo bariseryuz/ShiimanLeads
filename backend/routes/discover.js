@@ -20,6 +20,7 @@ const { assertMonthlyAllowance, incrementUsage } = require('../services/usageMet
 const { createRateLimiter } = require('../middleware/rateLimitMemory');
 const scaleLimits = require('../config/scaleLimits');
 const { getRedis } = require('../services/redisClient');
+const { isRetryableGeminiError, isRateLimitError } = require('../utils/aiRetry');
 
 const discoverLimiter = createRateLimiter({
   windowMs: scaleLimits.discoverRate.windowMs,
@@ -164,8 +165,20 @@ router.post('/auto-leads', requirePaid, enforceSourceLimit, express.json(), with
     });
   } catch (e) {
     const msg = e.message || String(e);
-    const code = msg.includes('Describe') || msg.includes('at least') ? 400 : 500;
+    const code =
+      msg.includes('Describe') || msg.includes('at least')
+        ? 400
+        : (isRetryableGeminiError(e) && isRateLimitError(e) ? 429 : 500);
     logger.error(`POST /api/discover/auto-leads: ${msg}`);
+    if (code === 429) {
+      return res.status(429).json({
+        error:
+          'AI is temporarily rate-limited (Gemini 429 Resource exhausted). Please retry in ~30–90 seconds. ' +
+          'If this happens frequently, increase your Gemini quota or reduce traffic.',
+        code: 'AI_RATE_LIMIT',
+        detail: msg
+      });
+    }
     res.status(code).json({ error: msg });
   }
 });

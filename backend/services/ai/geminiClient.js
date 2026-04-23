@@ -5,6 +5,8 @@
  */
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const logger = require('../../utils/logger');
+const { retryWithBackoff } = require('../../utils/aiRetry');
+const scaleLimits = require('../../config/scaleLimits');
 
 const API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
@@ -104,7 +106,10 @@ async function generateProseAnswer(userPrompt, opts = {}) {
     ctx.length > 0
       ? `Context (for reference — user may ask about this):\n${ctx.slice(0, 24000)}\n\n---\n\nUser request:\n${q}`
       : q;
-  const result = await model.generateContent(text);
+  const result = await retryWithBackoff(
+    () => model.generateContent(text),
+    { maxRetries: scaleLimits.gemini.maxRetries, baseMs: scaleLimits.gemini.retryBaseMs }
+  );
   const out = (await result.response).text();
   return String(out || '').trim();
 }

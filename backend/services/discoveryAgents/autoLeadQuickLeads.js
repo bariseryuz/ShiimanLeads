@@ -1,6 +1,8 @@
 const logger = require('../../utils/logger');
 const { getGeminiModel, isAIAvailable } = require('../ai/geminiClient');
 const { readMultiplePagesWithDiagnostics } = require('./pageReader');
+const { retryWithBackoff } = require('../../utils/aiRetry');
+const scaleLimits = require('../../config/scaleLimits');
 
 let _lastReadDiagnostics = null;
 
@@ -198,7 +200,10 @@ async function extractLeadsFromContext({ brief, sourceContext, allowedSources, c
     `USER REQUEST:\n${String(brief || '').slice(0, 2000)}\n\n` +
     `PAGE CONTENT:\n${sourceContext.slice(0, 18000)}`;
   try {
-    const result = await model.generateContent(prompt);
+    const result = await retryWithBackoff(
+      () => model.generateContent(prompt),
+      { maxRetries: scaleLimits.gemini.maxRetries, baseMs: scaleLimits.gemini.retryBaseMs }
+    );
     const raw = (await result.response).text();
     const o = parseJson(raw);
     const arr = Array.isArray(o?.leads) ? o.leads : [];
@@ -385,7 +390,10 @@ async function buildAutoLeadQuickLeads({ brief, sources, targetLeads, intent }) 
     `USER REQUEST:\n${String(brief || '').slice(0, 2000)}\n\n` +
     `SNIPPETS:\n${JSON.stringify(src.slice(0, 8), null, 2)}`;
   try {
-    const result = await model.generateContent(snippetPrompt);
+    const result = await retryWithBackoff(
+      () => model.generateContent(snippetPrompt),
+      { maxRetries: scaleLimits.gemini.maxRetries, baseMs: scaleLimits.gemini.retryBaseMs }
+    );
     const raw = (await result.response).text();
     const o = parseJson(raw);
     const arr = Array.isArray(o?.leads) ? o.leads : [];
